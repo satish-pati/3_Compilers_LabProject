@@ -1,0 +1,7 @@
+@int x=0 $
+if (x lt 10) begin
+ show (x)$
+end
+else if(x gt 11) begin
+ show (x) $
+end

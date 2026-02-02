@@ -1,0 +1,9 @@
+func @int main() {
+    @int x $
+    x = 10 $
+    show(x) $
+    x = 20 $
+    show(x) $
+   ret 0 $
+}
+

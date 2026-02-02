@@ -1,0 +1,258 @@
+# This is a single-line comment
+'''
+ multi-line comment
+'''
+
+"""
+multi-line comment
+"""
+
+# data types
+@int x$
+@float pi$
+@char c$
+@double d$
+@short s$
+@long l$
+@void v$
+
+# VARIABLE DECLARATIONS 
+
+# Simple declarations
+@int a$
+@float b, c, d$
+
+# Declaration with initialization
+@int num = 42$
+@float rate is 3.14$
+@char ch is 'A'$
+
+# Multiple declarations with initialization
+@int x = 10, y = 20, z$
+
+# 'fixed' keyword
+
+fixed @int MAX is 100$
+fixed @float pi is 3.14$
+
+# ARRAY DECLARATIONS
+# Simple array declaration
+@int arr[10]$
+@float matrix[5][5]$
+
+# Multi-dimensional arrays
+@int cube[3][3][3]$
+
+# Array with initialization
+@int nums[5] is {1, 2, 3, 4, 5}$
+@float values[3] is {1.1, 2.2, 3.3}$
+
+# Multiple array declarations
+@int arr1[10], arr2[20]$
+
+# Array with initialization in list
+@int data[4] = {10, 20, 30, 40}, single$
+
+# NUMBER FORMATS - Dec, Hex, Octal, Bin
+
+@int decimal is 42$
+@int hexNum is hex2A$
+@int octNum is oct52$
+@int binNum is bin101010$
+
+# Floating point numbers
+@float f1 is 3.14$
+@float f2 is 0.5$
+
+# CHARACTER LITERALS
+
+@char c1 is 'A'$
+@char c2 is 'z'$
+
+# STRINGS
+
+@char[100]  str1 is "Hello World"$
+@char[100] str2 is "This is a test string"$
+@char[100] str3 is "String with \"escaped quotes\""$
+
+# ARITHMETIC OPERATORS
+
+@int sum is 10 + 20$
+@int diff is 50 - 30$
+@int prod is 5 * 6$
+@int quot is 100 / 4$
+@int rem is 17 % 5$
+@int result is 10 + 20 * 3 - 4 / 2$
+@int nested is (10 + 5) * (20 - 8)$
+
+# Unary operators
+@int positive is +10$
+@int negative is -25$
+
+# BITWISE OPERATORS 
+@int b1 = 12 bitand 10$
+@int b2 = 12 bitor 10$
+@int b3 = 12 bitxor 10$
+@int b4 = bitnot 12$
+@int l1 = 5 lshift 2$
+@int r1 = 20 rshift 2$
+
+# ASSIGNMENT OPERATORS
+
+x is 100$
+
+# Compound assignments
+x += 10$
+x -= 5$
+x *= 2$
+x /= 3$
+
+# Bitwise compound assignments
+x bitand= 15$
+x bitor= 8$
+x bitxor= 4$
+x lshift= 1$
+x rshift= 2$
+
+# INCREMENT AND DECREMENT OPERATORS
+
+# Pre-increment/decrement
+++x$
+--y$
+
+# Post-increment/decrement
+x++$
+y--$
+
+# TYPE CASTING
+@float cast1 =(@float) 42$
+@int cast2 = (@int) 3.14$
+@double cast3 = (@double) 100$
+
+
+
+# control flow
+if (x lt 10)begin
+    show x$
+end
+
+if (x gt 10) begin
+    show x$
+end
+else begin
+    show y$
+end
+
+# loops
+
+loop (x lt 10) begin
+    x += 1$
+end
+
+repeat begin
+    x -= 1$
+end loop (x gt 0) $
+
+iterate (i = 0 $ i lt 5 $ i =i+1) begin
+    show i$
+end
+
+# switch case
+choose (x) begin
+    option 1:
+        show (1)$
+    option 2:
+        show (2)$
+    def :
+        show (0) $
+end
+
+# fucn
+func @int add() begin
+    @int a$
+    @int b$
+    ret a + b$
+end
+
+@int res = call add()$
+
+@int userInput = input(y)$
+
+@int s1 = getsizeof(@int)$
+@int s2 = getsizeof(x)$
+
+
+#  ARRAY SUBSCRIPTING
+
+arr[0] is 10$
+arr[5] is 99$
+
+# Multi-dimensional array access
+matrix[2][3] is 42$
+cube[1][2][1] is 7$
+@int element = arr[5]$
+@int matElement = matrix[2][3]$
+
+
+# PARENTHESIZED EXPRESSIONS
+
+@int parenExpr = (10 + 20) * (30 - 5)$
+@int nested = ((5 + 3) * 2) - ((10 - 4) / 2)$
+
+#  COMPLEX EXPRESSIONS
+@int complex1 = 10 + 20 * 3 - 40 / 2 % 3$
+@int complex2 = (10 bitand 6) bitor (5 lshift 1)$
+@int complexArr = arr[0] + arr[1] * arr[2]$
+@float complexCast = (@float)(10 + 20) / (@float)3$
+
+# SPECIAL IDENTIFIERS AND KEYWORDS
+
+@int _private is 100$
+@int __double_underscore is 200$
+
+# Mix of letters, numbers, underscores
+@int var_123 is 42$
+@int myVariable2024 is 999$
+@int test1[1] = {0}$
+@int longExpr = 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10$
+
+# Nested type casts
+@int multiCast is (@int)(@float)(@double)42$
+
+# Multiple operators
+@int ops is 10 + -5 - +3$
+
+# Whitespace 
+@int    spaced   is   100 $
+# rel oprs
+@int r1 is 10 lt 20$
+@int r2 is 10 gt 5$
+@int r3 is 10 le 10$
+@int r4 is 20 ge 10$
+@int r5 is 10 eq 10$
+@int r6 is 10 ne 5$
+
+@int r7 is 10 < 20$
+@int r8 is 10 > 5$
+@int r9 is 10 <= 10$
+@int r10 is 20 >= 10$
+@int r11 is 10 == 10$
+@int r12 is 10 != 5$
+# logical
+@int l1 = true and false$
+@int l2 = true or false$
+@int l3 = not true$
+@int l4 = true && false$
+@int l5 = true || false$
+@int l6 = !false$
+
+@int expr1 = (a + b) * (c - d) / e$
+@int expr2 = a lshift 2 bitor 3$
+@int expr3 = not (a gt b and c lt d)$
+
+__$
+___abc123$
+@int ___ is 0$
+@float f1 is .5$
+@float f2 is 5.$
+@float f3 is 0.0001$

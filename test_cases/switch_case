@@ -1,0 +1,12 @@
+# Switch case test - placeholder
+@int x=1 $
+choose (x) begin
+ option 1:
+  show (x)$
+  exit$
+ option 2:
+  show (x)$
+  exit$
+ def:
+  show (x)$
+end

@@ -1,0 +1,8 @@
+@int x $
+@float  y is 2.3$
+@char c ='b'$
+@double d=5.2$
+@short s$
+@long l is 45 $
+iii e2
+%%
