@@ -2,9 +2,9 @@
 #include<stdio.h>
 #include<string.h>
 #include"y.tab.h"
-char buffer[1024]="";
+char buffer[10240]="";
 void append(const char* str){
-        if (strlen(buffer)+strlen(str)<1024){
+        if (strlen(buffer)+strlen(str)<10240){
                 strcat(buffer,str);
         }
 }
@@ -24,7 +24,6 @@ ws [\n\t ]
 @short  {append(yytext);strcpy(yylval.str,yytext);return SHORT;}
 @long   {append(yytext);strcpy(yylval.str,yytext);return LONG;}
 @double {append(yytext);strcpy(yylval.str,yytext);return DOUBLE;}
-input {append(yytext);strcpy(yylval.str,yytext);return INPUT;}
 "begin" {append(yytext);return '{';}
 "end"   {append(yytext);return '}';}
 "bitand"  {append(yytext);strcpy(yylval.str,yytext);return BAND;}
@@ -39,6 +38,10 @@ input {append(yytext);strcpy(yylval.str,yytext);return INPUT;}
 "-=" {append(yytext);strcpy(yylval.str,yytext);return MASN;}
 "*=" {append(yytext);strcpy(yylval.str,yytext);return SASN;}
 "/=" {append(yytext);strcpy(yylval.str,yytext);return DASN;}
+"<" {append(yytext);strcpy(yylval.str,"<");return LT;}
+">" {append(yytext);strcpy(yylval.str,">");return GT;}
+"<=" {append(yytext);strcpy(yylval.str,"<=");return LE;}
+">=" {append(yytext);strcpy(yylval.str,">=");return GE;}
 "bitand=" {append(yytext);strcpy(yylval.str,yytext);return BANDASN;}
 "bitor=" {append(yytext);strcpy(yylval.str,yytext);return BORASN;}
 "bitxor=" {append(yytext);strcpy(yylval.str,yytext);return BXORASN;}
@@ -47,12 +50,7 @@ input {append(yytext);strcpy(yylval.str,yytext);return INPUT;}
 "and" {append(yytext);strcpy(yylval.str,"&&");return AND;}
 "or"  {append(yytext);strcpy(yylval.str,"||");return OR;}
 "not" {append(yytext);return '!';}
-"==" {append(yytext);strcpy(yylval.str,"==");return EQ;}
-"!=" {append(yytext);strcpy(yylval.str,"!=");return NE;}
-"<" {append(yytext);strcpy(yylval.str,"<");return LT;}
-">" {append(yytext);strcpy(yylval.str,">");return GT;}
-"<=" {append(yytext);strcpy(yylval.str,"<=");return LE;}
-">=" {append(yytext);strcpy(yylval.str,">=");return GE;}
+input {append(yytext);strcpy(yylval.str,yytext);return INPUT;}
 "eq" {append(yytext);strcpy(yylval.str,"==");return EQ;}
 "ne" {append(yytext);strcpy(yylval.str,"!=");return NE;}
 "lt" {append(yytext);strcpy(yylval.str,"<");return LT;}
@@ -75,6 +73,7 @@ show {append(yytext);strcpy(yylval.str,yytext);return PRINT;}
 loop {append(yytext);strcpy(yylval.str,yytext);return WHILE;}
 repeat {append(yytext);strcpy(yylval.str,yytext);return DO;}
 is    {append(yytext);return '=';}
+@bool {append(yytext);strcpy(yylval.str,yytext);return BOOL;}
 iterate  {append(yytext);strcpy(yylval.str,yytext);return FOR;}
 choose   {append(yytext);strcpy(yylval.str,yytext);return SWITCH;}
 option   {append(yytext);strcpy(yylval.str,yytext);return CASE;}
@@ -107,6 +106,28 @@ bin[01]+  {
     sprintf(yylval.str, "%ld", val);
     return NUM;
 }
+({num}|{num2})"f"  {
+    append(yytext);
+    // strip f suffix
+    char tmp[100];
+    strcpy(tmp, yytext);
+    tmp[strlen(tmp)-1] = '\0';
+    strcpy(yylval.str, tmp);
+    // tag as float
+    strcat(yylval.str, "_f");  // internal marker
+    return NUM;
+}
+
+({num}|{num2})"l"  {
+    append(yytext);
+    char tmp[100];
+    strcpy(tmp, yytext);
+    tmp[strlen(tmp)-1] = '\0';
+    strcpy(yylval.str, tmp);
+    strcat(yylval.str, "_l");
+    return NUM;
+}
+
 ({num}|{num2}) {append(yytext);strcpy(yylval.str,yytext);return NUM;}
 {iden} {append(yytext);strcpy(yylval.str,yytext);return IDEN;}
 {ws} {append(yytext);}
@@ -135,3 +156,6 @@ bin[01]+  {
 
 %%
 
+int yywrap() {
+    return 1;
+}
