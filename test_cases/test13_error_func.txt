@@ -1,0 +1,6 @@
+func @int test(@int a) begin
+    ret a$
+end
+
+@int x is call test()$
+

@@ -1,0 +1,8 @@
+@int x is 10$
+x += 5$
+x -= 3$
+x *= 2$
+x /= 4$
+x bitand= 7$
+x bitor= 3$
+x lshift= 1$

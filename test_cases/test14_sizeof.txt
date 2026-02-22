@@ -1,0 +1,4 @@
+@int arr[10]$
+@int size is getsizeof(arr)$
+@double matrix[5][5]$
+@int mat_size is getsizeof(matrix)$

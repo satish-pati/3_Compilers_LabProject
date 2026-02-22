@@ -1,0 +1,12 @@
+@int i is 0$
+loop (i lt 10) begin
+    i is i + 1$
+end
+
+repeat begin
+    i is i - 1$
+end loop (i gt 0)$
+
+iterate (i is 0$ i lt 5$ i is i + 1) begin
+    @int x is i * 2$
+end

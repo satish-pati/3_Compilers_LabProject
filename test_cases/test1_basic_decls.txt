@@ -1,0 +1,4 @@
+@int x$
+@float y is 3.14$
+@char c is 'a'$
+fixed @int z is 10$

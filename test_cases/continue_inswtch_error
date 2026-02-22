@@ -1,0 +1,5 @@
+@int x=0 $
+choose (x) begin
+    option 1: skip$ # Error: continue not in loop
+    def: exit$  # OK: break allowed in switch
+end

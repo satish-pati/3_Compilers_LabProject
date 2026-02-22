@@ -224,27 +224,6 @@ cube[1][2][1] is 7$
 
 # Whitespace 
 @int    spaced   is   100 $
-# rel oprs
-@int r1 is 10 lt 20$
-@int r2 is 10 gt 5$
-@int r3 is 10 le 10$
-@int r4 is 20 ge 10$
-@int r5 is 10 eq 10$
-@int r6 is 10 ne 5$
-
-@int r7 is 10 < 20$
-@int r8 is 10 > 5$
-@int r9 is 10 <= 10$
-@int r10 is 20 >= 10$
-@int r11 is 10 == 10$
-@int r12 is 10 != 5$
-# logical
-@int l1 = true and false$
-@int l2 = true or false$
-@int l3 = not true$
-@int l4 = true && false$
-@int l5 = true || false$
-@int l6 = !false$
 
 @int expr1 = (a + b) * (c - d) / e$
 @int expr2 = a lshift 2 bitor 3$

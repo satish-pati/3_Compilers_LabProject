@@ -1,0 +1,2 @@
+fixed @int x is 5$
+++x$ # Error: cannot modify const variable

@@ -1,0 +1,2 @@
+fixed @int MAX is 100$
+MAX is 200$

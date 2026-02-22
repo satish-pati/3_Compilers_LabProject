@@ -1,0 +1,3 @@
+func @int test(@int x, @int x) begin # Error: duplicate param 'x'
+    ret x$
+end

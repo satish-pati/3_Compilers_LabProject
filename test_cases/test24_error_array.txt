@@ -1,0 +1,2 @@
+@int bad_array[0]$
+@int neg_array[-5]$

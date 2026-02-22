@@ -1,0 +1,2 @@
+@int y is 5$
+ret y$ # Error: return outside function

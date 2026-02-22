@@ -1,0 +1,3 @@
+func @void bar() begin
+    ret 5$ # Error: void function returning value
+end

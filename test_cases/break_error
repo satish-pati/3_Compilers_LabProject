@@ -1,0 +1,3 @@
+@int x$
+exit$  # Error: break outside loop
+skip$   # Error: continue outside loop
