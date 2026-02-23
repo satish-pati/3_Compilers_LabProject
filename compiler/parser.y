@@ -682,6 +682,16 @@ A: SWITCH '(' EXPR ')' '{' {
     | PRINT '(' EXPR ')' '$' {
         printf("Print: type=%s\n", $3->type);
     }
+    | INPUT '(' EXPR ')' '$' {
+    if(!e) {
+        if(!$3->lv) {
+            e = 1;
+            sprintf(err + strlen(err), "Input requires a variable, not an expression\n");
+        } else {
+            printf("Input: type=%s\n", $3->type);
+        }
+    }
+}
     | ASNEXPR '$'
     | ASNEXPR error MEOF {
         strcat(err, "Syntax error (missing $ or invalid statement)\n");
