@@ -297,7 +297,11 @@ void print_table(Table* table) {
     for (int i = 0; i < table->size; i++) {
         TableEntry* entry = table->buckets[i];
         while (entry) {
-            printf("%d    %s                  %s\n", entry->value->offset, entry->value->name, entry->value->type);
+                        printf("%-10d %-25s %-20s\n", 
+                entry->value->offset, 
+                entry->value->name, 
+                entry->value->type);
+
             entry = entry->next;
         }
     }
@@ -307,8 +311,8 @@ void print_all_envs() {
     printf("\n=== Symbol Table (Storage Layout) ===\n");
     for (int i = 0; i < env_count; i++) {
         printf("\nScope %d:\n", i);
-        printf("Offset    Name                  Type\n");
-        printf("-----------------------------------------------\n");
+        printf("%-10s %-25s %-20s\n", "Offset", "Name", "Type");
+printf("-----------------------------------------------\n");
         print_table(envs[i]->table);
     }
     printf("======================================\n");
@@ -462,7 +466,7 @@ int isTypeCompatible(char* expected, char* actual) {
     char* act_base = getBaseType(act_clean);
     
     // float/double compatible with each other
-    if((strcmp(exp_base, "float") == 0 || strcmp(exp_base, "double") == 0) &&
+   /* if((strcmp(exp_base, "float") == 0 || strcmp(exp_base, "double") == 0) &&
        (strcmp(act_base, "float") == 0 || strcmp(act_base, "double") == 0)) {
         return 1;
     }
@@ -483,11 +487,29 @@ int isTypeCompatible(char* expected, char* actual) {
         }
     }
     
+    return strcmp(exp_base, act_base) == 0;*/
+
+    // If one is float/double and other is not → incompatible
+    if (isFloatingType(exp_base) != isFloatingType(act_base)) {
+        return 0;  // int vs float/double = incompatible
+    }
+
+    // float/double compatible with each other
+    if (isFloatingType(exp_base) && isFloatingType(act_base)) return 1;
+
+    // Both integer types — allow widening
+    int exp_rank = getTypeRank(exp_base);
+    int act_rank = getTypeRank(act_base);
+    if (exp_rank > 0 && act_rank > 0) return 1;
+
     return strcmp(exp_base, act_base) == 0;
+
+
+    
 }
 
 
-#line 491 "y.tab.c"
+#line 513 "y.tab.c"
 
 # ifndef YY_CAST
 #  ifdef __cplusplus
@@ -660,14 +682,14 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 421 "parser.y"
+#line 443 "parser.y"
 
     char str[1000];
     struct Expr* expr;
     struct Type* type;
     struct Decl* decl;
 
-#line 671 "y.tab.c"
+#line 693 "y.tab.c"
 
 };
 typedef union YYSTYPE YYSTYPE;
@@ -1188,20 +1210,20 @@ static const yytype_int8 yytranslate[] =
 /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_int16 yyrline[] =
 {
-       0,   471,   471,   471,   480,   481,   488,   489,   490,   491,
-     493,   493,   601,   608,   614,   616,   617,   619,   619,   630,
-     636,   642,   666,   682,   685,   695,   696,   703,   704,   705,
-     712,   716,   716,   717,   721,   721,   722,   722,   723,   723,
-     728,   729,   730,   732,   733,   735,   736,   738,   749,   757,
-     895,   903,   909,   916,   929,   944,   956,   973,   992,  1006,
-    1031,  1059,  1077,  1096,  1099,  1107,  1108,  1109,  1110,  1111,
-    1112,  1113,  1114,  1116,  1117,  1118,  1119,  1120,  1121,  1122,
-    1123,  1124,  1125,  1127,  1128,  1129,  1130,  1131,  1132,  1133,
-    1134,  1135,  1136,  1137,  1138,  1140,  1156,  1205,  1220,  1235,
-    1250,  1274,  1303,  1316,  1335,  1354,  1373,  1390,  1407,  1424,
-    1425,  1427,  1489,  1526,  1532,  1548,  1555,  1575,  1602,  1629,
-    1656,  1706,  1755,  1775,  1781,  1789,  1797,  1805,  1814,  1815,
-    1817,  1818,  1819
+       0,   493,   493,   493,   502,   503,   510,   511,   512,   513,
+     515,   515,   623,   630,   636,   638,   639,   641,   641,   652,
+     658,   664,   688,   704,   707,   717,   718,   725,   726,   727,
+     734,   738,   738,   739,   743,   743,   744,   744,   745,   745,
+     750,   751,   752,   754,   755,   757,   758,   760,   771,   779,
+     922,   930,   936,   943,   956,   971,   983,  1000,  1019,  1033,
+    1058,  1086,  1104,  1123,  1126,  1134,  1135,  1136,  1137,  1138,
+    1139,  1140,  1141,  1143,  1144,  1145,  1146,  1147,  1148,  1149,
+    1150,  1151,  1152,  1154,  1155,  1156,  1157,  1158,  1159,  1160,
+    1161,  1162,  1163,  1164,  1165,  1167,  1183,  1232,  1247,  1262,
+    1277,  1301,  1330,  1343,  1362,  1381,  1400,  1417,  1434,  1451,
+    1452,  1454,  1516,  1553,  1559,  1575,  1582,  1602,  1629,  1656,
+    1683,  1733,  1782,  1802,  1808,  1816,  1824,  1832,  1841,  1842,
+    1844,  1845,  1846
 };
 #endif
 
@@ -2107,13 +2129,13 @@ yyreduce:
   switch (yyn)
     {
   case 2: /* $@1: %empty  */
-#line 471 "parser.y"
+#line 493 "parser.y"
    {top = create_env(top, 0);}
-#line 2113 "y.tab.c"
+#line 2135 "y.tab.c"
     break;
 
   case 3: /* S: $@1 PROGRAM MEOF  */
-#line 471 "parser.y"
+#line 493 "parser.y"
                                             {
         if (e) {
             printf("%s\nRejected -> %s\n", buffer, err);
@@ -2123,28 +2145,28 @@ yyreduce:
         }
         YYACCEPT;
     }
-#line 2127 "y.tab.c"
+#line 2149 "y.tab.c"
     break;
 
   case 4: /* S: MEOF  */
-#line 480 "parser.y"
+#line 502 "parser.y"
            { YYACCEPT; }
-#line 2133 "y.tab.c"
+#line 2155 "y.tab.c"
     break;
 
   case 5: /* S: error MEOF  */
-#line 481 "parser.y"
+#line 503 "parser.y"
                  {
         e = 1;
         strcpy(err, "Invalid Statements");
         printf("%s\nRejected -> %s\n", buffer, err);
         YYACCEPT;
     }
-#line 2144 "y.tab.c"
+#line 2166 "y.tab.c"
     break;
 
   case 10: /* $@2: %empty  */
-#line 493 "parser.y"
+#line 515 "parser.y"
                                               {
         if(!e){
             // Check for duplicate parameter names
@@ -2232,11 +2254,11 @@ yyreduce:
             }
         }
     }
-#line 2236 "y.tab.c"
+#line 2258 "y.tab.c"
     break;
 
   case 11: /* FUNDECL: FUNCTION TYPE IDEN '(' PARAMLIST ')' $@2 '{' STMNTS '}'  */
-#line 579 "parser.y"
+#line 601 "parser.y"
                      {
         if(!e){
             // Check if non-void function has return statement
@@ -2258,11 +2280,11 @@ yyreduce:
             current_return_type[0] = '\0';
         }
     }
-#line 2262 "y.tab.c"
+#line 2284 "y.tab.c"
     break;
 
   case 12: /* PARAMLIST: TYPE IDEN ',' PARAMLIST  */
-#line 601 "parser.y"
+#line 623 "parser.y"
                                    {
         if(!e){
             (yyval.decl) = createDecl((yyvsp[-2].str));
@@ -2270,72 +2292,72 @@ yyreduce:
             (yyval.decl)->next = (yyvsp[0].decl);
         }
     }
-#line 2274 "y.tab.c"
+#line 2296 "y.tab.c"
     break;
 
   case 13: /* PARAMLIST: TYPE IDEN  */
-#line 608 "parser.y"
+#line 630 "parser.y"
                 {
         if(!e){
             (yyval.decl) = createDecl((yyvsp[0].str));
             strcpy((yyval.decl)->type, (yyvsp[-1].type)->str);
         }
     }
-#line 2285 "y.tab.c"
+#line 2307 "y.tab.c"
     break;
 
   case 14: /* PARAMLIST: %empty  */
-#line 614 "parser.y"
+#line 636 "parser.y"
       {(yyval.decl) = NULL;}
-#line 2291 "y.tab.c"
+#line 2313 "y.tab.c"
     break;
 
   case 17: /* $@3: %empty  */
-#line 619 "parser.y"
+#line 641 "parser.y"
                            {
         saveoffset = offset;
         switch_depth++;
         top = create_env(top, offset);  // CREATE NEW SCOPE FOR SWITCH
         offset = 0;
     }
-#line 2302 "y.tab.c"
+#line 2324 "y.tab.c"
     break;
 
   case 18: /* A: SWITCH '(' EXPR ')' '{' $@3 CASE_LIST '}'  */
-#line 624 "parser.y"
+#line 646 "parser.y"
                     {
         top = top->prev;  // RESTORE PREVIOUS SCOPE
         if (!top) offset = 0;
         else offset = saveoffset;
         switch_depth--;
     }
-#line 2313 "y.tab.c"
+#line 2335 "y.tab.c"
     break;
 
   case 19: /* A: BREAK '$'  */
-#line 630 "parser.y"
+#line 652 "parser.y"
                 {
         if(!e && loop_depth == 0 && switch_depth == 0) {
             e = 1;
             sprintf(err + strlen(err), "break statement not within loop or switch\n");
         }
     }
-#line 2324 "y.tab.c"
+#line 2346 "y.tab.c"
     break;
 
   case 20: /* A: CONTINUE '$'  */
-#line 636 "parser.y"
+#line 658 "parser.y"
                    {
         if(!e && loop_depth == 0) {  // Only check loop_depth, NOT switch_depth
             e = 1;
             sprintf(err + strlen(err), "continue statement not within loop\n");
         }
     }
-#line 2335 "y.tab.c"
+#line 2357 "y.tab.c"
     break;
 
   case 21: /* A: RETURN EXPR '$'  */
-#line 642 "parser.y"
+#line 664 "parser.y"
                       {
         if(!e) {
                                         has_return_statement = 1;
@@ -2360,11 +2382,11 @@ yyreduce:
             }
         }
     }
-#line 2364 "y.tab.c"
+#line 2386 "y.tab.c"
     break;
 
   case 22: /* A: RETURN '$'  */
-#line 666 "parser.y"
+#line 688 "parser.y"
                  {
     if(!e) {
         has_return_statement = 1;
@@ -2381,19 +2403,19 @@ yyreduce:
         }
     }
 }
-#line 2385 "y.tab.c"
+#line 2407 "y.tab.c"
     break;
 
   case 23: /* A: PRINT '(' EXPR ')' '$'  */
-#line 682 "parser.y"
+#line 704 "parser.y"
                              {
         printf("Print: type=%s\n", (yyvsp[-2].expr)->type);
     }
-#line 2393 "y.tab.c"
+#line 2415 "y.tab.c"
     break;
 
   case 24: /* A: INPUT '(' EXPR ')' '$'  */
-#line 685 "parser.y"
+#line 707 "parser.y"
                              {
     if(!e) {
         if(!(yyvsp[-2].expr)->lv) {
@@ -2404,11 +2426,11 @@ yyreduce:
         }
     }
 }
-#line 2408 "y.tab.c"
+#line 2430 "y.tab.c"
     break;
 
   case 26: /* A: ASNEXPR error MEOF  */
-#line 696 "parser.y"
+#line 718 "parser.y"
                          {
         strcat(err, "Syntax error (missing $ or invalid statement)\n");
         yyerrok;
@@ -2416,11 +2438,11 @@ yyreduce:
         printf("%s\nRejected -> %s\n", buffer, err);
         YYACCEPT;
     }
-#line 2420 "y.tab.c"
+#line 2442 "y.tab.c"
     break;
 
   case 29: /* A: EXPR error MEOF  */
-#line 705 "parser.y"
+#line 727 "parser.y"
                       {
             strcat(err, "Syntax error (missing $ or unknown keyword — did you mean @int/@float etc?)\n");
         yyerrok;
@@ -2428,81 +2450,81 @@ yyreduce:
         printf("%s\nRejected -> %s\n", buffer, err);
         YYACCEPT;
     }
-#line 2432 "y.tab.c"
+#line 2454 "y.tab.c"
     break;
 
   case 30: /* A: IF BOOLEXPR ')' A ELSE A  */
-#line 712 "parser.y"
+#line 734 "parser.y"
                                {
         strcat(err, "missing (\n");
         e = 1;
     }
-#line 2441 "y.tab.c"
+#line 2463 "y.tab.c"
     break;
 
   case 31: /* $@4: %empty  */
-#line 716 "parser.y"
+#line 738 "parser.y"
                              {loop_depth++;}
-#line 2447 "y.tab.c"
+#line 2469 "y.tab.c"
     break;
 
   case 32: /* A: WHILE '(' BOOLEXPR ')' $@4 A  */
-#line 716 "parser.y"
+#line 738 "parser.y"
                                                {loop_depth--;}
-#line 2453 "y.tab.c"
+#line 2475 "y.tab.c"
     break;
 
   case 33: /* A: WHILE BOOLEXPR ')' A  */
-#line 717 "parser.y"
+#line 739 "parser.y"
                            {
         strcat(err, "missing (\n");
         e = 1;
     }
-#line 2462 "y.tab.c"
+#line 2484 "y.tab.c"
     break;
 
   case 34: /* $@5: %empty  */
-#line 721 "parser.y"
+#line 743 "parser.y"
          {loop_depth++;}
-#line 2468 "y.tab.c"
+#line 2490 "y.tab.c"
     break;
 
   case 35: /* A: DO $@5 A WHILE '(' BOOLEXPR ')' '$'  */
-#line 721 "parser.y"
+#line 743 "parser.y"
                                                       {loop_depth--;}
-#line 2474 "y.tab.c"
+#line 2496 "y.tab.c"
     break;
 
   case 36: /* $@6: %empty  */
-#line 722 "parser.y"
+#line 744 "parser.y"
                                                    {loop_depth++;}
-#line 2480 "y.tab.c"
+#line 2502 "y.tab.c"
     break;
 
   case 37: /* A: FOR '(' ASNEXPR '$' BOOLEXPR '$' ASNEXPR ')' $@6 A  */
-#line 722 "parser.y"
+#line 744 "parser.y"
                                                                      {loop_depth--;}
-#line 2486 "y.tab.c"
+#line 2508 "y.tab.c"
     break;
 
   case 38: /* $@7: %empty  */
-#line 723 "parser.y"
+#line 745 "parser.y"
           {top = create_env(top, offset); offset = 0;}
-#line 2492 "y.tab.c"
+#line 2514 "y.tab.c"
     break;
 
   case 39: /* A: '{' $@7 STMNTS '}'  */
-#line 723 "parser.y"
+#line 745 "parser.y"
                                                                   {
         top = top->prev;
         if (!top) offset = 0;
         else offset = top->prev_offset;
     }
-#line 2502 "y.tab.c"
+#line 2524 "y.tab.c"
     break;
 
   case 47: /* CASE_EXPR: NUM  */
-#line 738 "parser.y"
+#line 760 "parser.y"
                {
         if(!e) {
             (yyval.expr) = createExpr();
@@ -2514,11 +2536,11 @@ yyreduce:
             }
         }
     }
-#line 2518 "y.tab.c"
+#line 2540 "y.tab.c"
     break;
 
   case 48: /* CASE_EXPR: CHARR  */
-#line 749 "parser.y"
+#line 771 "parser.y"
             {
         if(!e) {
             (yyval.expr) = createExpr();
@@ -2526,23 +2548,28 @@ yyreduce:
             strcpy((yyval.expr)->type, "char");
         }
     }
-#line 2530 "y.tab.c"
+#line 2552 "y.tab.c"
     break;
 
   case 49: /* DECLSTATEMENT: TYPE DECLLIST '$'  */
-#line 757 "parser.y"
+#line 779 "parser.y"
                                  {
         struct Decl* temp = (yyvsp[-1].decl);
         while(temp){
-            if (temp->re){
-                e = 1;
-                Symbol* s = get(top->table, temp->key);
-                if (strcmp(s->type, (yyvsp[-2].type)->str) == 0){
-                    sprintf(err + strlen(err), "Redeclaration of %s\n", s->name);
-                } else {
-                    sprintf(err + strlen(err), "Conflicting types for %s\n", s->name);
-                }
-            }
+           if (temp->re){
+    e = 1;
+    Symbol* s = get(top->table, temp->key);
+    char* decl_type = (yyvsp[-2].type)->str;
+    if (decl_type[0] == '@') decl_type++;  // strip @
+    
+    if (strcmp(s->type, decl_type) == 0){
+        sprintf(err + strlen(err), "Redeclaration of %s\n", s->name);
+    } else {
+        sprintf(err + strlen(err), "Conflicting types for %s\n", s->name);
+    }
+}
+
+
             
             if (strcmp(temp->type, "") == 0){
                 Symbol* s = get(top->table, temp->key);
@@ -2669,11 +2696,11 @@ yyreduce:
             temp = temp->next;
         }
     }
-#line 2673 "y.tab.c"
+#line 2700 "y.tab.c"
     break;
 
   case 50: /* DECLSTATEMENT: TYPE DECLLIST error MEOF  */
-#line 895 "parser.y"
+#line 922 "parser.y"
                                {
        strcat(err, "Syntax error in declaration (  missing $)\n");
         yyerrok;
@@ -2681,33 +2708,33 @@ yyreduce:
         printf("%s\nRejected -> %s\n", buffer, err);
         YYACCEPT;
     }
-#line 2685 "y.tab.c"
+#line 2712 "y.tab.c"
     break;
 
   case 51: /* INIT_LIST: EXPR ',' INIT_LIST  */
-#line 903 "parser.y"
+#line 930 "parser.y"
                               {
         if(!e){
             (yyval.expr) = (yyvsp[-2].expr);
             (yyval.expr)->next = (yyvsp[0].expr);
         }
     }
-#line 2696 "y.tab.c"
+#line 2723 "y.tab.c"
     break;
 
   case 52: /* INIT_LIST: EXPR  */
-#line 909 "parser.y"
+#line 936 "parser.y"
            {
         if(!e){
             (yyval.expr) = (yyvsp[0].expr);
             (yyval.expr)->next = NULL;
         }
     }
-#line 2707 "y.tab.c"
+#line 2734 "y.tab.c"
     break;
 
   case 53: /* DECLLIST: IDEN ',' DECLLIST  */
-#line 916 "parser.y"
+#line 943 "parser.y"
                             {
         if (get(top->table, (yyvsp[-2].str)) == NULL){
             Symbol* s = createSymbol((yyvsp[-2].str));
@@ -2721,11 +2748,11 @@ yyreduce:
         }
         strcpy((yyval.decl)->lt, "u");
     }
-#line 2725 "y.tab.c"
+#line 2752 "y.tab.c"
     break;
 
   case 54: /* DECLLIST: IDEN INDEX ',' DECLLIST  */
-#line 929 "parser.y"
+#line 956 "parser.y"
                               {
         if (get(top->table, (yyvsp[-3].str)) == NULL){
             Symbol* s = createSymbol((yyvsp[-3].str));
@@ -2741,11 +2768,11 @@ yyreduce:
         }
         strcpy((yyval.decl)->lt, "u");
     }
-#line 2745 "y.tab.c"
+#line 2772 "y.tab.c"
     break;
 
   case 55: /* DECLLIST: IDEN  */
-#line 944 "parser.y"
+#line 971 "parser.y"
            {
         if (get(top->table, (yyvsp[0].str)) == NULL){
             Symbol* s = createSymbol((yyvsp[0].str));
@@ -2758,11 +2785,11 @@ yyreduce:
         }
         strcpy((yyval.decl)->lt, "u");
     }
-#line 2762 "y.tab.c"
+#line 2789 "y.tab.c"
     break;
 
   case 56: /* DECLLIST: IDEN '=' EXPR  */
-#line 956 "parser.y"
+#line 983 "parser.y"
                     {
         if (get(top->table, (yyvsp[-2].str)) == NULL){
             Symbol* s = createSymbol((yyvsp[-2].str));
@@ -2780,11 +2807,11 @@ yyreduce:
             (yyval.decl)->re = 1;
         }
     }
-#line 2784 "y.tab.c"
+#line 2811 "y.tab.c"
     break;
 
   case 57: /* DECLLIST: IDEN '=' EXPR ',' DECLLIST  */
-#line 973 "parser.y"
+#line 1000 "parser.y"
                                  {
         if (get(top->table, (yyvsp[-4].str)) == NULL){
             Symbol* s = createSymbol((yyvsp[-4].str));
@@ -2804,11 +2831,11 @@ yyreduce:
             (yyval.decl)->next = (yyvsp[0].decl);
         }
     }
-#line 2808 "y.tab.c"
+#line 2835 "y.tab.c"
     break;
 
   case 58: /* DECLLIST: IDEN INDEX  */
-#line 992 "parser.y"
+#line 1019 "parser.y"
                  {
         if (get(top->table, (yyvsp[-1].str)) == NULL){
             Symbol* s = createSymbol((yyvsp[-1].str));
@@ -2823,11 +2850,11 @@ yyreduce:
         }
         strcpy((yyval.decl)->lt, "u");
     }
-#line 2827 "y.tab.c"
+#line 2854 "y.tab.c"
     break;
 
   case 59: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}'  */
-#line 1006 "parser.y"
+#line 1033 "parser.y"
                                        {
         if (get(top->table, (yyvsp[-5].str)) == NULL){
             Symbol* s = createSymbol((yyvsp[-5].str));
@@ -2853,11 +2880,11 @@ yyreduce:
             (yyval.decl)->re = 1;
         }
     }
-#line 2857 "y.tab.c"
+#line 2884 "y.tab.c"
     break;
 
   case 60: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}' ',' DECLLIST  */
-#line 1031 "parser.y"
+#line 1058 "parser.y"
                                                     {
         if (get(top->table, (yyvsp[-7].str)) == NULL){
             Symbol* s = createSymbol((yyvsp[-7].str));
@@ -2885,11 +2912,11 @@ yyreduce:
             (yyval.decl)->next = (yyvsp[0].decl);
         }
     }
-#line 2889 "y.tab.c"
+#line 2916 "y.tab.c"
     break;
 
   case 61: /* INDEX: '[' NUM ']'  */
-#line 1059 "parser.y"
+#line 1086 "parser.y"
                    {
         (yyval.type) = createType();
         int arr_size = atoi((yyvsp[-1].str));
@@ -2908,11 +2935,11 @@ yyreduce:
             sprintf(err + strlen(err), "Array index cannot be float\n");
         }
     }
-#line 2912 "y.tab.c"
+#line 2939 "y.tab.c"
     break;
 
   case 62: /* INDEX: '[' NUM ']' INDEX  */
-#line 1077 "parser.y"
+#line 1104 "parser.y"
                         {
         (yyval.type) = createType();
         int arr_size = atoi((yyvsp[-2].str));
@@ -2931,19 +2958,19 @@ yyreduce:
             sprintf(err + strlen(err), "Array index cannot be float\n");
         }
     }
-#line 2935 "y.tab.c"
+#line 2962 "y.tab.c"
     break;
 
   case 63: /* TYPE: BASE_TYPE  */
-#line 1096 "parser.y"
+#line 1123 "parser.y"
                 {
         (yyval.type) = (yyvsp[0].type);
     }
-#line 2943 "y.tab.c"
+#line 2970 "y.tab.c"
     break;
 
   case 64: /* TYPE: CONST BASE_TYPE  */
-#line 1099 "parser.y"
+#line 1126 "parser.y"
                      {
     (yyval.type) = (yyvsp[0].type);
     char base[100];
@@ -2951,119 +2978,119 @@ yyreduce:
     if (base[0] == '@') memmove(base, base+1, strlen(base));
     sprintf((yyval.type)->str, "const %s", base);
 }
-#line 2955 "y.tab.c"
+#line 2982 "y.tab.c"
     break;
 
   case 65: /* BASE_TYPE: INT  */
-#line 1107 "parser.y"
+#line 1134 "parser.y"
                {(yyval.type) = createType(); strcpy((yyval.type)->str, (yyvsp[0].str)); (yyval.type)->size = 4;}
-#line 2961 "y.tab.c"
+#line 2988 "y.tab.c"
     break;
 
   case 66: /* BASE_TYPE: FLOAT  */
-#line 1108 "parser.y"
+#line 1135 "parser.y"
             {(yyval.type) = createType(); strcpy((yyval.type)->str, (yyvsp[0].str)); (yyval.type)->size = 4;}
-#line 2967 "y.tab.c"
+#line 2994 "y.tab.c"
     break;
 
   case 67: /* BASE_TYPE: BOOL  */
-#line 1109 "parser.y"
+#line 1136 "parser.y"
            {(yyval.type) = createType(); strcpy((yyval.type)->str, (yyvsp[0].str)); (yyval.type)->size = 1;}
-#line 2973 "y.tab.c"
+#line 3000 "y.tab.c"
     break;
 
   case 68: /* BASE_TYPE: CHAR  */
-#line 1110 "parser.y"
+#line 1137 "parser.y"
            {(yyval.type) = createType(); strcpy((yyval.type)->str, (yyvsp[0].str)); (yyval.type)->size = 1;}
-#line 2979 "y.tab.c"
+#line 3006 "y.tab.c"
     break;
 
   case 69: /* BASE_TYPE: SHORT  */
-#line 1111 "parser.y"
+#line 1138 "parser.y"
             {(yyval.type) = createType(); strcpy((yyval.type)->str, (yyvsp[0].str)); (yyval.type)->size = 2;}
-#line 2985 "y.tab.c"
+#line 3012 "y.tab.c"
     break;
 
   case 70: /* BASE_TYPE: LONG  */
-#line 1112 "parser.y"
+#line 1139 "parser.y"
            {(yyval.type) = createType(); strcpy((yyval.type)->str, (yyvsp[0].str)); (yyval.type)->size = 8;}
-#line 2991 "y.tab.c"
+#line 3018 "y.tab.c"
     break;
 
   case 71: /* BASE_TYPE: DOUBLE  */
-#line 1113 "parser.y"
+#line 1140 "parser.y"
              {(yyval.type) = createType(); strcpy((yyval.type)->str, (yyvsp[0].str)); (yyval.type)->size = 8;}
-#line 2997 "y.tab.c"
+#line 3024 "y.tab.c"
     break;
 
   case 72: /* BASE_TYPE: VOID  */
-#line 1114 "parser.y"
+#line 1141 "parser.y"
            {(yyval.type) = createType(); strcpy((yyval.type)->str, (yyvsp[0].str)); (yyval.type)->size = 0;}
-#line 3003 "y.tab.c"
+#line 3030 "y.tab.c"
     break;
 
   case 73: /* ASSGN: '='  */
-#line 1116 "parser.y"
+#line 1143 "parser.y"
            { strcpy((yyval.str), "="); }
-#line 3009 "y.tab.c"
+#line 3036 "y.tab.c"
     break;
 
   case 74: /* ASSGN: PASN  */
-#line 1117 "parser.y"
+#line 1144 "parser.y"
            { strcpy((yyval.str), (yyvsp[0].str)); }
-#line 3015 "y.tab.c"
+#line 3042 "y.tab.c"
     break;
 
   case 75: /* ASSGN: MASN  */
-#line 1118 "parser.y"
+#line 1145 "parser.y"
            { strcpy((yyval.str), (yyvsp[0].str)); }
-#line 3021 "y.tab.c"
+#line 3048 "y.tab.c"
     break;
 
   case 76: /* ASSGN: DASN  */
-#line 1119 "parser.y"
+#line 1146 "parser.y"
            { strcpy((yyval.str), (yyvsp[0].str)); }
-#line 3027 "y.tab.c"
+#line 3054 "y.tab.c"
     break;
 
   case 77: /* ASSGN: SASN  */
-#line 1120 "parser.y"
+#line 1147 "parser.y"
            { strcpy((yyval.str), (yyvsp[0].str)); }
-#line 3033 "y.tab.c"
+#line 3060 "y.tab.c"
     break;
 
   case 78: /* ASSGN: BANDASN  */
-#line 1121 "parser.y"
+#line 1148 "parser.y"
               { strcpy((yyval.str), (yyvsp[0].str)); }
-#line 3039 "y.tab.c"
+#line 3066 "y.tab.c"
     break;
 
   case 79: /* ASSGN: BORASN  */
-#line 1122 "parser.y"
+#line 1149 "parser.y"
              { strcpy((yyval.str), (yyvsp[0].str)); }
-#line 3045 "y.tab.c"
+#line 3072 "y.tab.c"
     break;
 
   case 80: /* ASSGN: BXORASN  */
-#line 1123 "parser.y"
+#line 1150 "parser.y"
               { strcpy((yyval.str), (yyvsp[0].str)); }
-#line 3051 "y.tab.c"
+#line 3078 "y.tab.c"
     break;
 
   case 81: /* ASSGN: LSHIFTASN  */
-#line 1124 "parser.y"
+#line 1151 "parser.y"
                 { strcpy((yyval.str), (yyvsp[0].str)); }
-#line 3057 "y.tab.c"
+#line 3084 "y.tab.c"
     break;
 
   case 82: /* ASSGN: RSHIFTASN  */
-#line 1125 "parser.y"
+#line 1152 "parser.y"
                 { strcpy((yyval.str), (yyvsp[0].str)); }
-#line 3063 "y.tab.c"
+#line 3090 "y.tab.c"
     break;
 
   case 95: /* ASNEXPR: EXPR ASSGN EXPR  */
-#line 1140 "parser.y"
+#line 1167 "parser.y"
                          {
         if (!e && (yyvsp[-2].expr)->lv){
             Symbol* sym = env_get(top, (yyvsp[-2].expr)->str);
@@ -3079,11 +3106,11 @@ yyreduce:
             strcat(err, "L value not assignable\n");
         }
     }
-#line 3083 "y.tab.c"
+#line 3110 "y.tab.c"
     break;
 
   case 96: /* EXPR: SIZEOF '(' IDEN ')'  */
-#line 1156 "parser.y"
+#line 1183 "parser.y"
                           {
         if(!e){
             (yyval.expr) = createExpr();
@@ -3133,11 +3160,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3137 "y.tab.c"
+#line 3164 "y.tab.c"
     break;
 
   case 97: /* EXPR: EXPR '+' EXPR  */
-#line 1205 "parser.y"
+#line 1232 "parser.y"
                     {
         if (!e){
             (yyval.expr) = createExpr();
@@ -3153,11 +3180,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3157 "y.tab.c"
+#line 3184 "y.tab.c"
     break;
 
   case 98: /* EXPR: EXPR '-' EXPR  */
-#line 1220 "parser.y"
+#line 1247 "parser.y"
                     {
         if (!e){
             (yyval.expr) = createExpr();
@@ -3173,11 +3200,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3177 "y.tab.c"
+#line 3204 "y.tab.c"
     break;
 
   case 99: /* EXPR: EXPR '*' EXPR  */
-#line 1235 "parser.y"
+#line 1262 "parser.y"
                     {
         if (!e){
             (yyval.expr) = createExpr();
@@ -3193,11 +3220,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3197 "y.tab.c"
+#line 3224 "y.tab.c"
     break;
 
   case 100: /* EXPR: EXPR '/' EXPR  */
-#line 1250 "parser.y"
+#line 1277 "parser.y"
                     {
         if (!e){
             // Check for division by zero for numeric constants
@@ -3222,11 +3249,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3226 "y.tab.c"
+#line 3253 "y.tab.c"
     break;
 
   case 101: /* EXPR: EXPR '%' EXPR  */
-#line 1274 "parser.y"
+#line 1301 "parser.y"
                     {
         if (!e){
             if (isFloatingType((yyvsp[-2].expr)->type) || isFloatingType((yyvsp[0].expr)->type)){
@@ -3256,11 +3283,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3260 "y.tab.c"
+#line 3287 "y.tab.c"
     break;
 
   case 102: /* EXPR: '(' EXPR ')'  */
-#line 1303 "parser.y"
+#line 1330 "parser.y"
                    {
         if (!e){
             (yyval.expr) = createExpr();
@@ -3274,11 +3301,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3278 "y.tab.c"
+#line 3305 "y.tab.c"
     break;
 
   case 103: /* EXPR: EXPR BAND EXPR  */
-#line 1316 "parser.y"
+#line 1343 "parser.y"
                      {
         if (!e){ 
             if (isFloatingType((yyvsp[-2].expr)->type) || isFloatingType((yyvsp[0].expr)->type)){
@@ -3298,11 +3325,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3302 "y.tab.c"
+#line 3329 "y.tab.c"
     break;
 
   case 104: /* EXPR: EXPR BOR EXPR  */
-#line 1335 "parser.y"
+#line 1362 "parser.y"
                     {
         if (!e){ 
             if (isFloatingType((yyvsp[-2].expr)->type) || isFloatingType((yyvsp[0].expr)->type)){
@@ -3322,11 +3349,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3326 "y.tab.c"
+#line 3353 "y.tab.c"
     break;
 
   case 105: /* EXPR: EXPR BXOR EXPR  */
-#line 1354 "parser.y"
+#line 1381 "parser.y"
                      {
         if (!e){ 
             if (isFloatingType((yyvsp[-2].expr)->type) || isFloatingType((yyvsp[0].expr)->type)){
@@ -3346,11 +3373,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3350 "y.tab.c"
+#line 3377 "y.tab.c"
     break;
 
   case 106: /* EXPR: EXPR LSHIFT EXPR  */
-#line 1373 "parser.y"
+#line 1400 "parser.y"
                        {
         if (!e){ 
             if (isFloatingType((yyvsp[-2].expr)->type) || isFloatingType((yyvsp[0].expr)->type)){
@@ -3368,11 +3395,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3372 "y.tab.c"
+#line 3399 "y.tab.c"
     break;
 
   case 107: /* EXPR: EXPR RSHIFT EXPR  */
-#line 1390 "parser.y"
+#line 1417 "parser.y"
                        {
         if (!e){ 
             if (isFloatingType((yyvsp[-2].expr)->type) || isFloatingType((yyvsp[0].expr)->type)){
@@ -3390,11 +3417,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3394 "y.tab.c"
+#line 3421 "y.tab.c"
     break;
 
   case 108: /* EXPR: BNOT EXPR  */
-#line 1407 "parser.y"
+#line 1434 "parser.y"
                 {
         if (!e){
             if (isFloatingType((yyvsp[0].expr)->type)){
@@ -3412,23 +3439,23 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3416 "y.tab.c"
+#line 3443 "y.tab.c"
     break;
 
   case 109: /* EXPR: FUNCALL  */
-#line 1424 "parser.y"
+#line 1451 "parser.y"
               {(yyval.expr) = (yyvsp[0].expr);}
-#line 3422 "y.tab.c"
+#line 3449 "y.tab.c"
     break;
 
   case 110: /* EXPR: TERM  */
-#line 1425 "parser.y"
+#line 1452 "parser.y"
            {(yyval.expr) = (yyvsp[0].expr);}
-#line 3428 "y.tab.c"
+#line 3455 "y.tab.c"
     break;
 
   case 111: /* FUNCALL: CALL IDEN '(' ARGLIST ')'  */
-#line 1427 "parser.y"
+#line 1454 "parser.y"
                                    {
         if(!e){
             Function* f = findFunction((yyvsp[-3].str));
@@ -3491,11 +3518,11 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3495 "y.tab.c"
+#line 3522 "y.tab.c"
     break;
 
   case 112: /* FUNCALL: CALL IDEN '(' ')'  */
-#line 1489 "parser.y"
+#line 1516 "parser.y"
                         {
         if(!e){
             Function* f = findFunction((yyvsp[-2].str));
@@ -3532,33 +3559,33 @@ yyreduce:
             (yyval.expr)->lv = 0;
         }
     }
-#line 3536 "y.tab.c"
+#line 3563 "y.tab.c"
     break;
 
   case 113: /* ARGLIST: EXPR ',' ARGLIST  */
-#line 1526 "parser.y"
+#line 1553 "parser.y"
                           {
         if(!e){
             (yyval.expr) = (yyvsp[-2].expr);
             (yyval.expr)->next = (yyvsp[0].expr);
         }
     }
-#line 3547 "y.tab.c"
+#line 3574 "y.tab.c"
     break;
 
   case 114: /* ARGLIST: EXPR  */
-#line 1532 "parser.y"
+#line 1559 "parser.y"
            {
         if(!e){
             (yyval.expr) = (yyvsp[0].expr);
             (yyval.expr)->next = NULL;
         }
     }
-#line 3558 "y.tab.c"
+#line 3585 "y.tab.c"
     break;
 
   case 115: /* TERM: STRING  */
-#line 1548 "parser.y"
+#line 1575 "parser.y"
              {
         (yyval.expr) = createExpr();
         strcpy((yyval.expr)->str, (yyvsp[0].str));
@@ -3566,11 +3593,11 @@ yyreduce:
         (yyval.expr)->str_len = strlen((yyvsp[0].str)) - 2 + 1;
         (yyval.expr)->lv = 0;
     }
-#line 3570 "y.tab.c"
+#line 3597 "y.tab.c"
     break;
 
   case 116: /* TERM: '(' TYPE ')' EXPR  */
-#line 1555 "parser.y"
+#line 1582 "parser.y"
                         {
     if(!e){
         if((yyvsp[0].expr) == NULL) {
@@ -3591,11 +3618,11 @@ yyreduce:
         (yyval.expr)->lv = 0;
     }
 }
-#line 3595 "y.tab.c"
+#line 3622 "y.tab.c"
     break;
 
   case 117: /* TERM: UN INCRDECR IDEN  */
-#line 1575 "parser.y"
+#line 1602 "parser.y"
                        {
         (yyval.expr) = createExpr();
         Env* temp = top;
@@ -3623,11 +3650,11 @@ yyreduce:
         sprintf((yyval.expr)->str, "%s%s%s", (yyvsp[-2].str), (yyvsp[-1].str), (yyvsp[0].str));
         (yyval.expr)->lv = 0;
     }
-#line 3627 "y.tab.c"
+#line 3654 "y.tab.c"
     break;
 
   case 118: /* TERM: UN IDEN INCRDECR  */
-#line 1602 "parser.y"
+#line 1629 "parser.y"
                        {
         (yyval.expr) = createExpr();
         Env* temp = top;
@@ -3655,11 +3682,11 @@ yyreduce:
         sprintf((yyval.expr)->str, "%s%s%s", (yyvsp[-2].str), (yyvsp[-1].str), (yyvsp[0].str));
         (yyval.expr)->lv = 0;
     }
-#line 3659 "y.tab.c"
+#line 3686 "y.tab.c"
     break;
 
   case 119: /* TERM: UN NUM  */
-#line 1629 "parser.y"
+#line 1656 "parser.y"
              {
     (yyval.expr) = createExpr();
     sprintf((yyval.expr)->str, "%s%s", (yyvsp[-1].str), (yyvsp[0].str));
@@ -3687,11 +3714,11 @@ yyreduce:
     }
     (yyval.expr)->lv = 0;
 }
-#line 3691 "y.tab.c"
+#line 3718 "y.tab.c"
     break;
 
   case 120: /* TERM: UN IDEN '[' EXPR ']'  */
-#line 1656 "parser.y"
+#line 1683 "parser.y"
                            {
     (yyval.expr) = createExpr();
     Env* temp = top;
@@ -3742,11 +3769,11 @@ yyreduce:
     sprintf((yyval.expr)->str, "%s%s[%s]", (yyvsp[-4].str), (yyvsp[-3].str), (yyvsp[-1].expr)->str);
     (yyval.expr)->lv = 1;
 }
-#line 3746 "y.tab.c"
+#line 3773 "y.tab.c"
     break;
 
   case 121: /* TERM: UN IDEN '[' EXPR ']' '[' EXPR ']'  */
-#line 1706 "parser.y"
+#line 1733 "parser.y"
                                     {
     (yyval.expr) = createExpr();
     Env* temp = top;
@@ -3796,11 +3823,11 @@ yyreduce:
     sprintf((yyval.expr)->str, "%s%s[%s][%s]", (yyvsp[-7].str), (yyvsp[-6].str), (yyvsp[-4].expr)->str, (yyvsp[-1].expr)->str);
     (yyval.expr)->lv = 1;
 }
-#line 3800 "y.tab.c"
+#line 3827 "y.tab.c"
     break;
 
   case 122: /* TERM: UN IDEN  */
-#line 1755 "parser.y"
+#line 1782 "parser.y"
               {
         (yyval.expr) = createExpr();
         Env* temp = top;
@@ -3821,22 +3848,22 @@ yyreduce:
         sprintf((yyval.expr)->str, "%s%s", (yyvsp[-1].str), (yyvsp[0].str));
         (yyval.expr)->lv = 1;
     }
-#line 3825 "y.tab.c"
+#line 3852 "y.tab.c"
     break;
 
   case 123: /* TERM: UN CHARR  */
-#line 1775 "parser.y"
+#line 1802 "parser.y"
                {
         (yyval.expr) = createExpr();
         sprintf((yyval.expr)->str, "%s%s", (yyvsp[-1].str), (yyvsp[0].str));
         strcpy((yyval.expr)->type, "char");
         (yyval.expr)->lv = 0;
     }
-#line 3836 "y.tab.c"
+#line 3863 "y.tab.c"
     break;
 
   case 124: /* TERM: UN INC NUM  */
-#line 1781 "parser.y"
+#line 1808 "parser.y"
                  {
         e = 1;
         sprintf(err + strlen(err), "Cannot increment a constant value\n");
@@ -3845,11 +3872,11 @@ yyreduce:
         strcpy((yyval.expr)->type, "int");
         (yyval.expr)->lv = 0;
     }
-#line 3849 "y.tab.c"
+#line 3876 "y.tab.c"
     break;
 
   case 125: /* TERM: UN DEC NUM  */
-#line 1789 "parser.y"
+#line 1816 "parser.y"
                  {
         e = 1;
         sprintf(err + strlen(err), "Cannot decrement a constant value\n");
@@ -3858,11 +3885,11 @@ yyreduce:
         strcpy((yyval.expr)->type, "int");
         (yyval.expr)->lv = 0;
     }
-#line 3862 "y.tab.c"
+#line 3889 "y.tab.c"
     break;
 
   case 126: /* TERM: UN NUM INC  */
-#line 1797 "parser.y"
+#line 1824 "parser.y"
                  {
         e = 1;
         sprintf(err + strlen(err), "Cannot increment a constant value\n");
@@ -3871,11 +3898,11 @@ yyreduce:
         strcpy((yyval.expr)->type, "int");
         (yyval.expr)->lv = 0;
     }
-#line 3875 "y.tab.c"
+#line 3902 "y.tab.c"
     break;
 
   case 127: /* TERM: UN NUM DEC  */
-#line 1805 "parser.y"
+#line 1832 "parser.y"
                  {
         e = 1;
         sprintf(err + strlen(err), "Cannot decrement a constant value\n");
@@ -3884,41 +3911,41 @@ yyreduce:
         strcpy((yyval.expr)->type, "int");
         (yyval.expr)->lv = 0;
     }
-#line 3888 "y.tab.c"
+#line 3915 "y.tab.c"
     break;
 
   case 128: /* INCRDECR: INC  */
-#line 1814 "parser.y"
+#line 1841 "parser.y"
               { strcpy((yyval.str), (yyvsp[0].str)); }
-#line 3894 "y.tab.c"
+#line 3921 "y.tab.c"
     break;
 
   case 129: /* INCRDECR: DEC  */
-#line 1815 "parser.y"
+#line 1842 "parser.y"
           { strcpy((yyval.str), (yyvsp[0].str)); }
-#line 3900 "y.tab.c"
+#line 3927 "y.tab.c"
     break;
 
   case 130: /* UN: '-'  */
-#line 1817 "parser.y"
+#line 1844 "parser.y"
         { strcpy((yyval.str), "-"); }
-#line 3906 "y.tab.c"
+#line 3933 "y.tab.c"
     break;
 
   case 131: /* UN: '+'  */
-#line 1818 "parser.y"
+#line 1845 "parser.y"
           { strcpy((yyval.str), "+"); }
-#line 3912 "y.tab.c"
+#line 3939 "y.tab.c"
     break;
 
   case 132: /* UN: %empty  */
-#line 1819 "parser.y"
+#line 1846 "parser.y"
       { strcpy((yyval.str), ""); }
-#line 3918 "y.tab.c"
+#line 3945 "y.tab.c"
     break;
 
 
-#line 3922 "y.tab.c"
+#line 3949 "y.tab.c"
 
       default: break;
     }
@@ -4111,7 +4138,7 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 1821 "parser.y"
+#line 1848 "parser.y"
 
 
 void yyerror(char* msg) {

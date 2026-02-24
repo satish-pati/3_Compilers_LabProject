@@ -227,7 +227,11 @@ void print_table(Table* table) {
     for (int i = 0; i < table->size; i++) {
         TableEntry* entry = table->buckets[i];
         while (entry) {
-            printf("%d    %s                  %s\n", entry->value->offset, entry->value->name, entry->value->type);
+                        printf("%-10d %-25s %-20s\n", 
+                entry->value->offset, 
+                entry->value->name, 
+                entry->value->type);
+
             entry = entry->next;
         }
     }
@@ -237,8 +241,8 @@ void print_all_envs() {
     printf("\n=== Symbol Table (Storage Layout) ===\n");
     for (int i = 0; i < env_count; i++) {
         printf("\nScope %d:\n", i);
-        printf("Offset    Name                  Type\n");
-        printf("-----------------------------------------------\n");
+        printf("%-10s %-25s %-20s\n", "Offset", "Name", "Type");
+printf("-----------------------------------------------\n");
         print_table(envs[i]->table);
     }
     printf("======================================\n");
@@ -392,7 +396,7 @@ int isTypeCompatible(char* expected, char* actual) {
     char* act_base = getBaseType(act_clean);
     
     // float/double compatible with each other
-    if((strcmp(exp_base, "float") == 0 || strcmp(exp_base, "double") == 0) &&
+   /* if((strcmp(exp_base, "float") == 0 || strcmp(exp_base, "double") == 0) &&
        (strcmp(act_base, "float") == 0 || strcmp(act_base, "double") == 0)) {
         return 1;
     }
@@ -413,7 +417,25 @@ int isTypeCompatible(char* expected, char* actual) {
         }
     }
     
+    return strcmp(exp_base, act_base) == 0;*/
+
+    // If one is float/double and other is not → incompatible
+    if (isFloatingType(exp_base) != isFloatingType(act_base)) {
+        return 0;  // int vs float/double = incompatible
+    }
+
+    // float/double compatible with each other
+    if (isFloatingType(exp_base) && isFloatingType(act_base)) return 1;
+
+    // Both integer types — allow widening
+    int exp_rank = getTypeRank(exp_base);
+    int act_rank = getTypeRank(act_base);
+    if (exp_rank > 0 && act_rank > 0) return 1;
+
     return strcmp(exp_base, act_base) == 0;
+
+
+    
 }
 
 %}
@@ -757,15 +779,20 @@ CASE_EXPR: NUM {
 DECLSTATEMENT: TYPE DECLLIST '$' {
         struct Decl* temp = $2;
         while(temp){
-            if (temp->re){
-                e = 1;
-                Symbol* s = get(top->table, temp->key);
-                if (strcmp(s->type, $1->str) == 0){
-                    sprintf(err + strlen(err), "Redeclaration of %s\n", s->name);
-                } else {
-                    sprintf(err + strlen(err), "Conflicting types for %s\n", s->name);
-                }
-            }
+           if (temp->re){
+    e = 1;
+    Symbol* s = get(top->table, temp->key);
+    char* decl_type = $1->str;
+    if (decl_type[0] == '@') decl_type++;  // strip @
+    
+    if (strcmp(s->type, decl_type) == 0){
+        sprintf(err + strlen(err), "Redeclaration of %s\n", s->name);
+    } else {
+        sprintf(err + strlen(err), "Conflicting types for %s\n", s->name);
+    }
+}
+
+
             
             if (strcmp(temp->type, "") == 0){
                 Symbol* s = get(top->table, temp->key);
