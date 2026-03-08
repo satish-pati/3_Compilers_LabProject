@@ -54,64 +54,65 @@ extern int yydebug;
     YYEOF = 0,                     /* "end of file"  */
     YYerror = 256,                 /* error  */
     YYUNDEF = 257,                 /* "invalid token"  */
-    IDEN = 258,                    /* IDEN  */
-    NUM = 259,                     /* NUM  */
-    INT = 260,                     /* INT  */
-    FLOAT = 261,                   /* FLOAT  */
-    CHAR = 262,                    /* CHAR  */
-    DOUBLE = 263,                  /* DOUBLE  */
-    SHORT = 264,                   /* SHORT  */
-    LONG = 265,                    /* LONG  */
-    VOID = 266,                    /* VOID  */
-    BOOL = 267,                    /* BOOL  */
-    CONST = 268,                   /* CONST  */
-    CHARR = 269,                   /* CHARR  */
-    STRING = 270,                  /* STRING  */
-    PASN = 271,                    /* PASN  */
-    MASN = 272,                    /* MASN  */
-    DASN = 273,                    /* DASN  */
-    SASN = 274,                    /* SASN  */
-    INC = 275,                     /* INC  */
-    DEC = 276,                     /* DEC  */
-    BAND = 277,                    /* BAND  */
-    BOR = 278,                     /* BOR  */
-    BXOR = 279,                    /* BXOR  */
-    BNOT = 280,                    /* BNOT  */
-    LSHIFT = 281,                  /* LSHIFT  */
-    RSHIFT = 282,                  /* RSHIFT  */
-    BANDASN = 283,                 /* BANDASN  */
-    BORASN = 284,                  /* BORASN  */
-    BXORASN = 285,                 /* BXORASN  */
-    LSHIFTASN = 286,               /* LSHIFTASN  */
-    RSHIFTASN = 287,               /* RSHIFTASN  */
-    DEFAULT = 288,                 /* DEFAULT  */
-    BREAK = 289,                   /* BREAK  */
-    CONTINUE = 290,                /* CONTINUE  */
-    AND = 291,                     /* AND  */
-    OR = 292,                      /* OR  */
-    EQ = 293,                      /* EQ  */
-    NE = 294,                      /* NE  */
-    LT = 295,                      /* LT  */
-    GT = 296,                      /* GT  */
-    LE = 297,                      /* LE  */
-    GE = 298,                      /* GE  */
-    TR = 299,                      /* TR  */
-    FL = 300,                      /* FL  */
-    IF = 301,                      /* IF  */
-    ELSE = 302,                    /* ELSE  */
-    FUNCTION = 303,                /* FUNCTION  */
-    RETURN = 304,                  /* RETURN  */
-    CALL = 305,                    /* CALL  */
-    PRINT = 306,                   /* PRINT  */
-    INPUT = 307,                   /* INPUT  */
-    SIZEOF = 308,                  /* SIZEOF  */
-    WHILE = 309,                   /* WHILE  */
-    DO = 310,                      /* DO  */
-    FOR = 311,                     /* FOR  */
-    SWITCH = 312,                  /* SWITCH  */
-    CASE = 313,                    /* CASE  */
-    MEOF = 314,                    /* MEOF  */
-    UMINUS = 315                   /* UMINUS  */
+    UMINUS = 258,                  /* UMINUS  */
+    BREAK = 259,                   /* BREAK  */
+    CONTINUE = 260,                /* CONTINUE  */
+    FOR = 261,                     /* FOR  */
+    DO = 262,                      /* DO  */
+    IDEN = 263,                    /* IDEN  */
+    NUM = 264,                     /* NUM  */
+    PASN = 265,                    /* PASN  */
+    MASN = 266,                    /* MASN  */
+    DASN = 267,                    /* DASN  */
+    SASN = 268,                    /* SASN  */
+    INC = 269,                     /* INC  */
+    DEC = 270,                     /* DEC  */
+    LT = 271,                      /* LT  */
+    GT = 272,                      /* GT  */
+    LE = 273,                      /* LE  */
+    GE = 274,                      /* GE  */
+    NE = 275,                      /* NE  */
+    OR = 276,                      /* OR  */
+    AND = 277,                     /* AND  */
+    EQ = 278,                      /* EQ  */
+    IF = 279,                      /* IF  */
+    ELSE = 280,                    /* ELSE  */
+    TR = 281,                      /* TR  */
+    FL = 282,                      /* FL  */
+    WHILE = 283,                   /* WHILE  */
+    INT = 284,                     /* INT  */
+    FLOAT = 285,                   /* FLOAT  */
+    CHAR = 286,                    /* CHAR  */
+    CHARR = 287,                   /* CHARR  */
+    MEOF = 288,                    /* MEOF  */
+    CONST = 289,                   /* CONST  */
+    SWITCH = 290,                  /* SWITCH  */
+    CASE = 291,                    /* CASE  */
+    DEFAULT = 292,                 /* DEFAULT  */
+    GOTO = 293,                    /* GOTO  */
+    STRING = 294,                  /* STRING  */
+    BOOL = 295,                    /* BOOL  */
+    PRINT = 296,                   /* PRINT  */
+    INPUT = 297,                   /* INPUT  */
+    SIZEOF = 298,                  /* SIZEOF  */
+    BANDASN = 299,                 /* BANDASN  */
+    BORASN = 300,                  /* BORASN  */
+    BXORASN = 301,                 /* BXORASN  */
+    LSHIFTASN = 302,               /* LSHIFTASN  */
+    RSHIFTASN = 303,               /* RSHIFTASN  */
+    SHORT = 304,                   /* SHORT  */
+    LONG = 305,                    /* LONG  */
+    DOUBLE = 306,                  /* DOUBLE  */
+    VOID = 307,                    /* VOID  */
+    BAND = 308,                    /* BAND  */
+    BOR = 309,                     /* BOR  */
+    BXOR = 310,                    /* BXOR  */
+    BNOT = 311,                    /* BNOT  */
+    LSHIFT = 312,                  /* LSHIFT  */
+    RSHIFT = 313,                  /* RSHIFT  */
+    FUNCTION = 314,                /* FUNCTION  */
+    RETURN = 315,                  /* RETURN  */
+    CALL = 316                     /* CALL  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -120,77 +121,81 @@ extern int yydebug;
 #define YYEOF 0
 #define YYerror 256
 #define YYUNDEF 257
-#define IDEN 258
-#define NUM 259
-#define INT 260
-#define FLOAT 261
-#define CHAR 262
-#define DOUBLE 263
-#define SHORT 264
-#define LONG 265
-#define VOID 266
-#define BOOL 267
-#define CONST 268
-#define CHARR 269
-#define STRING 270
-#define PASN 271
-#define MASN 272
-#define DASN 273
-#define SASN 274
-#define INC 275
-#define DEC 276
-#define BAND 277
-#define BOR 278
-#define BXOR 279
-#define BNOT 280
-#define LSHIFT 281
-#define RSHIFT 282
-#define BANDASN 283
-#define BORASN 284
-#define BXORASN 285
-#define LSHIFTASN 286
-#define RSHIFTASN 287
-#define DEFAULT 288
-#define BREAK 289
-#define CONTINUE 290
-#define AND 291
-#define OR 292
-#define EQ 293
-#define NE 294
-#define LT 295
-#define GT 296
-#define LE 297
-#define GE 298
-#define TR 299
-#define FL 300
-#define IF 301
-#define ELSE 302
-#define FUNCTION 303
-#define RETURN 304
-#define CALL 305
-#define PRINT 306
-#define INPUT 307
-#define SIZEOF 308
-#define WHILE 309
-#define DO 310
-#define FOR 311
-#define SWITCH 312
-#define CASE 313
-#define MEOF 314
-#define UMINUS 315
+#define UMINUS 258
+#define BREAK 259
+#define CONTINUE 260
+#define FOR 261
+#define DO 262
+#define IDEN 263
+#define NUM 264
+#define PASN 265
+#define MASN 266
+#define DASN 267
+#define SASN 268
+#define INC 269
+#define DEC 270
+#define LT 271
+#define GT 272
+#define LE 273
+#define GE 274
+#define NE 275
+#define OR 276
+#define AND 277
+#define EQ 278
+#define IF 279
+#define ELSE 280
+#define TR 281
+#define FL 282
+#define WHILE 283
+#define INT 284
+#define FLOAT 285
+#define CHAR 286
+#define CHARR 287
+#define MEOF 288
+#define CONST 289
+#define SWITCH 290
+#define CASE 291
+#define DEFAULT 292
+#define GOTO 293
+#define STRING 294
+#define BOOL 295
+#define PRINT 296
+#define INPUT 297
+#define SIZEOF 298
+#define BANDASN 299
+#define BORASN 300
+#define BXORASN 301
+#define LSHIFTASN 302
+#define RSHIFTASN 303
+#define SHORT 304
+#define LONG 305
+#define DOUBLE 306
+#define VOID 307
+#define BAND 308
+#define BOR 309
+#define BXOR 310
+#define BNOT 311
+#define LSHIFT 312
+#define RSHIFT 313
+#define FUNCTION 314
+#define RETURN 315
+#define CALL 316
 
 /* Value type.  */
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 443 "parser.y"
+#line 986 "parser.y"
 
-    char str[1000];
-    struct Expr* expr;
-    struct Type* type;
-    struct Decl* decl;
+        char str[1000];
+        struct BoolNode* b;
+        struct Expr *expr;
+        int addr;
+        struct Type* type;
+        struct Decl* decl;
+        struct Subscript* sub;
 
-#line 194 "y.tab.h"
+#line 199 "y.tab.h"
 
 };
 typedef union YYSTYPE YYSTYPE;

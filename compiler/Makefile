@@ -17,3 +17,5 @@ parser: parser.y lexer.l
 clean:
 	rm -f lex.yy.c y.tab.c y.tab.h lexer_test parser *.o
 
+test-parser: parser
+	./parser $(FILE)
