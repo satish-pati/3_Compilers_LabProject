@@ -1,0 +1,757 @@
+# sem errors 
+1. L-VALUE ERROR — Cannot assign to non-variable (expression)
+
+@int x is 2$
+5 is x$
+
+
+2. SCOPES — inner scope can access outer variables
+
+@int global is 100$
+begin
+    @int local1 is 10$
+    begin
+        @int local2 is 20$
+        @int sum is global + local1 + local2$
+    end
+end
+
+
+3. TYPE CONVERSION — implicit promotion
+
+@int i is 42$
+@float f is 3.14$
+@char c is 'A'$
+@float result1 is i + f$
+@int result2 is i + c$
+@double d is f * 2$
+
+
+
+
+
+4. ERROR — Redeclaration of variable in same scope
+
+@int x is 10$
+@int x is 20$
+@float x is 3.14$
+
+
+5. ERROR — Undeclared variable used
+
+@int y is unknown_var + 5$
+
+
+6. ERROR — Modifying a const variable
+
+fixed @int MAX is 100$
+MAX is 200$
+++MAX$
+
+
+7. ERROR — Invalid types for %   (float/double)
+
+@int x is 10$
+@float y is 20.5$
+@int z is x % y$
+
+# for bitwise (float/double)
+
+@int x is 10$
+@float y is 20.5$
+@int w is x bitand y$
+
+
+
+
+
+8. ERROR — break/continue outside loop
+
+# break outside 
+exit$
+
+9.# continue outside 
+skip$
+
+
+10. ERROR — Array index out of bounds + too many initializers
+
+@int arr[3] is {1, 2, 3, 4, 5}$
+
+
+
+11. ERROR — Division by zero
+
+@int x is 10 / 0$
+
+
+12. ERROR — Invalid array size (zero or negative)
+
+@int bad_array[0]$
+@int neg_array[-5]$
+
+
+13. ERROR — Duplicate parameter names in function
+
+func @int test(@int x, @int x) begin
+    ret x$
+end
+
+
+
+
+14. ERROR — continue inside switch (only break is allowed)
+
+@int x is 0$
+choose (x) begin
+    option 1: skip$
+    def: exit$
+end
+
+
+15. ERROR — return statement outside any function
+
+@int y is 5$
+ret y$
+
+16 . ERROR - inc/dec on numeric constants
+++5 $
+5++ $
+
+17. array -out of bounds 
+@int arr[2] $
+arr[3]=2 $
+
+
+18. Shadowing — inner scope redeclares outer variable (should be allowed)
+@int x is 10$
+begin
+    @int x is 20$
+end
+
+# newly added checks - demo 3 
+
+19. Input l-value check (should error)
+@int x is 5$
+input(x + 1)$
+
+
+20. ERROR — Function called with wrong number of arguments
+
+func @int test(@int a) begin
+    ret a$
+end
+
+@int x is call test()$
+
+
+21. Function redeclaration (same name twice)
+func @int foo() begin
+    ret 1$
+end
+func @int foo() begin
+    ret 2$
+end
+
+22. Calling undeclared function
+@int x is call unknown()$
+
+23. ERROR — void function returning a value
+
+func @void bar() begin
+    ret 5$
+end
+
+24. Void function call used in expression (should error)
+func @void greet() begin
+    @int x is 1$
+end
+@int z = call greet()$
+
+
+
+#25 typecov — Return type mismatch (int function returns float--type conv happens )
+
+func @int getValue() begin
+    ret 3.2$
+end
+
+
+
+
+# range and type checks and promotions/coercion 
+
+# TEST 1: Range Overflow for char type [-128, 127]
+    @char c1 is 100$
+    @char c2 is 127$
+    @char c3 is 300$
+    @char c4 is -200$
+    show(c1)$
+
+# TEST 2: Range Overflow for short type  [-32768, 32767]
+    @short s1 is 30000$
+    @short s2 is 32767$
+    @short s3 is 40000$
+    @short s4 is -40000$
+
+# TEST 3: Range Overflow for int type  [-2147483648, 2147483647]
+    @int i1 is 1000000$
+    @int i2 is 2147483647$
+    @int i3 is 3000000000$
+    @int i4 is -2200000000$
+
+
+
+
+# float overflow 
+
+  @float f is 9999999999999999999999999999999999999999.0$
+
+
+
+# TEST 4: Narrowing Conversions
+    @long big is 9999999999$
+    @int i is big$
+    @int medium is 70000$
+    @short s is medium$
+    @short small is 300$
+    @char c is small$
+
+
+# TEST 5: Float to Integer Conversions
+    @float f is 3.14159$
+    @int i1 is f$
+    @double d is 2.71828$
+    @int i2 is d$
+
+# TEST 6: Integer to Float Conversions
+    @int i is 42$
+    @float f1 is i$
+    @long big is 12345678901$
+    @float f2 is big$
+    @int x is 100$
+    @double d is x$
+
+# TEST 7: Mixed Type Arithmetic
+    @int a is 10$
+    @float b is 3.5$
+    @float result1 is a + b$
+    @short s is 5$
+    @long l is 1000$
+    @long result2 is s * l$
+    @char c is 2$
+    @int i is 100$
+    @int result3 is c + i$
+
+# TEST 8: Function Return Type Compatibility
+func @float divide(@float f, @int a, @int b) begin
+    ret a / b$
+end
+
+func @int truncate(@int i, @float f) begin
+    ret f$
+end
+
+# TEST 9: Function Argument Type Compatibility
+func @void printFloat(@float x) begin
+    show(x)$
+end
+
+call printFloat(42)$
+@int i is 10$
+call printFloat(i)$
+
+# passing float and param int
+func @void printFloat(@int x) begin
+    show(x)$
+end
+
+call printFloat(42.5)$
+@int i is 10$
+call printFloat(i)$
+
+
+# TEST 10: Assignment with narrowing
+    @float f is 3.14$
+    @int i is f$
+    @double d is 2.71$
+    @float f2 is d$
+    @int big is 100000$
+    @short s is big$
+    @long huge is 9999999999$
+    @int x is huge$
+
+# TEST 11: Compound Assignment Operators
+    @int x is 10$
+    @float y is 3.5$
+    x += y$
+    y *= 2$
+
+# TEST 12: Array Initialization with Type Mismatch
+    @int arr1[5] is { 1, 2, 3, 4, 5 }$
+    @char arr2[5] is { 65, 66, 67, 300, 69 }$
+    @short arr3[3] is { 100, 40000, 300 }$
+    @float arr4[3] is { 1.0, 2, 3.14 }$
+
+# TEST 13: Extreme Values
+    @char max_char is 127$
+    @char min_char is -128$
+    @char over_char is 128$
+    @short max_short is 32767$
+    @short min_short is -32768$
+    @short over_short is 32768$
+    @int max_int is 2147483647$
+    @int min_int is -2147483648$
+
+# TEST 14: Const Type with Conversions
+    fixed @int ci is 100$
+    @float f is ci$
+    fixed @float cf is 3.14$
+    @int i is cf$
+
+# TEST 15: Nested Expressions with Multiple Conversions
+    @char c is 10$
+    @short s is 20$
+    @int i is 30$
+    @long l is 40$
+    @float f is 50.5$
+    @float result is c + s * i - l / 2 + f$
+
+
+
+
+'''
+float-[1.1754944 × 10⁻³⁸,3.4028235 × 10³⁸] 
+double-[ 2.2250738585072014 × 10⁻³⁰⁸,1.7976931348623157 × 10³⁰⁸]
+'''
+
+
+
+
+# TAC 
+
+# int 
+@int x is 10 $
+@int y is 3 $
+@int z is x + y $
+show(z)$
+
+# 2 float
+@float a is 3.14 $
+@float b is 2.0 $
+@float c is a + b $
+show(c)$
+
+#3 double 
+@double a is 9.99 $
+@double b is 0.01 $
+@double c is a + b $
+show(c)$
+
+#4 short
+@short s is 200 $
+@short t is 56 $
+@short u is s + t $
+show(u)$
+
+# 5 long 
+@long big is 1000000 $
+@long bigger is big * 2 $
+show(bigger)$
+
+#6 char
+@char c is 'A' $
+show(c)$
+ 
+
+# 7 const 
+fixed @int MAX is 100 $
+@int x is MAX $
+show(x)$
+
+#8 if else
+
+@int a is 10 $
+@int b is 20 $
+@int bigger is 0 $
+if(a > b)
+begin
+    bigger is a $
+end
+else
+begin
+    bigger is b $
+end
+show(bigger)$
+
+#9 when
+@int score is 85 $
+@int pass is 0 $
+when(score >= 60)
+begin
+    pass is 1 $
+end
+otherwise
+begin
+    pass is 0 $
+end
+show(pass)$
+
+# 10 test10_while
+
+@int n is 1 $
+loop(n <= 5)
+begin
+    n++ $
+end
+show(n)$
+
+# 11 for
+
+@int i is 0 $
+@int sum is 0 $
+iterate(i is 0 $ i < 5 $ i=i+1)
+begin
+    sum += i $
+end
+show(sum)$
+
+# 12 do while
+@int x is 0 $
+repeat
+begin
+    x is x + 1 $
+end loop(x < 4)$
+show(x)$
+
+# 13 switch
+
+@int day is 3 $
+@int result is 0 $
+choose(day)
+begin
+    option 1 : result is 10 $ exit $
+    option 2 : result is 20 $ exit $
+    option 3 : result is 30 $ exit $
+    def      : result is 99 $ 
+end
+show(result)$
+
+
+# 14 break
+
+@int i is 0 $
+loop(i < 10)
+begin
+    if(i == 5)
+    begin
+        exit $
+    end
+    i++ $
+end
+show(i)$
+
+# 15 skip
+
+@int i is 0 $
+@int sum is 0 $
+iterate(i is 0 $ i < 6 $ i=i+1)
+begin
+    if(i == 3)
+    begin
+        skip $
+    end
+    show(i)$
+    sum += i $
+end
+show(sum)$
+
+
+# 16 arth expr
+@int a is 10 $
+@int b is 3 $
+@int r1 is a + b $
+@int r2 is a - b $
+@int r3 is a * b $
+@int r4 is a / b $
+@int r5 is a % b $
+show(r1)$
+show(r2)$
+show(r3)$
+show(r4)$
+show(r5)$
+
+#17  comp assign
+@int x is 10 $
+x += 5 $
+show(x)$
+x -= 3 $
+show(x)$
+x *= 2 $
+show(x)$
+x /= 4 $
+show(x)$
+
+# 18 bitwise
+@int a is 12 $
+@int b is 10 $
+@int r1 is a bitand b $
+@int r2 is a bitor b $
+@int r3 is a bitxor b $
+@int r4 is bitnot a $
+@int r5 is a lshift 1 $
+@int r6 is a rshift 1 $
+show(r1)$
+show(r2)$
+show(r3)$
+show(r4)$
+show(r5)$
+show(r6)$
+
+# 19 bit-cmp assign
+
+@int x is 12 $
+x bitand= 10 $
+show(x)$
+@int y is 8 $
+y bitor= 3 $
+show(y)$
+@int z is 15 $
+z bitxor= 5 $
+show(z)$
+@int w is 4 $
+w lshift= 2 $
+show(w)$
+@int v is 16 $
+v rshift= 2 $
+show(v)$
+
+
+# 20 rel
+@int a is 5 $
+@int b is 10 $
+@int r1 is 0 $
+@int r2 is 0 $
+@int r3 is 0 $
+if(a gt b)
+begin
+    r1 is 1 $
+end
+if(a == b)
+begin
+    r2 is 1 $
+end
+if(b le a)
+begin
+    r3 is 1 $
+end
+show(r1)$
+show(r2)$
+show(r3)$
+
+
+# 21  logical
+@int a is 1 $
+@int b is 0 $
+@int r1 is 0 $
+@int r2 is 0 $
+@int r3 is 0 $
+if(a>0 and b>0)
+begin
+    r1 is 1 $
+end
+if(a>0 or b>0)
+begin
+    r2 is 1 $
+end
+if(not b<=0)
+begin
+    r3 is 1 $
+end
+show(r1)$
+show(r2)$
+show(r3)$
+
+ 
+# 22 inc-dec
+@int x is 5 $
+@int j=x++ $
+@int k=++x$
+show(j)$
+show(k) $
+show(x)$
+x-- $
+show(x)$
+
+# 23 arr 1d
+@int arr[5] $
+arr[0] is 10 $
+arr[1] is 20 $
+arr[2] is 30 $
+show(arr[0])$
+show(arr[1])$
+show(arr[2])$
+
+#24 2d
+@int mat[2][3] $
+mat[0][0] is 1 $
+mat[0][1] is 2 $
+mat[1][0] is 3 $
+show(mat[0][0])$
+show(mat[0][1])$
+show(mat[1][0])$
+
+# 25 arr init
+@int nums[4] is {10, 20, 30, 40} $
+show(nums[0])$
+show(nums[1])$
+show(nums[2])$
+show(nums[3])$
+
+#  26 char arr
+@char name[20] $
+name[0] is 'H' $
+name[1] is 'i' $
+
+#27 string 
+@char s[20]="hello world" $
+show(s)$
+
+# 28 literls
+@int h is hexFF $
+@int o is oct17 $
+@int b is bin1010 $
+show(h)$
+show(o)$
+show(b)$
+
+# 29 bool
+@int x is 0 $
+if(true)
+begin
+    x is 1 $
+end
+show(x)$
+@int y is 99 $
+if(false)
+begin
+    y is 0 $
+end
+show(y)$
+
+
+# 30 cast
+
+@float f is 3.99 $
+@int i is (@int) f $
+show(i)$
+@int j is 65 $
+@char ch is (@char) j $
+show(ch)$
+@char m='a' $
+@int n=(@int) m $
+show(n)$
+@double d=4.54 $
+@float df=(@float)d $
+show(d) $
+@long l=34556$
+@int li=(@int)l$
+show(li)$
+
+
+#31 func
+
+func @int add(@int a , @int b)
+begin
+    @int s is a + b $
+    ret s $
+end
+
+func @int main(){
+@int res is call add(3 , 4) $
+show(res)$
+ret 0 $
+}
+
+
+# 32 multiple dec
+@int a is 1 , b is 2 , c is 3 $
+show(a)$
+show(b)$
+show(c)$
+
+
+#33 nested if
+
+@int x is 15 $
+@int result is 0 $
+if(x > 10)
+begin
+    if(x > 20)
+    begin
+        result is 2 $
+    end
+    else
+    begin
+        result is 1 $
+    end
+end
+show(result)$
+
+#34 rec
+func  @int fact(@int n) 
+begin
+    if(n <= 1)
+    begin
+        ret 1 $
+    end
+    @int sub is n - 1 $
+    @int r is call fact(sub) $
+    ret n * r $
+end
+
+@int result is call fact(5) $
+show(result)$
+
+
+
+#35 input
+
+@int n $
+input(n)$
+show(n)$
+
+# unary
+@int x is 5 $
+@int neg is -x $
+@int pos is +x $
+show(neg)$
+show(pos)$
+
+
+# 36 getsize 
+@int   x $
+@float f $
+@double d $
+@short s $
+@long  l $
+@char  c $
+@int arr[4]$
+@double darr[4]$
+@int sz_x is getsizeof(x) $
+@int sz_f is getsizeof(f) $
+@int sz_d is getsizeof(d) $
+@int sz_s is getsizeof(s) $
+@int sz_l is getsizeof(l) $
+@int sz_c is getsizeof(c) $
+@int sz_arr is getsizeof(arr) $
+@int sz_darr is getsizeof(darr)$
+show(sz_x)$
+show(sz_f)$
+show(sz_d)$
+show(sz_s)$
+show(sz_l)$
+show(sz_c)$
+show(sz_arr)$
+show(sz_darr)$
+
