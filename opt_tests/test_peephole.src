@@ -1,0 +1,15 @@
+func @int main() {
+    @int a, b, c $
+    input(a) $
+    input(c) $
+    b = a $
+    a = b $
+    b = a $
+    b = c $
+    a = b $
+    b = a $
+    a = b $
+    show(a) $
+    show(b) $
+    ret 0 $
+}

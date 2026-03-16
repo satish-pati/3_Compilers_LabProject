@@ -1,0 +1,5 @@
+#!/bin/bash
+make clean
+make
+./parser "$1"
+./parser2 "$1"

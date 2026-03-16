@@ -605,9 +605,9 @@ char *yytext;
 #include<stdio.h>
 #include<string.h>
 #include"y.tab.h"
-char buffer[102400]="";
+char buffer[1024]="";
 void append(const char* str){
-        if (strlen(buffer)+strlen(str)<102400){
+        if (strlen(buffer)+strlen(str)<1024){
                 strcat(buffer,str);
         }
 }

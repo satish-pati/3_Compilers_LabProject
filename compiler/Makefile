@@ -3,7 +3,7 @@ CFLAGS = -w
 LEX = flex
 YACC = yacc
 
-all: parser
+all: parser parser2
 
 lexer_test: lexer.l
 	$(LEX) lexer.l
@@ -14,8 +14,13 @@ parser: parser.y lexer.l
 	$(YACC) -d parser.y
 	$(CC) $(CFLAGS) y.tab.c lex.yy.c -lfl -o parser
 
+parser2: parser_fix.y lexer.l
+	$(LEX) lexer.l
+	$(YACC) -d parser_fix.y
+	$(CC) $(CFLAGS) y.tab.c lex.yy.c -lfl -o parser2
+
 clean:
-	rm -f lex.yy.c y.tab.c y.tab.h lexer_test parser *.o
+	rm -f lex.yy.c y.tab.c y.tab.h lexer_test parser  parser2*.o
 
 test-parser: parser
 	./parser $(FILE)

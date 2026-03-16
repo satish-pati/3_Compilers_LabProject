@@ -1,0 +1,10 @@
+func @int main() {
+    @int a, b, c, d $
+    a = 10 $
+    b = a $
+    c = b $
+    d = c $
+    show(d) $
+    show(a+b) $
+    ret 0 $
+}

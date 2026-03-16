@@ -1,0 +1,8 @@
+func @int main() {
+    @int x, y $
+    x = 2 + 3 * 4 $
+    y = 10 / 2 $
+    show(x) $
+    show(y) $
+    ret 0 $
+}

@@ -136,12 +136,10 @@ Param* createParam(char* name, char* type){
 
 Function* createFunction(char* name, char* ret_type){
     Function* f = (Function*)malloc(sizeof(Function));
-    memset(f, 0, sizeof(Function));
     strcpy(f->name, name);
     strcpy(f->return_type, ret_type);
     f->params = NULL;
     f->param_count = 0;
-    f->start_label = 0;
     f->next = NULL;
     return f;
 }
@@ -393,6 +391,9 @@ int isTypeCompatible(char* expected, char* actual) {
     return 0;
 }
 
+
+
+
 void validateNumericLiteral(char* literal, char* target_type, char* var_name) {
     if (!isNumericConstant(literal)) return;
 
@@ -446,7 +447,6 @@ void validateNumericLiteral(char* literal, char* target_type, char* var_name) {
     }
 }
 
-
 /*duplicate parameter name check*/
 int checkDuplicateParams(struct Decl* params) {
     struct Decl* p1 = params;
@@ -460,8 +460,6 @@ int checkDuplicateParams(struct Decl* params) {
     }
     return 0;
 }
-
-
 
 int tryConstantFold(struct Expr* op1, struct Expr* op2, char op, struct Expr* result) {
     if (!isNumericConstant(op1->str) || !isNumericConstant(op2->str)) return 0;
@@ -583,7 +581,6 @@ Symbol* env_get(Env* env, const char* key) {
 }
 
 Env* top = NULL;
-
 /*
 void print_table(Table* table) {
     for (int i = 0; i < table->size; i++) {
@@ -608,7 +605,9 @@ printf("-----------------------------------------------\n");
         print_table(envs[i]->table);
     }
     printf("======================================\n");
-}*/
+}
+
+*/
 
 
 
@@ -631,6 +630,7 @@ static void extract_base(const char* full_type, char* out) {
     /* strip leading @ if present */
     if (out[0] == '@') memmove(out, out+1, strlen(out));
 }
+
 
 /* Collect all symbols from a table into a sorted array (by offset) */
 #define MAX_SYMS 512
@@ -765,6 +765,7 @@ void print_all_envs() {
 
 
 }
+
 
 char* calculateArrayOffset(Symbol* sym, struct Subscript* sub, char* base_name) {
     if (sym->dim_count == 0) return base_name;
@@ -908,41 +909,66 @@ int isLiteral(char* str) {
 
 int checkLiteralRange(char* literal, char* target_type) {
     if (!isNumericConstant(literal)) return 1;
-    
+
     double value = atof(literal);
     int has_warning = 0;
-    
+
     if (strcmp(target_type, "char") == 0) {
         if (value < -128 || value > 127) {
-            sprintf(err+strlen(err), 
+            sprintf(err+strlen(err),
                 "Warning: Value %.0f out of range for char (valid range: -128 to 127)\n", value);
             has_warning = 1;
         }
     }
     else if (strcmp(target_type, "short") == 0) {
         if (value < -32768 || value > 32767) {
-            sprintf(err+strlen(err), 
+            sprintf(err+strlen(err),
                 "Warning: Value %.0f out of range for short (valid range: -32768 to 32767)\n", value);
             has_warning = 1;
         }
     }
     else if (strcmp(target_type, "int") == 0) {
         if (value < -2147483648.0 || value > 2147483647.0) {
-            sprintf(err+strlen(err), 
+            sprintf(err+strlen(err),
                 "Warning: Value %.0f out of range for int (valid range: -2147483648 to 2147483647)\n", value);
             has_warning = 1;
         }
     }
     else if (strcmp(target_type, "long") == 0) {
-        // For long, we can't really check with double precision, but we can try
         if (fabs(value) > 9.223372e18) {
-            sprintf(err+strlen(err), 
+            sprintf(err+strlen(err),
                 "Warning: Value %.0f may be out of range for long\n", value);
             has_warning = 1;
         }
     }
-    
-    return !has_warning;  // Return 1 if no warning, 0 if warning issued
+    else if (strcmp(target_type, "float") == 0) {
+        if (value > FLT_MAX || value < -FLT_MAX) {
+            sprintf(err+strlen(err),
+                "Warning: Value %g exceeds float range [-%g, %g] (will be inf)\n",
+                value, FLT_MAX, FLT_MAX);
+            has_warning = 1;
+        } else if (value != 0.0 && fabs(value) < FLT_MIN) {
+            sprintf(err+strlen(err),
+                "Warning: Value %g is too small for float (will underflow to 0)\n",
+                value);
+            has_warning = 1;
+        }
+    }
+    else if (strcmp(target_type, "double") == 0) {
+        if (isinf(value) || value > DBL_MAX || value < -DBL_MAX) {
+            sprintf(err+strlen(err),
+                "Warning: Value %g exceeds double range (will be inf)\n",
+                value);
+            has_warning = 1;
+        } else if (value != 0.0 && fabs(value) < DBL_MIN) {
+            sprintf(err+strlen(err),
+                "Warning: Value %g is too small for double (will underflow to 0)\n",
+                value);
+            has_warning = 1;
+        }
+    }
+
+    return !has_warning;
 }
 
 /* Check for narrowing conversions between types */
@@ -1051,8 +1077,1293 @@ void checkTypeAssign(struct Expr* op1, struct Expr* op2, char* opr){
 }
 
 
+void identityAssignmentElimination() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char lhs[100], rhs[100];
+        if (sscanf(line, "%d %s = %[^\n]", &line_num, lhs, rhs) == 3) {
+            char* end = rhs + strlen(rhs) - 1;
+            while (end > rhs && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+            if (strcmp(lhs, rhs) == 0)
+                sprintf(imcode[i], "%d // IDENTITY: %s = %s (eliminated)\n", line_num, lhs, rhs);
+        }
+    }
+}
 
-#line 1056 "y.tab.c"
+void deadStoreElimination() {
+    for (int i = 0; i < code - 1; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char lhs[100], rhs[100];
+        if (sscanf(line, "%d %s = %[^\n]", &line_num, lhs, rhs) == 3) {
+            if (strstr(rhs, "Call") != NULL || strstr(rhs, "PopParam") != NULL) continue;
+            for (int j = i + 1; j < code; j++) {
+                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                /* Stop at control flow boundaries */
+                if (strstr(imcode[j], "if ") != NULL || strstr(imcode[j], "goto ") != NULL ||
+                    strstr(imcode[j], "BeginFunc") != NULL ||
+                    strstr(imcode[j], "EndFunc") != NULL) break;
+                char check_line[10000]; strcpy(check_line, imcode[j]);
+                char check_lhs[100];
+                char* equals = strchr(check_line, '=');
+                if (equals) {
+                    /* Variable used on RHS of an assignment — not a dead store */
+                    char* rhs_part = equals + 1;
+                    if (strstr(rhs_part, lhs) != NULL) break;
+                } else {
+                    /* No '=' — this is a use-only instruction:
+                       printint/printfloat/printchar/printstring,
+                       PushParam, Return, inputint etc.
+                       If lhs appears anywhere in the line it is being used. */
+                    /* Build a word-boundary check to avoid false matches
+                       e.g. lhs="x" matching inside "xy" */
+                    char* p = check_line;
+                    int lhs_len = strlen(lhs);
+                    int used = 0;
+                    while ((p = strstr(p, lhs)) != NULL) {
+                        char before = (p == check_line) ? ' ' : *(p - 1);
+                        char after  = *(p + lhs_len);
+                        if (!isalnum((unsigned char)before) && before != '_' &&
+                            !isalnum((unsigned char)after)  && after  != '_') {
+                            used = 1; break;
+                        }
+                        p++;
+                    }
+                    if (used) break;
+                }
+                /* Variable overwritten before any use — dead store */
+                if (sscanf(check_line, "%*d %s =", check_lhs) == 1) {
+                    if (strcmp(check_lhs, lhs) == 0) {
+                        sprintf(imcode[i], "%d // DEAD STORE: %s = %s\n", line_num, lhs, rhs);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+void redundantLoadElimination() {
+    for (int i = 0; i < code - 1; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char lhs[100], rhs[100];
+        if (sscanf(line, "%d %s = %[^\n]", &line_num, lhs, rhs) == 3) {
+            char* end = rhs + strlen(rhs) - 1;
+            while (end > rhs && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+
+            /* Skip complex expressions and non-variable RHS */
+            if (strchr(rhs, '+') != NULL || strchr(rhs, '-') != NULL ||
+                strchr(rhs, '*') != NULL || strchr(rhs, '/') != NULL ||
+                strchr(rhs, '%') != NULL || strchr(rhs, '&') != NULL ||
+                strchr(rhs, '|') != NULL || strchr(rhs, '^') != NULL ||
+                strstr(rhs, "<<") != NULL || strstr(rhs, ">>") != NULL ||
+                strstr(rhs, "Call") != NULL) continue;
+            if (isNumericConstant(rhs) || isLiteral(rhs)) continue;
+
+            int lhs_len = strlen(lhs);
+            int rhs_len = strlen(rhs);
+
+            /* Scan forward for a redundant load of the same rhs */
+            for (int j = i + 1; j < code; j++) {
+                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+
+                /* Stop at control-flow / function boundaries */
+                if (strstr(imcode[j], "if ")      != NULL ||
+                    strstr(imcode[j], "goto ")     != NULL ||
+                    strstr(imcode[j], "Return")    != NULL ||
+                    strstr(imcode[j], "BeginFunc") != NULL ||
+                    strstr(imcode[j], "EndFunc")   != NULL) break;
+
+                char jline[10000]; strcpy(jline, imcode[j]);
+                int j_line_num; char j_lhs[100], j_rhs[100];
+
+                /* Word-boundary check: is lhs used on this line?
+                   (prevents "a" matching inside "arr") */
+                {
+                    int used = 0;
+                    char* p = jline;
+                    while ((p = strstr(p, lhs)) != NULL) {
+                        char before = (p == jline) ? ' ' : *(p - 1);
+                        char after  = *(p + lhs_len);
+                        if (!isalnum((unsigned char)before) && before != '_' &&
+                            !isalnum((unsigned char)after)  && after  != '_') {
+                            used = 1; break;
+                        }
+                        p++;
+                    }
+                    if (used) break;
+                }
+
+                /* If rhs (source) is overwritten here, stop — later loads differ */
+                if (sscanf(jline, "%*d %s =", j_lhs) == 1) {
+                    /* word-boundary check on rhs too (e.g. rhs="arr[8]", lhs="arr") */
+                    if (strcmp(j_lhs, rhs) == 0) break;
+                    /* also stop if LHS of this line IS rhs (handles array base names) */
+                    if (strncmp(j_lhs, rhs, rhs_len) == 0 &&
+                        (j_lhs[rhs_len] == '[' || j_lhs[rhs_len] == '\0')) break;
+                }
+
+                /* Found another load of the same rhs into a different variable */
+                if (sscanf(jline, "%d %s = %[^\n]", &j_line_num, j_lhs, j_rhs) == 3) {
+                    char* je = j_rhs + strlen(j_rhs) - 1;
+                    while (je > j_rhs && (*je == ' ' || *je == '\n')) { *je = '\0'; je--; }
+                    if (strcmp(j_rhs, rhs) == 0 && strcmp(j_lhs, lhs) != 0) {
+                        sprintf(imcode[j], "%d %s = %s\n", j_line_num, j_lhs, lhs);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void peepholeOptimization() {
+    for (int i = 0; i < code - 1; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line1[10000], line2[10000];
+        strcpy(line1, imcode[i]); strcpy(line2, imcode[i+1]);
+        int line_num1, line_num2; char lhs1[100], rhs1[100], lhs2[100], rhs2[100];
+        if (sscanf(line1, "%d %s = %[^\n]", &line_num1, lhs1, rhs1) == 3 &&
+            sscanf(line2, "%d %s = %[^\n]", &line_num2, lhs2, rhs2) == 3) {
+            char* end = rhs1 + strlen(rhs1) - 1;
+            while (end > rhs1 && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+            end = rhs2 + strlen(rhs2) - 1;
+            while (end > rhs2 && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+            if (strchr(rhs1,'+') == NULL && strchr(rhs1,'-') == NULL &&
+                strchr(rhs1,'*') == NULL && strchr(rhs1,'/') == NULL &&
+                strchr(rhs2,'+') == NULL && strchr(rhs2,'-') == NULL &&
+                strchr(rhs2,'*') == NULL && strchr(rhs2,'/') == NULL) {
+                if (strcmp(lhs1, rhs2) == 0 && strcmp(rhs1, lhs2) == 0)
+                    sprintf(imcode[i+1], "%d // PEEPHOLE: %s = %s (redundant swap)\n", line_num2, lhs2, rhs2);
+            }
+        }
+    }
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        if (strstr(imcode[i], "// PEEPHOLE") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char lhs[100], rhs[100];
+        if (sscanf(line, "%d %s = %[^\n]", &line_num, lhs, rhs) == 3) {
+            char* end = rhs + strlen(rhs) - 1;
+            while (end > rhs && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+            if (strchr(rhs,'+') != NULL || strchr(rhs,'-') != NULL ||
+                strchr(rhs,'*') != NULL || strchr(rhs,'/') != NULL ||
+                strchr(rhs,'(') != NULL) continue;
+            for (int j = i + 1; j < code; j++) {
+                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                if (strstr(imcode[j], "// PEEPHOLE") != NULL) continue;
+                char check_line[10000]; strcpy(check_line, imcode[j]);
+                if (strstr(check_line, "BeginFunc") != NULL || strstr(check_line, "EndFunc") != NULL) break;
+                if (strstr(check_line, "if ") != NULL || strstr(check_line, "goto ") != NULL ||
+                    strstr(check_line, "Return") != NULL) break;
+                char check_lhs[100], check_rhs[100];
+                if (sscanf(check_line, "%*d %s = %[^\n]", check_lhs, check_rhs) == 2) {
+                    char* check_end = check_rhs + strlen(check_rhs) - 1;
+                    while (check_end > check_rhs && (*check_end == ' ' || *check_end == '\n')) { *check_end = '\0'; check_end--; }
+                    if (strcmp(check_lhs, lhs) == 0) {
+                        if (strcmp(check_rhs, rhs) == 0) {
+                            int check_line_num; sscanf(imcode[j], "%d", &check_line_num);
+                            sprintf(imcode[j], "%d // PEEPHOLE: %s = %s (redundant reassignment)\n", check_line_num, check_lhs, check_rhs);
+                        }
+                        break;
+                    }
+                    if (strcmp(check_lhs, rhs) == 0) break;
+                }
+            }
+        }
+    }
+}
+
+void strengthReduction() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char result[100], op1[100], op[10], op2[100];
+        if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1, op, op2) == 5) {
+            if (!isNumericConstant(op2)) {
+                if (!isNumericConstant(op1)) continue;
+                char temp[100]; strcpy(temp, op1); strcpy(op1, op2); strcpy(op2, temp);
+            }
+            int constant = atoi(op2);
+            if (strcmp(op, "*") == 0 && constant > 0) {
+                if ((constant & (constant - 1)) == 0) {
+                    int shift = 0; int temp = constant;
+                    while (temp > 1) { temp >>= 1; shift++; }
+                    if (constant == 2) sprintf(imcode[i], "%d %s = %s + %s\n", line_num, result, op1, op1);
+                    else sprintf(imcode[i], "%d %s = %s << %d\n", line_num, result, op1, shift);
+                    continue;
+                }
+            }
+            if (strcmp(op, "/") == 0 && constant > 0) {
+                if ((constant & (constant - 1)) == 0) {
+                    int shift = 0; int temp = constant;
+                    while (temp > 1) { temp >>= 1; shift++; }
+                    sprintf(imcode[i], "%d %s = %s >> %d\n", line_num, result, op1, shift);
+                    continue;
+                }
+            }
+        }
+    }
+}
+
+void algebraicSimplification() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char result[100], op1[100], op[10], op2[100];
+        if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1, op, op2) == 5) {
+
+            /*  Multiplication  */
+            if (strcmp(op,"*")==0 && strcmp(op2,"1")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            if (strcmp(op,"*")==0 && strcmp(op1,"1")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            if (strcmp(op,"*")==0 && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+            if (strcmp(op,"*")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+
+            /*  Addition / Subtraction  */
+            if ((strcmp(op,"+")==0||strcmp(op,"-")==0) && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            if (strcmp(op,"+")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            if (strcmp(op,"-")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+
+            /*  Division  */
+            if (strcmp(op,"/")==0 && strcmp(op2,"1")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            if (strcmp(op,"/")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = 1\n",line_num,result); continue; }
+            if (strcmp(op,"/")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+
+            /*  Modulo  */
+            if (strcmp(op,"%")==0 && strcmp(op2,"1")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }  /* x % 1 == 0 */
+            if (strcmp(op,"%")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }  /* 0 % x == 0 */
+            if (strcmp(op,"%")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }  /* x % x == 0 */
+
+            /*  Bitwise AND (bitand)  */
+            if (strcmp(op,"&")==0 && (strcmp(op2,"0")==0||strcmp(op1,"0")==0)){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+            if (strcmp(op,"&")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }  /* x & x == x */
+
+            /*  Bitwise OR (bitor)  */
+            if (strcmp(op,"|")==0 && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            if (strcmp(op,"|")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            if (strcmp(op,"|")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }  /* x | x == x */
+
+            /*  Bitwise XOR (bitxor)  */
+            if (strcmp(op,"^")==0 && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            if (strcmp(op,"^")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            if (strcmp(op,"^")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }  /* x ^ x == 0 */
+
+            /*  Left Shift (lshift → <<)  */
+            if (strcmp(op,"<<")==0 && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }  /* x << 0 == x */
+            if (strcmp(op,"<<")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }        /* 0 << x == 0 */
+
+            /*  Right Shift (rshift → >>)  */
+            if (strcmp(op,">>")==0 && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }  /* x >> 0 == x */
+            if (strcmp(op,">>")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }        /* 0 >> x == 0 */
+        }
+    }
+}
+
+/*
+void constantFoldConditionals() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        char line[10000];
+        strcpy(line, imcode[i]);
+        
+        int line_num;
+        char cond[1000];
+        if (sscanf(line, "%d if %[^\n]", &line_num, cond) == 2) {
+            char op1[100], op[10], op2[100], rest[100];
+            if (sscanf(cond, "%s %s %s %[^\n]", op1, op, op2, rest) == 4) {
+                if (isNumericConstant(op1) && isNumericConstant(op2)) {
+                    double v1 = atof(op1), v2 = atof(op2);
+                    int result = 0;
+                    if (strcmp(op, "<") == 0) result = (v1 < v2);
+                    else if (strcmp(op, ">") == 0) result = (v1 > v2);
+                    else if (strcmp(op, "<=") == 0) result = (v1 <= v2);
+                    else if (strcmp(op, ">=") == 0) result = (v1 >= v2);
+                    else if (strcmp(op, "==") == 0) result = (v1 == v2);
+                    else if (strcmp(op, "!=") == 0) result = (v1 != v2);
+                    
+                    if (result) {
+                        char* goto_ptr = strstr(rest, "goto");
+                        if (goto_ptr) {
+                            sprintf(imcode[i], "%d %s\n", line_num, goto_ptr);
+                        }
+                    } else {
+                        sprintf(imcode[i], "%d // DEAD BRANCH: if %s %s %s always false\n", 
+                                line_num, op1, op, op2);
+                    }
+                }
+            }
+        }
+    }
+}
+*/
+
+
+
+
+
+void constantFoldConditionals() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        char line[10000];
+        strcpy(line, imcode[i]);
+        
+        int line_num;
+        char cond[1000];
+        if (sscanf(line, "%d if %[^\n]", &line_num, cond) == 2) {
+            char op1[100], op[10], op2[100], rest[100];
+            if (sscanf(cond, "%s %s %s %[^\n]", op1, op, op2, rest) == 4) {
+                // Try to resolve operands to their constant values
+                char resolved_op1[100], resolved_op2[100];
+                strcpy(resolved_op1, op1);
+                strcpy(resolved_op2, op2);
+                int op1_is_truly_constant = 1;
+                int op2_is_truly_constant = 1;
+                
+                // Look up op1 if it's a variable
+                if (!isNumericConstant(op1)) {
+                    int assignment_count = 0;
+                    for (int j = 0; j < code; j++) {
+                        if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                        char check_line[10000]; strcpy(check_line, imcode[j]);
+                        char lhs[100];
+                        if (sscanf(check_line, "%*d %s = %*[^\n]", lhs) == 1) {
+                            if (strcmp(lhs, op1) == 0) {
+                                assignment_count++;
+                                if (assignment_count > 1) {
+                                    op1_is_truly_constant = 0;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (op1_is_truly_constant) {
+                        for (int j = i - 1; j >= 0; j--) {
+                            if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                            char check_line[10000]; strcpy(check_line, imcode[j]);
+                            char lhs[100], rhs[100];
+                            if (sscanf(check_line, "%*d %s = %[^\n]", lhs, rhs) == 2) {
+                                if (strcmp(lhs, op1) == 0) {
+                                    char* trimmed = rhs;
+                                    while (*trimmed == ' ') trimmed++;
+                                    char* end = trimmed + strlen(trimmed) - 1;
+                                    while (end > trimmed && (*end == ' ' || *end == '\n')) end--;
+                                    *(end + 1) = '\0';
+                                    
+                                    if (isNumericConstant(trimmed) && 
+                                        !strchr(trimmed, '+') && !strchr(trimmed, '-') &&
+                                        !strchr(trimmed, '*') && !strchr(trimmed, '/')) {
+                                        strcpy(resolved_op1, trimmed);
+                                    } else {
+                                        op1_is_truly_constant = 0;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Look up op2 if it's a variable
+                if (!isNumericConstant(op2)) {
+                    int assignment_count = 0;
+                    for (int j = 0; j < code; j++) {
+                        if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                        char check_line[10000]; strcpy(check_line, imcode[j]);
+                        char lhs[100];
+                        if (sscanf(check_line, "%*d %s = %*[^\n]", lhs) == 1) {
+                            if (strcmp(lhs, op2) == 0) {
+                                assignment_count++;
+                                if (assignment_count > 1) {
+                                    op2_is_truly_constant = 0;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (op2_is_truly_constant) {
+                        for (int j = i - 1; j >= 0; j--) {
+                            if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                            char check_line[10000]; strcpy(check_line, imcode[j]);
+                            char lhs[100], rhs[100];
+                            if (sscanf(check_line, "%*d %s = %[^\n]", lhs, rhs) == 2) {
+                                if (strcmp(lhs, op2) == 0) {
+                                    char* trimmed = rhs;
+                                    while (*trimmed == ' ') trimmed++;
+                                    char* end = trimmed + strlen(trimmed) - 1;
+                                    while (end > trimmed && (*end == ' ' || *end == '\n')) end--;
+                                    *(end + 1) = '\0';
+                                    
+                                    if (isNumericConstant(trimmed) && 
+                                        !strchr(trimmed, '+') && !strchr(trimmed, '-') &&
+                                        !strchr(trimmed, '*') && !strchr(trimmed, '/')) {
+                                        strcpy(resolved_op2, trimmed);
+                                    } else {
+                                        op2_is_truly_constant = 0;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Only fold if both are truly constant (assigned only once with constant values)
+                if (op1_is_truly_constant && op2_is_truly_constant &&
+                    isNumericConstant(resolved_op1) && isNumericConstant(resolved_op2)) {
+                    double v1 = atof(resolved_op1), v2 = atof(resolved_op2);
+                    int result = 0;
+                    if (strcmp(op, "<") == 0) result = (v1 < v2);
+                    else if (strcmp(op, ">") == 0) result = (v1 > v2);
+                    else if (strcmp(op, "<=") == 0) result = (v1 <= v2);
+                    else if (strcmp(op, ">=") == 0) result = (v1 >= v2);
+                    else if (strcmp(op, "==") == 0) result = (v1 == v2);
+                    else if (strcmp(op, "!=") == 0) result = (v1 != v2);
+                    
+                    if (result) {
+                        char* goto_ptr = strstr(rest, "goto");
+                        if (goto_ptr) {
+                            sprintf(imcode[i], "%d %s // FOLDED: if %s %s %s always true\n", 
+                                    line_num, goto_ptr, resolved_op1, op, resolved_op2);
+                        }
+                    } else {
+                        sprintf(imcode[i], "%d // DEAD BRANCH: if %s %s %s always false\n", 
+                                line_num, resolved_op1, op, resolved_op2);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+void copyPropagation() {
+    int is_jump_target[10000] = {0};
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "goto") != NULL) {
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            if (isdigit(*ptr)) { int target = atoi(ptr); if (target >= 0 && target < code) is_jump_target[target] = 1; }
+        }
+    }
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char lhs[100], rhs[100];
+        if (sscanf(line, "%d %s = %[^\n]", &line_num, lhs, rhs) == 3) {
+            char* end = rhs + strlen(rhs) - 1;
+            while (end > rhs && (*end == ' ' || *end == '\n' || *end == '\r')) { *end = '\0'; end--; }
+            if (strchr(lhs, '[') != NULL) continue;
+            if (strchr(rhs,'+')!=NULL||strchr(rhs,'-')!=NULL||strchr(rhs,'*')!=NULL||strchr(rhs,'/')!=NULL||
+                strchr(rhs,'%')!=NULL||strchr(rhs,'&')!=NULL||strchr(rhs,'|')!=NULL||strchr(rhs,'^')!=NULL||
+                strchr(rhs,'<')!=NULL||strchr(rhs,'>')!=NULL||strchr(rhs,'~')!=NULL||strchr(rhs,'(')!=NULL||
+                strstr(rhs,"Call")!=NULL||strstr(rhs,"PopParam")!=NULL||strstr(rhs,"PushParam")!=NULL) continue;
+            if (is_jump_target[i]) continue;
+            int func_start = i, func_end = code;
+            for (int k = i; k >= 0; k--) { if (strstr(imcode[k], "BeginFunc") != NULL) { func_start = k; break; } }
+            for (int k = i; k < code; k++) { if (strstr(imcode[k], "EndFunc") != NULL) { func_end = k; break; } }
+            int in_loop = 0;
+            for (int j = func_start; j < func_end; j++) {
+                if (strstr(imcode[j], "goto") != NULL) {
+                    char* goto_ptr = strstr(imcode[j], "goto");
+                    char* ptr = goto_ptr + 4;
+                    while (*ptr == ' ' || *ptr == '\t') ptr++;
+                    if (isdigit(*ptr)) { int target = atoi(ptr); if (target <= i && j >= i && i >= target && i <= j) { in_loop = 1; break; } }
+                }
+            }
+            int first_modification = func_end;
+            for (int j = i + 1; j < func_end; j++) {
+                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                if (strstr(imcode[j], "EndFunc") != NULL) break;
+                char check_lhs[100];
+                if (sscanf(imcode[j], "%*d %s =", check_lhs) == 1) { if (strcmp(check_lhs, lhs) == 0) { first_modification = j; break; } }
+            }
+            int rhs_first_modification = func_end;
+            if (!isNumericConstant(rhs)) {
+                for (int j = i + 1; j < func_end; j++) {
+                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                    if (strstr(imcode[j], "EndFunc") != NULL) break;
+                    char check_lhs[100];
+                    if (sscanf(imcode[j], "%*d %s =", check_lhs) == 1) { if (strcmp(check_lhs, rhs) == 0) { rhs_first_modification = j; break; } }
+                }
+            }
+            if (in_loop) continue;
+            
+            // Check if there's a goto between current line and first_modification
+            int has_goto_before_modification = 0;
+            int goto_target = -1;
+            for (int j = i + 1; j < first_modification && j < code; j++) {
+                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                if (strstr(imcode[j], "goto") != NULL) {
+                    char* goto_ptr = strstr(imcode[j], "goto");
+                    char* ptr = goto_ptr + 4;
+                    while (*ptr == ' ' || *ptr == '\t') ptr++;
+                    if (isdigit(*ptr)) {
+                        goto_target = atoi(ptr);
+                        // If goto jumps past first_modification, we need to check beyond
+                        if (goto_target > first_modification || goto_target > i + 1) {
+                            has_goto_before_modification = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // If there's a goto, extend safe_limit to check beyond the goto target
+            int safe_limit = (first_modification < rhs_first_modification) ? first_modification : rhs_first_modification;
+            if (has_goto_before_modification && goto_target > safe_limit) {
+                // Only extend safe_limit if there are no further live assignments
+                // to lhs between goto_target and func_end. If there are, the goto
+                // skips over one assignment but another follows — we cannot safely
+                // propagate the current value all the way to a use past that point.
+                int has_later_assignment = 0;
+                for (int j = goto_target; j < func_end; j++) {
+                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                    if (strstr(imcode[j], "EndFunc") != NULL) break;
+                    char check_lhs2[100];
+                    if (sscanf(imcode[j], "%*d %s =", check_lhs2) == 1) {
+                        if (strcmp(check_lhs2, lhs) == 0) { has_later_assignment = 1; break; }
+                    }
+                }
+                if (!has_later_assignment) {
+                    // Safe to extend: goto skips intermediate assignment but no
+                    // further writes exist, so the current value reaches the use.
+                    safe_limit = (goto_target + 10 < func_end) ? goto_target + 10 : func_end;
+                }
+                // else: leave safe_limit at first_modification — don't propagate past it
+            }
+            
+            int is_used = 0, last_use_line = -1;
+            for (int j = i + 1; j < safe_limit && j < code; j++) {
+                if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
+                char check_line[10000]; strcpy(check_line, imcode[j]);
+                if (strstr(check_line, lhs) != NULL) {
+                    char* pos = strstr(check_line, lhs);
+                    while (pos) {
+                        int is_whole = 1;
+                        if (pos > check_line && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole = 0;
+char after = *(pos + strlen(lhs));
+if (isalnum(after) || after == '_' || after == '\'') is_whole = 0;
+
+                        if (is_whole) { is_used = 1; last_use_line = j; }
+                        pos = strstr(pos + 1, lhs);
+                    }
+                }
+            }
+            int is_constant = isLiteral(rhs); 
+            if (is_used) {
+               
+                int use_inside_loop = 0;
+                for (int j = func_start; j < func_end; j++) {
+                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                    if (strstr(imcode[j], "goto") != NULL) {
+                        char* goto_ptr = strstr(imcode[j],"goto");
+                        char* ptr = goto_ptr + 4;
+                        while (*ptr == ' ' || *ptr == '\t') ptr++;
+                        if (isdigit(*ptr)) {
+                            int target = atoi(ptr);
+                            /* backward branch whose target is at or before
+                               last_use_line: use sites are inside a loop */
+                            if (target <= last_use_line && j > target) {
+                                use_inside_loop = 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+                /* lhs is modified somewhere in the function after its definition
+                   - its pre-loop value is stale on iteration 2+ - unsafe */
+                if (use_inside_loop && first_modification < func_end) continue;
+
+                int has_use_at_jump_target = 0;
+                for (int j = i + 1; j <= last_use_line && j < code; j++) {
+                    if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
+                    if (is_jump_target[j]) {
+                        char check_line[10000]; strcpy(check_line, imcode[j]);
+                        if (strstr(check_line, lhs) != NULL) {
+                            char* pos = strstr(check_line, lhs);
+                            while (pos) {
+                                int is_whole = 1;
+                                if (pos > check_line && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole = 0;
+char after = *(pos + strlen(lhs));
+if (isalnum(after) || after == '_' || after == '\'') is_whole = 0;
+
+                                if (is_whole) { has_use_at_jump_target = 1; break; }
+                                pos = strstr(pos + 1, lhs);
+                            }
+                        }
+                    }
+                    if (has_use_at_jump_target) break;
+                }
+                if (has_use_at_jump_target) continue;
+                int used_in_subscript = 0;
+                for (int j = i + 1; j <= last_use_line && j < code; j++) {
+                    if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
+                    char check_line[10000]; strcpy(check_line, imcode[j]);
+                    char* bracket_start = strchr(check_line, '[');
+                    while (bracket_start) {
+                        char* bracket_end = strchr(bracket_start, ']');
+                        if (bracket_end) {
+                            *bracket_end = '\0';
+                            if (strstr(bracket_start, lhs) != NULL) { used_in_subscript = 1; *bracket_end = ']'; break; }
+                            *bracket_end = ']';
+                            bracket_start = strchr(bracket_end + 1, '[');
+                        } else break;
+                    }
+                    if (used_in_subscript) break;
+                }
+                if (used_in_subscript && lhs[0] == 't' && isdigit(lhs[1]) && !is_constant) continue;
+                int can_propagate = 0;
+                if (lhs[0] == 't' && isdigit(lhs[1])) can_propagate = 1;
+                else if (is_constant && !used_in_subscript) can_propagate = 1;
+                if (!can_propagate) continue;
+                /* Safety check for user variables (non-temps):
+                   If any goto in the function can SKIP OVER line i
+                   (goto source < i, goto target > i) then line i is inside
+                   a conditional branch and may not execute — unsafe to propagate. */
+                if (!(lhs[0] == 't' && isdigit(lhs[1]))) {
+                    int inside_branch = 0;
+                    for (int k = 0; k < func_end; k++) {
+                        if (strstr(imcode[k], "// DEAD") != NULL) continue;
+                        if (strstr(imcode[k], "goto") != NULL) {
+                            char* goto_ptr = strstr(imcode[k], "goto");
+                            char* ptr = goto_ptr + 4;
+                            while (*ptr == ' ' || *ptr == '\t') ptr++;
+                            if (isdigit(*ptr)) {
+                                int gtarget = atoi(ptr);
+                                /* A goto from before i that jumps past i means
+                                   line i can be bypassed → it's in a branch */
+                                if (k < i && gtarget > i) {
+                                    inside_branch = 1;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (inside_branch) continue;
+                }
+                for (int j = i + 1; j <= last_use_line && j < code && j < safe_limit; j++) {
+                    if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
+                    char new_line[10000]; strcpy(new_line, imcode[j]);
+                    char* equals_sign = strchr(new_line, '=');
+                    if (equals_sign == NULL) {
+                        char* line_num_end = strchr(new_line, ' ');
+                        char* search_start = line_num_end ? line_num_end + 1 : new_line;
+                        char* pos = strstr(search_start, lhs);
+                        while (pos != NULL) {
+                            int is_whole_word = 1;
+                             if (pos > search_start && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole_word = 0;
+char after = *(pos + strlen(lhs));
+if (isalnum(after) || after == '_' || after == '\'') is_whole_word = 0;
+                            if (is_whole_word) {
+                                char temp[10000]; *pos = '\0';
+                                sprintf(temp, "%s%s%s", new_line, rhs, pos + strlen(lhs));
+                                strcpy(new_line, temp); strcpy(imcode[j], new_line);
+                                line_num_end = strchr(new_line, ' ');
+                                search_start = line_num_end ? line_num_end + 1 : new_line;
+                                pos = strstr(search_start, lhs);
+                            } else pos = strstr(pos + 1, lhs);
+                        }
+                    } else {
+                        char* line_num_end = strchr(new_line, ' ');
+                        char* lhs_start = line_num_end ? line_num_end + 1 : new_line;
+                        char* bracket_in_lhs = strchr(lhs_start, '[');
+                        if (bracket_in_lhs && bracket_in_lhs < equals_sign) {
+                            char* bracket_end = strchr(bracket_in_lhs, ']');
+                            if (bracket_end && bracket_end < equals_sign) {
+                                char* pos = strstr(bracket_in_lhs, lhs);
+                                while (pos && pos < bracket_end) {
+                                    int is_whole_word = 1;
+                                    if (pos > bracket_in_lhs && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole_word = 0;
+char after = *(pos + strlen(lhs));
+if (isalnum(after) || after == '_' || after == '\'') is_whole_word = 0;
+                                    if (is_whole_word) {
+                                        char temp[10000]; *pos = '\0';
+                                        sprintf(temp, "%s%s%s", new_line, rhs, pos + strlen(lhs));
+                                        strcpy(new_line, temp); strcpy(imcode[j], new_line);
+                                        equals_sign = strchr(new_line, '=');
+                                        bracket_in_lhs = strchr(new_line, '[');
+                                        bracket_end = strchr(bracket_in_lhs, ']');
+                                        pos = strstr(bracket_in_lhs, lhs);
+                                    } else { pos = strstr(pos + 1, lhs); if (pos >= bracket_end) break; }
+                                }
+                            }
+                        }
+                        char* rhs_start = equals_sign + 1;
+                        char* pos = strstr(rhs_start, lhs);
+                        while (pos != NULL) {
+                            int is_whole_word = 1;
+                            if (pos > rhs_start && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole_word = 0;
+char after = *(pos + strlen(lhs));
+if (isalnum(after) || after == '_' || after == '\'') is_whole_word = 0;
+
+                            if (is_whole_word) {
+                                char temp[10000]; *pos = '\0';
+                                sprintf(temp, "%s%s%s", new_line, rhs, pos + strlen(lhs));
+                                strcpy(new_line, temp); strcpy(imcode[j], new_line);
+                                equals_sign = strchr(new_line, '=');
+                                rhs_start = equals_sign + 1;
+                                pos = strstr(rhs_start, lhs);
+                            } else pos = strstr(pos + 1, lhs);
+                        }
+                    }
+               /* }
+                sprintf(imcode[i], "%d // DEAD COPY: %s = %s\n", line_num, lhs, rhs);
+            }
+            if (!is_used && is_constant) sprintf(imcode[i], "%d // DEAD CONST: %s = %s\n", line_num, lhs, rhs);
+            */                }
+                // Don't mark as DEAD COPY - keep the source definition
+            } else if (!is_used && is_constant) {
+                /* Before marking as DEAD CONST, do a full scan of the entire
+                   function to make sure lhs is truly never READ anywhere after
+                   this point. safe_limit may have cut the search short (stopped
+                   at first_modification), missing a printint/return further down. */
+                int globally_used = 0;
+                for (int j = i + 1; j < func_end; j++) {
+                    if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
+                    char check_line[10000]; strcpy(check_line, imcode[j]);
+                    /* Only count lhs as "used" when it appears on the READ side.
+                       For an assignment "N lhs = ...", lhs on the LHS is a write,
+                       not a read — skip those. We check reads by looking at:
+                         - print/if/goto lines (no '=' before lhs)
+                         - the RHS of assignment lines (after the '=')           */
+                    char* eq = strchr(check_line, '=');
+                    char* search_start;
+                    if (eq == NULL) {
+                        /* No '=' → whole line is a read context (printint, goto, if) */
+                        search_start = check_line;
+                    } else {
+                        /* Has '=' → only scan the RHS (after '=') for reads */
+                        search_start = eq + 1;
+                    }
+                    char* pos = strstr(search_start, lhs);
+                    while (pos) {
+                        int is_whole = 1;
+                        if (pos > check_line &&
+                            (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\''))
+                            is_whole = 0;
+                        char after2 = *(pos + strlen(lhs));
+                        if (isalnum(after2) || after2 == '_' || after2 == '\'')
+                            is_whole = 0;
+                        if (is_whole) { globally_used = 1; break; }
+                        pos = strstr(pos + 1, lhs);
+                    }
+                    if (globally_used) break;
+                }
+                if (!globally_used)
+                    sprintf(imcode[i], "%d // DEAD CONST: %s = %s\n", line_num, lhs, rhs);
+                /* else: keep the assignment live so the variable is initialised */
+            }
+        }      
+    }
+}
+
+
+
+void booleanSimplification() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char result[100], op1[100], op[10], op2[100];
+
+        if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1, op, op2) == 5) {
+
+            /* ── && (logical AND) ─────────────────────────────────────── */
+
+            /* true && x  →  x */
+            if (strcmp(op,"&&")==0 && strcmp(op1,"1")==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            /* x && true  →  x */
+            if (strcmp(op,"&&")==0 && strcmp(op2,"1")==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            /* false && x  →  0 */
+            if (strcmp(op,"&&")==0 && strcmp(op1,"0")==0){
+                sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+            /* x && false  →  0 */
+            if (strcmp(op,"&&")==0 && strcmp(op2,"0")==0){
+                sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+            /* x && x  →  x */
+            if (strcmp(op,"&&")==0 && strcmp(op1,op2)==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+
+            /* ── || (logical OR) ─────────────────────────────────────── */
+
+            /* false || x  →  x */
+            if (strcmp(op,"||")==0 && strcmp(op1,"0")==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            /* x || false  →  x */
+            if (strcmp(op,"||")==0 && strcmp(op2,"0")==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            /* true || x  →  1 */
+            if (strcmp(op,"||")==0 && strcmp(op1,"1")==0){
+                sprintf(imcode[i],"%d %s = 1\n",line_num,result); continue; }
+            /* x || true  →  1 */
+            if (strcmp(op,"||")==0 && strcmp(op2,"1")==0){
+                sprintf(imcode[i],"%d %s = 1\n",line_num,result); continue; }
+            /* x || x  →  x */
+            if (strcmp(op,"||")==0 && strcmp(op1,op2)==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+
+            /* ── == (equality) ───────────────────────────────────────── */
+
+            /* x == x  →  1 */
+            if (strcmp(op,"==")==0 && strcmp(op1,op2)==0){
+                sprintf(imcode[i],"%d %s = 1\n",line_num,result); continue; }
+            /* two different numeric constants: fold at compile time */
+            if (strcmp(op,"==")==0 && isNumericConstant(op1) && isNumericConstant(op2)){
+                int r = (atof(op1) == atof(op2));
+                sprintf(imcode[i],"%d %s = %d\n",line_num,result,r); continue; }
+
+            /* ── != (not-equal) ──────────────────────────────────────── */
+
+            /* x != x  →  0 */
+            if (strcmp(op,"!=")==0 && strcmp(op1,op2)==0){
+                sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+            /* two different numeric constants: fold at compile time */
+            if (strcmp(op,"!=")==0 && isNumericConstant(op1) && isNumericConstant(op2)){
+                int r = (atof(op1) != atof(op2));
+                sprintf(imcode[i],"%d %s = %d\n",line_num,result,r); continue; }
+        }
+    }
+}
+
+
+
+
+void conservativeJumpChaining() {
+    // Pass 1: Count how many live gotos point to each line number.
+    int ref_count[10000] = {0};
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char* p = imcode[i];
+        char* gp;
+        while ((gp = strstr(p, "goto")) != NULL) {
+            char* tp = gp + 4;
+            while (*tp == ' ' || *tp == '\t') tp++;
+            if (isdigit(*tp)) {
+                int t = atoi(tp);
+                if (t >= 0 && t < code) ref_count[t]++;
+            }
+            p = gp + 1;
+        }
+    }
+
+    // Pass 2: For each unconditional goto, follow the chain when safe.
+    // We follow through line T only when:
+    //   (a) T is a live, pure unconditional goto (no "if" before "goto"), AND
+    //   (b) ref_count[T] == 1, meaning only the current jumper reaches T,
+    //       so we can redirect past it without affecting other paths.
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+
+        char line[10000];
+        strcpy(line, imcode[i]);
+
+        // Must be an unconditional goto: "N goto M"
+        char* if_ptr   = strstr(line, "if");
+        char* goto_ptr = strstr(line, "goto");
+        if (!goto_ptr) continue;
+        if (if_ptr && if_ptr < goto_ptr) continue;  // conditional — leave alone
+
+        int line_num, target;
+        if (sscanf(line, "%d goto %d", &line_num, &target) != 2) continue;
+
+        int final_target = target;
+        int steps = 0;
+
+        while (steps++ < 1000) {
+            if (final_target < 0 || final_target >= code) break;
+            if (strstr(imcode[final_target], "// DEAD") != NULL) break;
+
+            // Only safe to skip through if exactly one jumper reaches it
+            if (ref_count[final_target] != 1) break;
+
+            char mid[10000];
+            strcpy(mid, imcode[final_target]);
+
+            char* mid_if   = strstr(mid, "if");
+            char* mid_goto = strstr(mid, "goto");
+            if (!mid_goto) break;
+            if (mid_if && mid_if < mid_goto) break;  // conditional
+
+            int mid_num, next_target;
+            if (sscanf(mid, "%d goto %d", &mid_num, &next_target) != 2) break;
+
+            // Redirect: the intermediate line loses our reference, next gains it
+            ref_count[final_target]--;
+            ref_count[next_target]++;
+            final_target = next_target;
+        }
+
+        if (final_target != target) {
+            sprintf(imcode[i], "%d goto %d\n", line_num, final_target);
+        }
+    }
+}
+
+
+void constantFolding() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char result[100], op1_str[100], op[10], op2_str[100];
+        if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1_str, op, op2_str) == 5) {
+            char resolved_op1[100], resolved_op2[100];
+            strcpy(resolved_op1, op1_str); strcpy(resolved_op2, op2_str);
+            int in_loop = 0;
+            int func_start = i, func_end = code;
+            for (int k = i; k >= 0; k--) { if (strstr(imcode[k], "BeginFunc") != NULL) { func_start = k; break; } }
+            for (int k = i; k < code; k++) { if (strstr(imcode[k], "EndFunc") != NULL) { func_end = k; break; } }
+            for (int k = func_start; k < func_end; k++) {
+                if (strstr(imcode[k], "goto") != NULL) {
+                    char* goto_ptr = strstr(imcode[k], "goto");
+                    char* ptr = goto_ptr + 4;
+                    while (*ptr == ' ' || *ptr == '\t') ptr++;
+                    if (isdigit(*ptr)) { int target = atoi(ptr); if (target <= i && k >= i && i >= target && i <= k) { in_loop = 1; break; } }
+                }
+            }
+            if (!isNumericConstant(op1_str)) {
+                for (int j = i - 1; j >= 0; j--) {
+                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                    if (strstr(imcode[j], "BeginFunc") != NULL) break;
+                    char check_line[10000]; strcpy(check_line, imcode[j]);
+                    char check_lhs[100], check_rhs[100];
+                    if (sscanf(check_line, "%*d %s = %[^\n]", check_lhs, check_rhs) == 2) {
+                        char* end = check_rhs + strlen(check_rhs) - 1;
+                        while (end > check_rhs && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+                        if (strcmp(check_lhs, op1_str) == 0) {
+                            int is_modified = 0;
+                            for (int k = j + 1; k < i; k++) {
+                                if (strstr(imcode[k], "// DEAD") != NULL) continue;
+                                char mod_check[100];
+                                if (sscanf(imcode[k], "%*d %s =", mod_check) == 1) { if (strcmp(mod_check, op1_str) == 0) { is_modified = 1; break; } }
+                            }
+                            if (!is_modified && !in_loop && isNumericConstant(check_rhs) &&
+                                strchr(check_rhs,'+')==NULL && strchr(check_rhs,'-')==NULL &&
+                                strchr(check_rhs,'*')==NULL && strchr(check_rhs,'/')==NULL)
+                                strcpy(resolved_op1, check_rhs);
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!isNumericConstant(op2_str)) {
+                for (int j = i - 1; j >= 0; j--) {
+                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                    if (strstr(imcode[j], "BeginFunc") != NULL) break;
+                    char check_line[10000]; strcpy(check_line, imcode[j]);
+                    char check_lhs[100], check_rhs[100];
+                    if (sscanf(check_line, "%*d %s = %[^\n]", check_lhs, check_rhs) == 2) {
+                        char* end = check_rhs + strlen(check_rhs) - 1;
+                        while (end > check_rhs && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+                        if (strcmp(check_lhs, op2_str) == 0) {
+                            int is_modified = 0;
+                            for (int k = j + 1; k < i; k++) {
+                                if (strstr(imcode[k], "// DEAD") != NULL) continue;
+                                char mod_check[100];
+                                if (sscanf(imcode[k], "%*d %s =", mod_check) == 1) { if (strcmp(mod_check, op2_str) == 0) { is_modified = 1; break; } }
+                            }
+                            if (!is_modified && !in_loop && isNumericConstant(check_rhs) &&
+                                strchr(check_rhs,'+')==NULL && strchr(check_rhs,'-')==NULL &&
+                                strchr(check_rhs,'*')==NULL && strchr(check_rhs,'/')==NULL)
+                                strcpy(resolved_op2, check_rhs);
+                            break;
+                        }
+                    }
+                }
+            }
+            if (isNumericConstant(resolved_op1) && isNumericConstant(resolved_op2)) {
+                double val1 = atof(resolved_op1), val2 = atof(resolved_op2), res = 0;
+                int is_valid = 1;
+                int is_float = (strchr(resolved_op1,'.')!=NULL || strchr(resolved_op2,'.')!=NULL);
+                if (strcmp(op,"+")==0) res = val1+val2;
+                else if (strcmp(op,"-")==0) res = val1-val2;
+                else if (strcmp(op,"*")==0) res = val1*val2;
+                else if (strcmp(op,"/")==0) { if (val2==0) is_valid=0; else { res=val1/val2;  } }
+                else if (strcmp(op,"%")==0) { if (val2==0||is_float) is_valid=0; else res=(int)val1%(int)val2; }
+                else if (strcmp(op,"&")==0) res=(int)val1&(int)val2;
+                else if (strcmp(op,"|")==0) res=(int)val1|(int)val2;
+                else if (strcmp(op,"^")==0) res=(int)val1^(int)val2;
+                else if (strcmp(op,"<<")==0) res=(int)val1<<(int)val2;
+                else if (strcmp(op,">>")==0) res=(int)val1>>(int)val2;
+                else is_valid=0;
+                if (is_valid) {
+                    if (is_float) sprintf(imcode[i], "%d %s = %g\n", line_num, result, res);
+                    else sprintf(imcode[i], "%d %s = %d\n", line_num, result, (int)res);
+                }
+            }
+        }
+    }
+}
+
+void deadVariableElimination() {
+    int used[10000] = {0};
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        if (strstr(line,"print")!=NULL||strstr(line,"Return")!=NULL||strstr(line,"PushParam")!=NULL||
+            strstr(line,"Call")!=NULL||strstr(line,"if")!=NULL) {
+            char* ptr = line;
+            while (*ptr) {
+                if (isalpha(*ptr) || *ptr == '_') {
+                    char var[100]; int idx = 0;
+                    while (isalnum(*ptr) || *ptr == '_') var[idx++] = *ptr++;
+                    var[idx] = '\0';
+                    if (strcmp(var,"if")==0||strcmp(var,"goto")==0||strcmp(var,"print")==0||
+                        strcmp(var,"printint")==0||strcmp(var,"printfloat")==0||strcmp(var,"printchar")==0||
+                        strcmp(var,"printstring")==0||strcmp(var,"Return")==0||strcmp(var,"Call")==0||
+                        strcmp(var,"PushParam")==0||strcmp(var,"PopParam")==0||strcmp(var,"BeginFunc")==0||
+                        strcmp(var,"EndFunc")==0) continue;
+                    for (int j = 0; j < code; j++) {
+                        if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                        char check_line[10000]; strcpy(check_line, imcode[j]);
+                        char lhs[100];
+                        if (sscanf(check_line, "%*d %s =", lhs) == 1) { if (strcmp(lhs, var) == 0) used[j] = 1; }
+                    }
+                } else ptr++;
+            }
+        }
+        char lhs_full[100];
+        if (sscanf(line, "%*d %[^=]", lhs_full) == 1) {
+            char* bracket_start = strchr(lhs_full, '[');
+            if (bracket_start) {
+                char* bracket_end = strchr(bracket_start, ']');
+                if (bracket_end) {
+                    char* ptr = bracket_start + 1;
+                    while (ptr < bracket_end) {
+                        if (isalpha(*ptr) || *ptr == '_') {
+                            char var[100]; int idx = 0;
+                            while ((isalnum(*ptr) || *ptr == '_') && ptr < bracket_end) var[idx++] = *ptr++;
+                            var[idx] = '\0';
+                            for (int j = 0; j < code; j++) {
+                                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                                char check_line[10000]; strcpy(check_line, imcode[j]);
+                                char check_lhs[100];
+                                if (sscanf(check_line, "%*d %s =", check_lhs) == 1) { if (strcmp(check_lhs, var) == 0) used[j] = 1; }
+                            }
+                        } else ptr++;
+                    }
+                }
+            }
+        }
+        char lhs[100];
+        if (sscanf(line, "%*d %s =", lhs) == 1) {
+            char* equals = strchr(line, '=');
+            if (equals) {
+                char* rhs = equals + 1;
+                char* ptr = rhs;
+                while (*ptr) {
+                    if (isalpha(*ptr) || *ptr == '_') {
+                        char var[100]; int idx = 0;
+                        while (isalnum(*ptr) || *ptr == '_') var[idx++] = *ptr++;
+                        var[idx] = '\0';
+                        if (strcmp(var,"Call")==0||strcmp(var,"PopParam")==0||strcmp(var,"int")==0||
+                            strcmp(var,"float")==0||strcmp(var,"char")==0||strcmp(var,"double")==0||
+                            strcmp(var,"long")==0||strcmp(var,"short")==0) continue;
+                        for (int j = 0; j < code; j++) {
+                            if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                            char check_line[10000]; strcpy(check_line, imcode[j]);
+                            char check_lhs[100];
+                            if (sscanf(check_line, "%*d %s =", check_lhs) == 1) { if (strcmp(check_lhs, var) == 0) used[j] = 1; }
+                        }
+                    } else ptr++;
+                }
+            }
+        }
+    }
+    for (int i = 0; i < code; i++) {
+        if (used[i] == 0 && strstr(imcode[i], "// DEAD") == NULL) {
+            char line[10000]; strcpy(line, imcode[i]);
+            char lhs[100];
+            if (sscanf(line, "%*d %s =", lhs) == 1) {
+                if (strstr(line,"BeginFunc")!=NULL||strstr(line,"EndFunc")!=NULL||
+                    strstr(line,"PopParam")!=NULL||strstr(line,"Call")!=NULL) continue;
+                if (lhs[0] == 't' && isdigit(lhs[1])) {
+                    char* content = strchr(line, ' ');
+                    if (content) { content++; sprintf(imcode[i], "%d // DEAD VAR: %s", i, content); }
+                }
+            }
+        }
+    }
+}
+
+
+
+void eliminateDeadCode() {
+    // BUILD JUMP TARGET TABLE FIRST (moved to top) 
+    int is_jump_target[10000] = {0};
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
+        if (strstr(imcode[i], "goto") != NULL) {
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            if (isdigit(*ptr)) { int target = atoi(ptr); if (target >= 0 && target < code) is_jump_target[target] = 1; }
+        }
+    }
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
+        int is_unconditional = 0;
+        if (strstr(imcode[i], "Return") != NULL) is_unconditional = 1;
+        else if (strstr(imcode[i], "goto") != NULL) {
+            char* if_ptr = strstr(imcode[i], "if");
+            char* goto_ptr = strstr(imcode[i], "goto");
+            if (goto_ptr && (!if_ptr || if_ptr > goto_ptr)) is_unconditional = 1;
+        }
+        if (is_unconditional) {
+            int j = i + 1;
+            if (j < code && strstr(imcode[j],"BeginFunc")==NULL && strstr(imcode[j],"EndFunc")==NULL &&
+                strstr(imcode[j],"// DEAD CODE:")==NULL) {
+                int is_live_target = is_jump_target[j];  // USE PREBUILT TABLE 
+                if (!is_live_target) {
+                    char original[10000]; strcpy(original, imcode[j]);
+                    char* space_ptr = strchr(original, ' ');
+                    if (space_ptr != NULL) { space_ptr++; sprintf(imcode[j], "%d // DEAD CODE: %s", j, space_ptr); }
+                }
+            }
+        }
+    }
+    for (int i = 0; i < code; i++) {
+        char* line = imcode[i];
+        if (strstr(line, "// DEAD CODE:") != NULL) continue;
+        int is_unconditional_jump = 0;
+        if (strstr(line, "goto") != NULL) {
+            char* if_ptr = strstr(line, "if");
+            char* goto_ptr = strstr(line, "goto");
+            if (goto_ptr && (!if_ptr || if_ptr > goto_ptr)) is_unconditional_jump = 1;
+        } else if (strstr(line, "Return") != NULL) is_unconditional_jump = 1;
+        if (is_unconditional_jump) {
+            int j = i + 1;
+            while (j < code) {
+                if (strstr(imcode[j],"BeginFunc")!=NULL||strstr(imcode[j],"EndFunc")!=NULL) break;
+                if (is_jump_target[j]) break;
+                if (strstr(imcode[j],"// DEAD CODE:")!=NULL) { j++; continue; }
+                char original[10000]; strcpy(original, imcode[j]);
+                char* space_ptr = strchr(original, ' ');
+                if (space_ptr != NULL) { space_ptr++; sprintf(imcode[j], "%d // DEAD CODE: %s", j, space_ptr); }
+                j++;
+            }
+        }
+    }
+    int has_live_pred[10000] = {0};
+    for (int i = 0; i < code; i++) { if (strstr(imcode[i],"BeginFunc")!=NULL && i+1<code) has_live_pred[i+1]=1; }
+    has_live_pred[0] = 1;
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i],"// DEAD CODE:")!=NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        if (strstr(line,"goto")!=NULL) {
+            char* goto_ptr = strstr(line,"goto");
+            char* ptr = goto_ptr+4;
+            while (*ptr==' '||*ptr=='\t') ptr++;
+            if (isdigit(*ptr)) { int target=atoi(ptr); if (target>=0&&target<code) has_live_pred[target]=1; }
+        }
+        int is_uncond = 0;
+        if (strstr(line,"Return")!=NULL) is_uncond=1;
+        else if (strstr(line,"goto")!=NULL) {
+            char* if_ptr=strstr(line,"if"); char* goto_ptr=strstr(line,"goto");
+            if (goto_ptr&&(!if_ptr||if_ptr>goto_ptr)) is_uncond=1;
+        }
+        if (!is_uncond && i+1<code) has_live_pred[i+1]=1;
+    }
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i],"// DEAD CODE:")!=NULL) continue;
+        if (strstr(imcode[i],"BeginFunc")!=NULL||strstr(imcode[i],"EndFunc")!=NULL) continue;
+        if (!has_live_pred[i]) {
+            char original[10000]; strcpy(original, imcode[i]);
+            char* space_ptr = strchr(original, ' ');
+            if (space_ptr!=NULL) { space_ptr++; sprintf(imcode[i], "%d // DEAD CODE: %s", i, space_ptr); }
+        }
+    }
+}
+
+
+void commonSubexpressionElimination() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char result[100], op1[100], op[10], op2[100];
+        if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1, op, op2) == 5) {
+            int func_start = i, func_end = code;
+            for (int k = i; k >= 0; k--) { if (strstr(imcode[k],"BeginFunc")!=NULL) { func_start=k; break; } }
+            for (int k = i; k < code; k++) { if (strstr(imcode[k],"EndFunc")!=NULL) { func_end=k; break; } }
+            int loop_start = -1, loop_end = -1, min_loop_size = func_end;
+            for (int k = i; k < func_end; k++) {
+                if (strstr(imcode[k],"goto")!=NULL) {
+                    char* goto_ptr=strstr(imcode[k],"goto");
+                    char* if_ptr=strstr(imcode[k],"if");
+                    if (if_ptr && if_ptr < goto_ptr) continue;
+                    char* ptr = goto_ptr+4;
+                    while (*ptr==' '||*ptr=='\t') ptr++;
+                    if (isdigit(*ptr)) {
+                        int target=atoi(ptr);
+                        if (target<=i && k>=i) { int sz=k-target; if (sz<min_loop_size) { loop_start=target; loop_end=k; min_loop_size=sz; } }
+                    }
+                }
+            }
+            int search_start = i+1, search_end = (loop_start!=-1) ? loop_end : func_end;
+            char resolved_op1[100], resolved_op2[100];
+            strcpy(resolved_op1, op1); strcpy(resolved_op2, op2);
+            for (int k = i-1; k >= func_start; k--) {
+                if (strstr(imcode[k],"// DEAD")!=NULL) continue;
+                if (strstr(imcode[k],"BeginFunc")!=NULL) break;
+                char check_lhs[100], check_rhs[100];
+                if (sscanf(imcode[k], "%*d %s = %[^\n]", check_lhs, check_rhs) == 2) {
+                    char* end = check_rhs+strlen(check_rhs)-1;
+                    while (end>check_rhs && (*end==' '||*end=='\n')) { *end='\0'; end--; }
+                    if (strchr(check_rhs,'+')==NULL&&strchr(check_rhs,'-')==NULL&&strchr(check_rhs,'*')==NULL&&strchr(check_rhs,'/')==NULL&&strchr(check_rhs,'(')==NULL) {
+                        if (strcmp(check_lhs,op1)==0) strcpy(resolved_op1, check_rhs);
+                        if (strcmp(check_lhs,op2)==0) strcpy(resolved_op2, check_rhs);
+                    }
+                    if (strcmp(resolved_op1,op1)!=0 && strcmp(resolved_op2,op2)!=0) break;
+                }
+            }
+            for (int j = search_start; j < search_end; j++) {
+                if (strstr(imcode[j],"// DEAD CODE:")!=NULL) continue;
+                char check_line[10000]; strcpy(check_line, imcode[j]);
+                if (strstr(check_line,"if ")!=NULL||strstr(check_line,"goto ")!=NULL||strstr(check_line,"Return")!=NULL||
+                    strstr(check_line,"BeginFunc")!=NULL||strstr(check_line,"EndFunc")!=NULL||
+                    strstr(check_line,"PopParam")!=NULL||strstr(check_line,"PushParam")!=NULL||strstr(check_line,"Call")!=NULL) continue;
+                char redefined_var[100];
+                if (sscanf(check_line, "%*d %s =", redefined_var) == 1) {
+                    if (strcmp(redefined_var,resolved_op1)==0||strcmp(redefined_var,resolved_op2)==0) break;
+                }
+                int check_line_num; char check_result[100], check_op1[100], check_op[10], check_op2[100];
+                if (sscanf(check_line, "%d %s = %s %s %s", &check_line_num, check_result, check_op1, check_op, check_op2) == 5) {
+                    char resolved_check_op1[100], resolved_check_op2[100];
+                    strcpy(resolved_check_op1, check_op1); strcpy(resolved_check_op2, check_op2);
+                    for (int k = j-1; k >= func_start; k--) {
+                        if (strstr(imcode[k],"// DEAD")!=NULL) continue;
+                        if (strstr(imcode[k],"BeginFunc")!=NULL) break;
+                        char k_lhs[100], k_rhs[100];
+                        if (sscanf(imcode[k], "%*d %s = %[^\n]", k_lhs, k_rhs) == 2) {
+                            char* end = k_rhs+strlen(k_rhs)-1;
+                            while (end>k_rhs && (*end==' '||*end=='\n')) { *end='\0'; end--; }
+                            if (strchr(k_rhs,'+')==NULL&&strchr(k_rhs,'-')==NULL&&strchr(k_rhs,'*')==NULL&&strchr(k_rhs,'/')==NULL&&strchr(k_rhs,'(')==NULL) {
+                                if (strcmp(k_lhs,check_op1)==0) strcpy(resolved_check_op1, k_rhs);
+                                if (strcmp(k_lhs,check_op2)==0) strcpy(resolved_check_op2, k_rhs);
+                            }
+                            if (strcmp(resolved_check_op1,check_op1)!=0 && strcmp(resolved_check_op2,check_op2)!=0) break;
+                        }
+                    }
+                    if (strcmp(op,check_op)==0 && strcmp(resolved_op1,resolved_check_op1)==0 && strcmp(resolved_op2,resolved_check_op2)==0)
+                        sprintf(imcode[j], "%d %s = %s\n", check_line_num, check_result, result);
+                }
+            }
+        }
+    }
+}
+
+
+#line 2367 "y.tab.c"
 
 # ifndef YY_CAST
 #  ifdef __cplusplus
@@ -1227,7 +2538,7 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 986 "parser.y"
+#line 2298 "parser.y"
 
         char str[1000];
         struct BoolNode* b;
@@ -1237,7 +2548,7 @@ union YYSTYPE
         struct Decl* decl;
         struct Subscript* sub;
 
-#line 1241 "y.tab.c"
+#line 2552 "y.tab.c"
 
 };
 typedef union YYSTYPE YYSTYPE;
@@ -1702,16 +3013,16 @@ union yyalloc
 /* YYFINAL -- State number of the termination state.  */
 #define YYFINAL  6
 /* YYLAST -- Last index in YYTABLE.  */
-#define YYLAST   1099
+#define YYLAST   1145
 
 /* YYNTOKENS -- Number of terminals.  */
 #define YYNTOKENS  79
 /* YYNNTS -- Number of nonterminals.  */
 #define YYNNTS  39
 /* YYNRULES -- Number of rules.  */
-#define YYNRULES  160
+#define YYNRULES  162
 /* YYNSTATES -- Number of states.  */
-#define YYNSTATES  306
+#define YYNSTATES  314
 
 /* YYMAXUTOK -- Last valid token kind.  */
 #define YYMAXUTOK   316
@@ -1766,23 +3077,23 @@ static const yytype_int8 yytranslate[] =
 /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_int16 yyrline[] =
 {
-       0,  1042,  1042,  1042,  1060,  1061,  1066,  1072,  1073,  1081,
-    1081,  1172,  1182,  1191,  1194,  1194,  1211,  1224,  1237,  1268,
-    1284,  1299,  1320,  1321,  1324,  1330,  1338,  1341,  1343,  1343,
-    1354,  1356,  1356,  1369,  1373,  1368,  1387,  1387,  1396,  1397,
-    1398,  1403,  1411,  1415,  1415,  1429,  1437,  1445,  1454,  1765,
-    1770,  1773,  1775,  1787,  1802,  1812,  1829,  1848,  1860,  1876,
-    1893,  1908,  1926,  1938,  1951,  1952,  1953,  1954,  1955,  1956,
-    1957,  1958,  1959,  1968,  1974,  1981,  1982,  1983,  1984,  1985,
-    1986,  1987,  1988,  1989,  1990,  1993,  1998,  2003,  2006,  2009,
-    2014,  2019,  2024,  2029,  2034,  2039,  2045,  2053,  2054,  2061,
-    2062,  2063,  2064,  2065,  2067,  2179,  2207,  2223,  2239,  2255,
-    2275,  2299,  2300,  2301,  2317,  2333,  2349,  2361,  2373,  2389,
-    2390,  2393,  2461,  2495,  2498,  2502,  2502,  2502,  2502,  2502,
-    2502,  2502,  2502,  2502,  2502,  2504,  2511,  2518,  2525,  2547,
-    2591,  2634,  2646,  2684,  2706,  2718,  2719,  2720,  2721,  2724,
-    2724,  2726,  2727,  2728,  2729,  2730,  2731,  2732,  2733,  2733,
-    2733
+       0,  2354,  2354,  2354,  2396,  2397,  2402,  2408,  2409,  2421,
+    2421,  2512,  2522,  2531,  2534,  2534,  2567,  2580,  2593,  2625,
+    2643,  2672,  2692,  2707,  2728,  2729,  2732,  2738,  2746,  2749,
+    2751,  2751,  2762,  2764,  2764,  2777,  2781,  2776,  2795,  2795,
+    2804,  2805,  2806,  2811,  2819,  2823,  2823,  2837,  2845,  2853,
+    2866,  3176,  3182,  3185,  3187,  3199,  3214,  3224,  3241,  3260,
+    3272,  3288,  3305,  3320,  3338,  3350,  3363,  3364,  3365,  3366,
+    3367,  3368,  3369,  3370,  3371,  3380,  3386,  3393,  3394,  3395,
+    3396,  3397,  3398,  3399,  3400,  3401,  3402,  3405,  3410,  3415,
+    3418,  3421,  3426,  3431,  3436,  3441,  3446,  3451,  3457,  3465,
+    3466,  3473,  3474,  3475,  3476,  3477,  3478,  3591,  3619,  3635,
+    3651,  3667,  3687,  3711,  3712,  3713,  3729,  3745,  3761,  3773,
+    3785,  3801,  3802,  3805,  3873,  3907,  3910,  3914,  3914,  3914,
+    3914,  3914,  3914,  3914,  3914,  3914,  3914,  3916,  3923,  3932,
+    3939,  3961,  4005,  4048,  4060,  4098,  4120,  4132,  4133,  4134,
+    4135,  4138,  4138,  4140,  4141,  4142,  4143,  4144,  4145,  4146,
+    4147,  4147,  4147
 };
 #endif
 
@@ -1822,12 +3133,12 @@ yysymbol_name (yysymbol_kind_t yysymbol)
 }
 #endif
 
-#define YYPACT_NINF (-137)
+#define YYPACT_NINF (-174)
 
 #define yypact_value_is_default(Yyn) \
   ((Yyn) == YYPACT_NINF)
 
-#define YYTABLE_NINF (-135)
+#define YYTABLE_NINF (-137)
 
 #define yytable_value_is_error(Yyn) \
   0
@@ -1836,37 +3147,38 @@ yysymbol_name (yysymbol_kind_t yysymbol)
    STATE-NUM.  */
 static const yytype_int16 yypact[] =
 {
-     337,   -38,  -137,    12,   557,  -137,  -137,  -137,  -137,   708,
-       4,    25,    31,  -137,   447,  -137,  -137,  -137,  -137,  1036,
-      50,  -137,  -137,    58,    64,    83,  -137,  -137,  -137,  -137,
-    -137,  -137,  -137,  -137,  -137,    89,  1036,   767,   100,    32,
-    -137,   489,  -137,  -137,   121,    98,    43,   271,  -137,  -137,
-     248,   132,   302,  -137,  -137,   651,  -137,   516,   684,  -137,
-    -137,    41,   956,   584,  -137,    89,    89,    89,   127,  -137,
-     129,  -137,   903,   138,  -137,   625,   113,  -137,  -137,    77,
-      46,   625,   116,  -137,   134,   776,   778,   787,   797,   799,
-    -137,  -137,  -137,  -137,  -137,  -137,  -137,  -137,  -137,  -137,
-     808,   849,   870,   872,   881,  -137,    89,   171,    15,   296,
-     162,   169,    35,   172,    89,  -137,   174,   405,   625,   684,
-    -137,   126,   948,  -137,  -137,  -137,    89,    89,    89,    89,
-      89,    89,   684,   139,   985,   992,   999,   180,   191,  -137,
-     444,   125,  -137,   121,    89,   184,    33,   166,  -137,  -137,
-    -137,  -137,    16,    16,    48,    48,    48,   167,  1026,   115,
-    -137,  -137,  1020,  -137,  -137,  -137,  -137,  -137,    89,   136,
-     298,  -137,  -137,  -137,  -137,  -137,  -137,  -137,   298,  -137,
-    -137,   175,   168,   216,   625,   516,   516,  1020,  1020,  1020,
-    1020,  1020,  1020,   250,  -137,   133,   201,   209,  -137,  1036,
-    -137,   156,   214,  -137,  -137,   232,   151,   121,    26,  -137,
-      13,    89,  -137,  -137,  -137,  -137,  -137,   516,  -137,  -137,
-     625,   194,   200,  -137,   216,   625,  -137,  -137,  -137,   233,
-     225,    89,  -137,   121,   170,  -137,    89,   411,  -137,   188,
-      17,   239,   219,  -137,  -137,  -137,    87,  -137,   186,  -137,
-    -137,  -137,   189,   424,   121,  -137,  -137,   516,  -137,  -137,
-     625,     8,   260,   196,   212,   202,  1036,   213,    89,  -137,
-     651,   272,  -137,   625,  -137,  -137,  -137,   285,  -137,  -137,
-      87,   625,  -137,   121,  -137,  -137,   276,   625,  -137,  -137,
-     625,  -137,   228,  -137,   287,  -137,  -137,  -137,   -31,  -137,
-    -137,   625,  -137,    -2,   625,  -137
+     345,   -35,  -174,    11,   573,  -174,  -174,  -174,  -174,   759,
+      17,    23,    36,  -174,   155,  -174,  -174,  -174,  -174,   114,
+      45,  -174,  -174,    62,    75,    82,  -174,  -174,  -174,  -174,
+    -174,  -174,  -174,  -174,  -174,   919,   114,    44,    76,    25,
+    -174,   505,  -174,  -174,    88,    77,     0,   279,  -174,  -174,
+     256,   100,   111,   310,  -174,  -174,   721,  -174,   532,   700,
+    -174,  -174,    16,   997,   600,  -174,   919,   919,   919,   108,
+    -174,   117,  -174,  1003,   133,  -174,   641,    81,  -174,  -174,
+     -14,    71,   641,   123,  -174,   128,    70,   778,   784,   829,
+     835,  -174,  -174,  -174,  -174,  -174,  -174,  -174,  -174,  -174,
+    -174,   841,   855,   861,   867,   886,  -174,   919,   165,   126,
+     194,   160,   161,    26,   164,   176,   919,  -174,   171,   413,
+     641,   700,  -174,    42,   968,  -174,  -174,  -174,   919,   919,
+     919,   919,   919,   919,   700,   106,  1032,  1039,  1046,   182,
+     177,  -174,   892,   121,  -174,    88,   919,   188,    -5,   167,
+    -174,  -174,  -174,  -174,    32,    32,    72,    72,    72,   223,
+    1076,   304,  -174,  -174,  1012,  -174,  -174,  -174,  -174,  -174,
+     919,   148,   305,  -174,  -174,  -174,  -174,  -174,  -174,  -174,
+     305,   912,  -174,  -174,   195,   174,   209,   641,   532,   532,
+    1012,  1012,  1012,  1012,  1012,  1012,   212,  -174,   163,   225,
+     238,  -174,   114,   239,   240,   243,  -174,  -174,   419,   184,
+      88,   714,  -174,    14,   919,  -174,  -174,  -174,  -174,  -174,
+    -174,   251,   532,  -174,  -174,   641,   228,   232,  -174,   209,
+     641,  -174,  -174,  -174,   257,   252,  -174,   919,   258,    88,
+     197,  -174,   919,   432,  -174,   192,  -174,   136,   267,   247,
+    -174,  -174,  -174,   110,  -174,   215,  -174,  -174,  -174,  -174,
+     220,   440,    88,  -174,  -174,   532,  -174,  -174,   641,    -8,
+     292,   224,   249,   248,   114,   222,   919,  -174,   721,   295,
+    -174,   641,  -174,  -174,  -174,   322,  -174,  -174,   110,   641,
+    -174,    88,  -174,  -174,   315,   641,  -174,  -174,   641,  -174,
+     259,  -174,   320,  -174,  -174,  -174,   -30,  -174,  -174,   641,
+    -174,   -22,   641,  -174
 };
 
 /* YYDEFACT[STATE-NUM] -- Default reduction number in state STATE-NUM.
@@ -1874,55 +3186,56 @@ static const yytype_int16 yypact[] =
    means the default is an error.  */
 static const yytype_uint8 yydefact[] =
 {
-       0,     0,     4,     0,   160,     5,     1,   159,   158,   160,
-       0,     0,     0,    97,   160,    97,    64,    65,    67,     0,
-       0,   137,    66,     0,     0,     0,    99,   100,   101,   102,
-     103,    68,    69,    70,    71,   160,     0,   160,     0,    36,
-      97,   160,    97,    40,     0,    97,     0,     0,   119,   120,
-       0,     0,     0,    16,    17,   160,    31,   160,   160,    95,
-      96,     0,     0,   160,    72,   160,   160,   160,     0,   118,
-       0,    19,     0,     0,    38,   160,     0,     6,    74,    54,
-       0,   160,     0,    22,     0,   160,   160,   160,   160,   160,
-      39,    76,    77,    78,    79,    80,    81,    82,    83,    84,
-     160,   160,   160,   160,   160,    75,   160,     0,   157,   157,
-     149,   150,   157,     0,   160,   111,     0,     0,   160,   160,
-      87,     0,     0,    97,    97,    97,   160,   160,   160,   160,
-     160,   160,   160,     0,     0,     0,     0,     0,     0,    18,
-     160,    97,     3,     0,   160,     0,    57,     0,    48,    73,
-      23,    26,   106,   107,   109,   108,   110,   113,   114,   115,
-     116,   117,   104,   112,   155,   156,   149,   150,   160,   142,
-     154,   143,   147,   148,   141,   145,   146,   144,   154,   138,
-      97,     0,     0,    97,   160,   160,   160,    89,    90,    93,
-      94,    92,    91,     0,    97,     0,     0,     0,   105,    13,
-     122,   124,     0,    37,    52,    55,     0,     0,   160,    49,
-       0,   160,   152,   153,   151,   140,   139,   160,    97,    88,
-     160,     0,    85,    86,    97,   160,    14,    20,    21,     0,
-       0,   160,   121,     0,    62,    53,   160,    60,   135,     0,
-       0,     0,    24,    98,    28,    30,     0,     9,    12,   123,
-      56,    63,     0,    51,     0,   136,    97,   160,    98,    97,
-     160,     0,     0,     0,    97,     0,    13,    58,   160,    61,
-     160,     0,    97,   160,    29,    46,    47,     0,    97,    15,
-       0,   160,    11,     0,    50,    33,     0,   160,    27,    97,
-     160,    41,    97,    59,     0,    32,    25,    43,    97,    10,
-      97,   160,    34,    97,   160,    35
+       0,     0,     4,     0,   162,     5,     1,   161,   160,   162,
+       0,     0,     0,    99,   162,    99,    66,    67,    69,     0,
+       0,   139,    68,     0,     0,     0,   101,   102,   103,   104,
+     105,    70,    71,    72,    73,   162,     0,   162,     0,    38,
+      99,   162,    99,    42,     0,    99,     0,     0,   121,   122,
+       0,     0,     0,     0,    16,    17,   162,    33,   162,   162,
+      97,    98,     0,     0,   162,    74,   162,   162,   162,     0,
+     120,     0,    19,     0,     0,    40,   162,     0,     6,    76,
+      56,     0,   162,     0,    24,     0,   162,   162,   162,   162,
+     162,    41,    78,    79,    80,    81,    82,    83,    84,    85,
+      86,   162,   162,   162,   162,   162,    77,   162,     0,   159,
+     159,   151,   152,   159,     0,     0,   162,   113,     0,     0,
+     162,   162,    89,     0,     0,    99,    99,    99,   162,   162,
+     162,   162,   162,   162,   162,     0,     0,     0,     0,     0,
+       0,    18,   162,    99,     3,     0,   162,     0,    59,     0,
+      50,    75,    25,    28,   108,   109,   111,   110,   112,   115,
+     116,   117,   118,   119,   106,   114,   157,   158,   151,   152,
+     162,   144,   156,   145,   149,   150,   143,   147,   148,   146,
+     156,   162,   140,    99,     0,     0,    99,   162,   162,   162,
+      91,    92,    95,    96,    94,    93,     0,    99,     0,     0,
+       0,   107,    13,   124,   126,     0,    39,    54,    57,     0,
+       0,   162,    51,     0,   162,   154,   155,   153,   142,   141,
+     124,     0,   162,    99,    90,   162,     0,    87,    88,    99,
+     162,    14,    22,    23,     0,     0,    21,   162,   123,     0,
+      64,    55,   162,    62,   137,     0,   123,     0,     0,    26,
+     100,    30,    32,     0,     9,    12,   125,    20,    58,    65,
+       0,    53,     0,   138,    99,   162,   100,    99,   162,     0,
+       0,     0,    99,     0,    13,    60,   162,    63,   162,     0,
+      99,   162,    31,    48,    49,     0,    99,    15,     0,   162,
+      11,     0,    52,    35,     0,   162,    29,    99,   162,    43,
+      99,    61,     0,    34,    27,    45,    99,    10,    99,   162,
+      36,    99,   162,    37
 };
 
 /* YYPGOTO[NTERM-NUM].  */
 static const yytype_int16 yypgoto[] =
 {
-    -137,  -137,  -137,   262,  -137,  -137,    40,   -70,  -137,  -137,
-    -137,  -137,  -137,  -137,    39,  -137,  -137,  -137,  -137,    45,
-    -136,    86,    -6,   -74,  -137,   -49,   -13,    67,   -51,     1,
-    -137,   101,  -137,  -137,  -137,   -45,   153,   -47,  -137
+    -174,  -174,  -174,   298,  -174,  -174,    66,   -77,  -174,  -174,
+    -174,  -174,  -174,  -174,    53,  -174,  -174,  -174,  -174,    73,
+    -113,   102,    -6,   -72,  -174,   -25,   -13,    84,   -50,     1,
+    -174,  -173,  -174,  -174,  -174,   -43,   173,   -94,  -174
 };
 
 /* YYDEFGOTO[NTERM-NUM].  */
 static const yytype_int16 yydefgoto[] =
 {
-       0,     3,     4,    40,    41,   265,   229,    42,   246,   260,
-     118,   294,   304,    75,   263,   264,   301,   277,    43,   252,
-      80,   146,    44,    45,   106,    61,    81,   259,    46,    47,
-      48,   202,   107,   169,    49,   214,   215,   171,    50
+       0,     3,     4,    40,    41,   273,   234,    42,   253,   268,
+     120,   302,   312,    76,   271,   272,   309,   285,    43,   260,
+      81,   148,    44,    45,   107,    62,    82,   267,    46,    47,
+      48,   205,   108,   171,    49,   217,   218,   173,    50
 };
 
 /* YYTABLE[YYPACT[STATE-NUM]] -- What to do in state STATE-NUM.  If
@@ -1930,230 +3243,240 @@ static const yytype_int16 yydefgoto[] =
    number is the opposite.  If YYTABLE_NINF, syntax error.  */
 static const yytype_int16 yytable[] =
 {
-      56,   141,    63,    51,   116,   113,     5,   204,   120,   121,
-      52,   149,     6,    64,   133,    62,   -45,   -45,    53,    85,
-      86,    87,    88,    89,    87,    88,    89,    76,   275,    78,
-      70,   256,     7,     8,   164,   165,    69,     9,    72,    54,
-     166,   167,    55,   -45,    82,   -44,   -44,   147,   181,   124,
-     125,   276,    51,   123,   164,   165,   117,    83,    62,   122,
-     148,    65,   174,   170,    62,   177,   134,   135,   136,    66,
-     182,   235,   -44,   124,   125,    67,    21,   100,   101,   102,
-      25,   103,   104,   193,   103,   104,   152,   153,   154,   155,
-     156,   238,   168,    35,    68,     7,     8,   250,    38,   236,
-       9,   157,   158,   159,   160,   161,    74,   162,   207,   208,
-     184,   185,   186,    51,   221,   179,   103,   104,   269,    73,
-     122,    85,    86,    87,    88,    89,    51,   187,   188,   189,
-     190,   191,   192,   122,   261,   262,   222,   223,   183,    21,
-      79,   201,    -7,    25,   114,   205,   137,   293,   138,   140,
-     242,   194,   143,   144,   145,   245,    35,   142,   124,   125,
-     150,    38,    85,    86,    87,    88,    89,   217,   240,   210,
-     220,   124,   125,    85,    86,    87,    88,    89,   151,   100,
-     219,   225,   175,   103,   104,   163,    62,    62,   180,   176,
-     274,   178,   198,   230,    85,    86,    87,    88,    89,   203,
-     124,   125,   199,   288,   206,   241,   226,   292,   271,   237,
-     209,   244,   239,   211,   218,   227,   298,   296,    62,   285,
-     100,   101,   102,   228,   103,   104,   232,   303,   -88,   234,
-     243,   231,   201,   125,   305,   103,   104,   253,    85,    86,
-      87,    88,    89,   270,   248,   247,   273,   145,   -88,   -88,
-     257,   280,   100,   101,   102,   258,   103,   104,    62,   287,
-     230,   266,   224,   267,   278,   290,   255,   108,   109,   253,
-     279,   117,    84,   110,   111,   281,   297,    85,    86,    87,
-      88,    89,   124,   125,   286,    90,   -42,   302,   283,   289,
-     295,   112,    91,    92,    93,    94,   100,   101,   102,   300,
-     103,   104,   299,    77,   124,   125,   282,   233,    85,    86,
-      87,    88,    89,   284,   115,   164,   165,   212,   213,   291,
-     251,   172,   173,   166,   167,   272,    95,    96,    97,    98,
-      99,   216,   249,     0,     0,   100,   101,   102,     1,   103,
-     104,     0,     0,    -2,    -2,     0,     0,   105,    -2,     0,
-       0,     0,    -2,    -2,    -2,    -2,    -2,    -2,     0,     0,
-       0,     0,    -2,    -2,     0,     0,   100,   101,   102,     0,
-     103,   104,    -2,     0,     0,     0,    -2,    -2,    -2,    -2,
-      -2,     2,    -2,    -2,     0,     0,     0,    -2,    -2,    -2,
-      -2,    -2,    -2,    -2,    -2,    -2,    -2,    -2,    -2,    -2,
-      -2,     0,     0,     0,    -2,     0,     0,    -2,    -2,    -2,
-      -2,    85,    86,    87,    88,    89,     0,    85,    86,    87,
-      88,    89,     0,     0,     0,     0,    91,    92,    93,    94,
-      85,    86,    87,    88,    89,     0,     0,     0,     0,     0,
-       0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-       7,     8,    57,     7,     8,     9,   200,     0,    58,     0,
-      95,    96,    97,    98,    99,     0,     0,     0,     0,   100,
-     101,   102,     0,   103,   104,   100,   101,   102,     0,   103,
-     104,   105,     0,     0,    59,    60,   254,     0,   100,   101,
-     102,     0,   103,   104,    21,     7,     8,    21,    25,   268,
-       9,    25,     0,     0,    10,    11,    12,    13,     0,     0,
-       0,    35,     0,     0,    35,     0,    38,     0,     0,    38,
-       0,    57,     7,     8,    14,     0,     0,   119,    15,    16,
-      17,    18,     0,    -8,    19,    20,     0,     0,     0,    21,
-      22,    23,    24,    25,    26,    27,    28,    29,    30,    31,
-      32,    33,    34,    59,    60,     0,    35,     0,     0,    36,
-      37,    38,    39,     7,     8,     0,    21,     0,     9,     0,
-      25,     0,    10,    11,    12,    13,     0,     0,     0,     0,
-       0,     0,     0,    35,     0,     0,     0,     0,    38,    57,
-       7,     8,    14,     0,     0,   132,    15,    16,    17,    18,
-       0,     0,    19,    20,     0,     0,     0,    21,    22,    23,
-      24,    25,    26,    27,    28,    29,    30,    31,    32,    33,
-      34,    59,    60,     0,    35,     0,     0,    36,    37,    38,
-      39,     7,     8,     0,    21,     0,     9,     0,    25,     0,
+      57,    83,    64,    52,   143,   151,   118,   114,   221,     5,
+      53,     6,   283,    65,    84,    63,   176,   -47,   -47,   179,
+      86,    87,    88,    89,    90,   -46,   -46,    77,   125,    79,
+      71,    54,   207,   122,   123,   284,    70,    55,    73,   135,
+      88,    89,    90,   184,   -47,   166,   167,    56,   126,   127,
+       7,     8,   -46,    52,   186,     9,    66,   119,    72,    63,
+     124,   145,   146,   147,   256,    63,   172,   136,   137,   138,
+     210,   211,   149,    67,   126,   127,     7,     8,   101,   102,
+     103,     9,   104,   105,  -127,   150,    68,   154,   155,   156,
+     157,   158,   244,    69,    21,    74,   185,   241,    25,    75,
+     104,   105,   159,   160,   161,   162,   163,    80,   164,   196,
+     226,    35,   187,   188,   189,    52,    51,   182,   197,   115,
+      21,    -7,   124,   116,    25,   144,   258,   139,    52,   190,
+     191,   192,   193,   194,   195,   124,   140,    35,   126,   127,
+     104,   105,    51,   204,   142,   166,   167,   208,   249,   277,
+     264,   168,   169,   252,    16,    17,    18,   269,   270,    19,
+      58,     7,     8,   227,   228,    22,    59,   152,   126,   127,
+     222,   213,   153,   225,    31,    32,    33,    34,   301,   165,
+     177,   178,   204,   180,   230,   183,   224,   181,   202,    63,
+      63,   282,    60,    61,   201,   206,   235,   247,    86,    87,
+      88,    89,    90,   170,   296,    21,   126,   127,   209,    25,
+     248,   212,   243,   166,   167,   245,   251,   300,   304,   174,
+     175,   -90,    35,    63,   229,   214,   306,    51,   293,    86,
+      87,    88,    89,    90,   223,   313,   231,   311,   204,   232,
+     279,   -90,   -90,   261,   126,   127,    86,    87,    88,    89,
+      90,   278,   233,   236,   281,   238,   101,   102,   103,   288,
+     104,   105,   240,   246,   250,   127,    63,   295,   235,   254,
+     263,   255,   257,   298,   147,   109,   110,   261,   265,   119,
+      85,   111,   112,   266,   305,    86,    87,    88,    89,    90,
+     274,   104,   105,    91,   275,   310,   286,   291,   287,   113,
+      92,    93,    94,    95,   101,   102,   103,   294,   104,   105,
+      86,    87,    88,    89,    90,   237,    86,    87,    88,    89,
+      90,   289,   117,   -44,   215,   216,   297,   126,   127,   303,
+     168,   169,   308,   307,    96,    97,    98,    99,   100,    78,
+     290,   299,   259,   101,   102,   103,     1,   104,   105,   292,
+     280,    -2,    -2,   219,     0,   106,    -2,     0,     0,     0,
+      -2,    -2,    -2,    -2,    -2,    -2,     0,     0,   101,     0,
+      -2,    -2,   104,   105,   101,   102,   103,     0,   104,   105,
+      -2,     0,     0,     0,    -2,    -2,    -2,    -2,    -2,     2,
+      -2,    -2,     0,     0,     0,    -2,    -2,    -2,    -2,    -2,
+      -2,    -2,    -2,    -2,    -2,    -2,    -2,    -2,    -2,     0,
+       0,     0,    -2,     0,     0,    -2,    -2,    -2,    -2,    86,
+      87,    88,    89,    90,     0,    86,    87,    88,    89,    90,
+       0,     0,     0,     0,    92,    93,    94,    95,    86,    87,
+      88,    89,    90,     0,     0,     0,    86,    87,    88,    89,
+      90,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+       0,     0,     0,     0,     0,     0,     0,     0,    96,    97,
+      98,    99,   100,     0,     0,     0,     0,   101,   102,   103,
+       0,   104,   105,   101,   102,   103,     0,   104,   105,   106,
+       0,     0,     0,     0,   239,     0,   101,   102,   103,     0,
+     104,   105,     0,     0,   101,   102,   103,   262,   104,   105,
+       0,     7,     8,     0,     0,   276,     9,     0,     0,     0,
       10,    11,    12,    13,     0,     0,     0,     0,     0,     0,
-       0,    35,     0,     0,     0,     0,    38,     7,     8,     0,
-      14,     0,     9,     0,    15,    16,    17,    18,     0,     0,
+       0,     0,     0,     0,     0,     0,     0,    58,     7,     8,
+      14,     0,     0,   121,    15,    16,    17,    18,     0,    -8,
       19,    20,     0,     0,     0,    21,    22,    23,    24,    25,
-      26,    27,    28,    29,    30,    31,    32,    33,    34,    57,
-       7,     8,    35,     0,     0,   119,    37,    38,    39,     0,
-       0,    21,     0,     0,     0,    25,    26,    27,    28,    29,
-      30,     0,     0,     0,     7,     8,     0,     0,    35,     9,
-       0,    59,    60,    38,    16,    17,    18,     0,     0,    19,
-       0,     0,     0,     0,    21,    22,     0,     0,    25,     0,
-       0,     0,     0,     0,    31,    32,    33,    34,    16,    17,
-      18,    35,     0,    19,     0,     0,    38,     0,    21,    22,
-       0,     0,    25,     0,     0,     0,     0,     0,    31,    32,
-      33,    34,     0,     7,     8,    35,     0,     0,     9,     0,
-      38,    71,     7,     8,     7,     8,     0,     9,     0,     9,
-    -125,     0,  -126,     7,     8,     0,     0,     0,     9,     0,
-       0,  -128,     0,     7,     8,     7,     8,     0,     9,     0,
-       9,  -127,     0,  -129,     7,     8,     0,    21,     0,     9,
-       0,    25,  -130,     0,     0,     0,    21,     0,    21,     0,
-      25,     0,    25,     0,    35,     0,     0,    21,     0,    38,
-       0,    25,     0,    35,     0,    35,     0,    21,    38,    21,
-      38,    25,     0,    25,    35,     7,     8,     0,    21,    38,
-       9,     0,    25,  -131,    35,     0,    35,     0,     0,    38,
-       0,    38,     0,     0,     0,    35,     7,     8,     7,     8,
-      38,     9,     0,     9,  -132,     0,  -133,     7,     8,     0,
-       0,     0,     9,     0,     0,  -134,     0,     0,     0,    21,
-       0,     0,     0,    25,     0,     0,     0,     0,     0,    85,
-      86,    87,    88,    89,     0,     0,    35,   139,     0,     0,
-      21,    38,    21,     0,    25,     0,    25,     0,     0,     0,
-       0,    21,     0,     0,     0,    25,     0,    35,     0,    35,
-       0,     0,    38,     0,    38,     0,     0,     0,    35,     0,
-       0,     0,     0,    38,    85,    86,    87,    88,    89,     0,
-     115,     0,    85,    86,    87,    88,    89,   100,   101,   102,
-       0,   103,   104,     0,     0,   126,   127,   128,   129,   130,
-       0,     0,   131,   126,   127,   128,   129,   130,     0,     0,
-     131,    85,    86,    87,    88,    89,     0,   195,    85,    86,
-      87,    88,    89,     0,   196,    85,    86,    87,    88,    89,
-       0,   197,   100,   101,   102,     0,   103,   104,     0,     0,
-     100,   101,   102,     0,   103,   104,    85,    86,    87,    88,
-      89,     0,    85,    86,    87,    88,    89,     0,     0,     0,
-       0,     0,     0,     0,     0,     0,     0,     0,     0,   100,
-     101,   102,     0,   103,   104,     0,   100,   101,   102,     0,
-     103,   104,     0,   100,   101,   102,     0,   103,   104,     0,
-       0,     0,     0,     0,     0,     0,    16,    17,    18,     0,
-       0,    19,     0,     0,   100,   101,   102,    22,   103,   104,
-     100,     0,   102,     0,   103,   104,    31,    32,    33,    34
+      26,    27,    28,    29,    30,    31,    32,    33,    34,    60,
+      61,     0,    35,     0,     0,    36,    37,    38,    39,     7,
+       8,     0,    21,     0,     9,     0,    25,     0,    10,    11,
+      12,    13,     0,     0,     0,     0,     0,     0,     0,    35,
+       0,     0,     0,     0,    51,    58,     7,     8,    14,     0,
+       0,   134,    15,    16,    17,    18,     0,     0,    19,    20,
+       0,     0,     0,    21,    22,    23,    24,    25,    26,    27,
+      28,    29,    30,    31,    32,    33,    34,    60,    61,     0,
+      35,     0,     0,    36,    37,    38,    39,     7,     8,     0,
+      21,     0,     9,     0,    25,     0,    10,    11,    12,    13,
+       0,     0,     0,     0,     0,     0,     0,    35,     0,     0,
+       0,     0,    51,     0,     0,     0,    14,     0,     0,     0,
+      15,    16,    17,    18,     0,     0,    19,    20,     0,     0,
+       0,    21,    22,    23,    24,    25,    26,    27,    28,    29,
+      30,    31,    32,    33,    34,    58,     7,     8,    35,     0,
+       0,   121,    37,    38,    39,     0,     0,     0,     0,     0,
+       7,     8,     0,     0,     0,     9,     0,     7,     8,     0,
+       0,     0,     9,     0,     0,     0,     0,    60,    61,     0,
+      16,    17,    18,     0,     0,    19,     0,     0,     0,     0,
+      21,    22,     0,     0,    25,     0,     0,     0,     0,     0,
+      31,    32,    33,    34,    21,     7,     8,    35,    25,     0,
+       9,    21,    51,     0,     0,    25,    26,    27,    28,    29,
+      30,    35,     0,     0,     7,     8,    51,   242,    35,     9,
+       7,     8,  -128,    51,     0,     9,     0,     0,  -130,    16,
+      17,    18,     0,     0,    19,     0,     0,     0,     0,    21,
+      22,     0,     0,    25,     0,     0,     0,     0,     0,    31,
+      32,    33,    34,     0,     0,     0,    35,     0,    21,     0,
+       0,    51,    25,     0,    21,     7,     8,     0,    25,     0,
+       9,     7,     8,  -129,     0,    35,     9,     7,     8,  -131,
+      51,    35,     9,     0,     0,  -132,    51,     0,     0,     0,
+       0,     7,     8,     0,     0,     0,     9,     7,     8,  -133,
+       0,     0,     9,     7,     8,  -134,     0,     0,     9,    21,
+       0,  -135,     0,    25,     0,    21,     0,     0,     0,    25,
+       0,    21,     7,     8,     0,    25,    35,     9,     7,     8,
+    -136,    51,    35,     9,   203,    21,     0,    51,    35,    25,
+       0,    21,     0,    51,     0,    25,     0,    21,     7,     8,
+       0,    25,    35,     9,   220,     7,     8,    51,    35,     0,
+       9,     0,     0,    51,    35,     0,    21,     0,     0,    51,
+      25,     0,    21,     0,     0,     0,    25,     0,     0,     0,
+       0,     0,     0,    35,     0,     0,     0,     0,    51,    35,
+       0,     0,    21,     0,    51,     0,    25,     0,     0,    21,
+       0,     0,     0,    25,    86,    87,    88,    89,    90,    35,
+     117,     0,     0,     0,    51,     0,    35,     0,     0,     0,
+       0,    51,     0,     0,     0,   128,   129,   130,   131,   132,
+       0,     0,   133,    86,    87,    88,    89,    90,     0,    86,
+      87,    88,    89,    90,     0,     0,     0,   141,    86,    87,
+      88,    89,    90,     0,   128,   129,   130,   131,   132,     0,
+       0,   133,   101,   102,   103,     0,   104,   105,    86,    87,
+      88,    89,    90,     0,   198,    86,    87,    88,    89,    90,
+       0,   199,    86,    87,    88,    89,    90,     0,   200,     0,
+       0,   101,   102,   103,     0,   104,   105,   101,   102,   103,
+       0,   104,   105,     0,     0,     0,   101,   102,   103,     0,
+     104,   105,    86,    87,    88,    89,    90,     0,     0,     0,
+       0,     0,     0,     0,     0,     0,   101,   102,   103,     0,
+     104,   105,     0,   101,   102,   103,     0,   104,   105,     0,
+     101,   102,   103,     0,   104,   105,     0,     0,     0,     0,
+       0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+       0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+     101,     0,   103,     0,   104,   105
 };
 
 static const yytype_int16 yycheck[] =
 {
-      13,    75,    15,     9,    55,    50,    44,   143,    57,    58,
-       9,    81,     0,    19,    63,    14,    47,    48,    14,     6,
-       7,     8,     9,    10,     8,     9,    10,    40,    20,    42,
-      36,    14,     6,     7,    19,    20,    35,    11,    37,    14,
-      25,    26,    11,    74,     1,    47,    48,     1,   118,    32,
-      33,    43,    58,    12,    19,    20,    55,    14,    57,    58,
-      14,    11,   109,   108,    63,   112,    65,    66,    67,    11,
-     119,   207,    74,    32,    33,    11,    50,    64,    65,    66,
-      54,    68,    69,   132,    68,    69,    85,    86,    87,    88,
-      89,    78,    77,    67,    11,     6,     7,   233,    72,    73,
-      11,   100,   101,   102,   103,   104,    74,   106,    75,    76,
-     123,   124,   125,   119,   184,   114,    68,    69,   254,    19,
-     119,     6,     7,     8,     9,    10,   132,   126,   127,   128,
-     129,   130,   131,   132,    47,    48,   185,   186,    12,    50,
-      19,   140,    44,    54,    12,   144,    19,   283,    19,    11,
-     220,    12,    75,    76,    77,   225,    67,    44,    32,    33,
-      44,    72,     6,     7,     8,     9,    10,   180,   217,   168,
-     183,    32,    33,     6,     7,     8,     9,    10,    44,    64,
-      12,   194,    20,    68,    69,    14,   185,   186,    14,    20,
-     260,    19,    12,   199,     6,     7,     8,     9,    10,    74,
-      32,    33,    11,   273,    20,   218,    73,   281,   257,   208,
-      44,   224,   211,    77,    39,    14,   290,   287,   217,   270,
-      64,    65,    66,    14,    68,    69,    12,   301,    12,    78,
-      36,    75,   231,    33,   304,    68,    69,   236,     6,     7,
-       8,     9,    10,   256,    19,    12,   259,    77,    32,    33,
-      11,   264,    64,    65,    66,    36,    68,    69,   257,   272,
-     266,    75,    12,    74,     4,   278,    78,    19,    20,   268,
-      74,   270,     1,    25,    26,    73,   289,     6,     7,     8,
-       9,    10,    32,    33,    12,    14,    74,   300,    75,     4,
-      14,    43,    21,    22,    23,    24,    64,    65,    66,    12,
-      68,    69,    74,    41,    32,    33,   266,    75,     6,     7,
-       8,     9,    10,   268,    12,    19,    20,    19,    20,   280,
-     234,    25,    26,    25,    26,   258,    55,    56,    57,    58,
-      59,   178,   231,    -1,    -1,    64,    65,    66,     1,    68,
-      69,    -1,    -1,     6,     7,    -1,    -1,    76,    11,    -1,
-      -1,    -1,    15,    16,    17,    18,    19,    20,    -1,    -1,
-      -1,    -1,    25,    26,    -1,    -1,    64,    65,    66,    -1,
-      68,    69,    35,    -1,    -1,    -1,    39,    40,    41,    42,
-      43,    44,    45,    46,    -1,    -1,    -1,    50,    51,    52,
-      53,    54,    55,    56,    57,    58,    59,    60,    61,    62,
-      63,    -1,    -1,    -1,    67,    -1,    -1,    70,    71,    72,
-      73,     6,     7,     8,     9,    10,    -1,     6,     7,     8,
-       9,    10,    -1,    -1,    -1,    -1,    21,    22,    23,    24,
-       6,     7,     8,     9,    10,    -1,    -1,    -1,    -1,    -1,
-      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,
-       6,     7,     5,     6,     7,    11,    12,    -1,    11,    -1,
-      55,    56,    57,    58,    59,    -1,    -1,    -1,    -1,    64,
-      65,    66,    -1,    68,    69,    64,    65,    66,    -1,    68,
-      69,    76,    -1,    -1,    37,    38,    75,    -1,    64,    65,
-      66,    -1,    68,    69,    50,     6,     7,    50,    54,    75,
-      11,    54,    -1,    -1,    15,    16,    17,    18,    -1,    -1,
-      -1,    67,    -1,    -1,    67,    -1,    72,    -1,    -1,    72,
-      -1,     5,     6,     7,    35,    -1,    -1,    11,    39,    40,
-      41,    42,    -1,    44,    45,    46,    -1,    -1,    -1,    50,
-      51,    52,    53,    54,    55,    56,    57,    58,    59,    60,
-      61,    62,    63,    37,    38,    -1,    67,    -1,    -1,    70,
-      71,    72,    73,     6,     7,    -1,    50,    -1,    11,    -1,
-      54,    -1,    15,    16,    17,    18,    -1,    -1,    -1,    -1,
-      -1,    -1,    -1,    67,    -1,    -1,    -1,    -1,    72,     5,
-       6,     7,    35,    -1,    -1,    11,    39,    40,    41,    42,
-      -1,    -1,    45,    46,    -1,    -1,    -1,    50,    51,    52,
-      53,    54,    55,    56,    57,    58,    59,    60,    61,    62,
-      63,    37,    38,    -1,    67,    -1,    -1,    70,    71,    72,
-      73,     6,     7,    -1,    50,    -1,    11,    -1,    54,    -1,
-      15,    16,    17,    18,    -1,    -1,    -1,    -1,    -1,    -1,
-      -1,    67,    -1,    -1,    -1,    -1,    72,     6,     7,    -1,
-      35,    -1,    11,    -1,    39,    40,    41,    42,    -1,    -1,
+      13,     1,    15,     9,    76,    82,    56,    50,   181,    44,
+       9,     0,    20,    19,    14,    14,   110,    47,    48,   113,
+       6,     7,     8,     9,    10,    47,    48,    40,    12,    42,
+      36,    14,   145,    58,    59,    43,    35,    14,    37,    64,
+       8,     9,    10,   120,    74,    19,    20,    11,    32,    33,
+       6,     7,    74,    59,    12,    11,    11,    56,    14,    58,
+      59,    75,    76,    77,   237,    64,   109,    66,    67,    68,
+      75,    76,     1,    11,    32,    33,     6,     7,    64,    65,
+      66,    11,    68,    69,    14,    14,    11,    86,    87,    88,
+      89,    90,    78,    11,    50,    19,   121,   210,    54,    74,
+      68,    69,   101,   102,   103,   104,   105,    19,   107,   134,
+     187,    67,   125,   126,   127,   121,    72,   116,    12,    19,
+      50,    44,   121,    12,    54,    44,   239,    19,   134,   128,
+     129,   130,   131,   132,   133,   134,    19,    67,    32,    33,
+      68,    69,    72,   142,    11,    19,    20,   146,   225,   262,
+      14,    25,    26,   230,    40,    41,    42,    47,    48,    45,
+       5,     6,     7,   188,   189,    51,    11,    44,    32,    33,
+     183,   170,    44,   186,    60,    61,    62,    63,   291,    14,
+      20,    20,   181,    19,   197,    14,    12,    11,    11,   188,
+     189,   268,    37,    38,    12,    74,   202,   222,     6,     7,
+       8,     9,    10,    77,   281,    50,    32,    33,    20,    54,
+     223,    44,   211,    19,    20,   214,   229,   289,   295,    25,
+      26,    12,    67,   222,    12,    77,   298,    72,   278,     6,
+       7,     8,     9,    10,    39,   312,    73,   309,   237,    14,
+     265,    32,    33,   242,    32,    33,     6,     7,     8,     9,
+      10,   264,    14,    14,   267,    12,    64,    65,    66,   272,
+      68,    69,    78,    12,    36,    33,   265,   280,   274,    12,
+      78,    19,    14,   286,    77,    19,    20,   276,    11,   278,
+       1,    25,    26,    36,   297,     6,     7,     8,     9,    10,
+      75,    68,    69,    14,    74,   308,     4,    75,    74,    43,
+      21,    22,    23,    24,    64,    65,    66,    12,    68,    69,
+       6,     7,     8,     9,    10,    75,     6,     7,     8,     9,
+      10,    73,    12,    74,    19,    20,     4,    32,    33,    14,
+      25,    26,    12,    74,    55,    56,    57,    58,    59,    41,
+     274,   288,   240,    64,    65,    66,     1,    68,    69,   276,
+     266,     6,     7,   180,    -1,    76,    11,    -1,    -1,    -1,
+      15,    16,    17,    18,    19,    20,    -1,    -1,    64,    -1,
+      25,    26,    68,    69,    64,    65,    66,    -1,    68,    69,
+      35,    -1,    -1,    -1,    39,    40,    41,    42,    43,    44,
       45,    46,    -1,    -1,    -1,    50,    51,    52,    53,    54,
-      55,    56,    57,    58,    59,    60,    61,    62,    63,     5,
-       6,     7,    67,    -1,    -1,    11,    71,    72,    73,    -1,
-      -1,    50,    -1,    -1,    -1,    54,    55,    56,    57,    58,
-      59,    -1,    -1,    -1,     6,     7,    -1,    -1,    67,    11,
-      -1,    37,    38,    72,    40,    41,    42,    -1,    -1,    45,
-      -1,    -1,    -1,    -1,    50,    51,    -1,    -1,    54,    -1,
-      -1,    -1,    -1,    -1,    60,    61,    62,    63,    40,    41,
-      42,    67,    -1,    45,    -1,    -1,    72,    -1,    50,    51,
-      -1,    -1,    54,    -1,    -1,    -1,    -1,    -1,    60,    61,
-      62,    63,    -1,     6,     7,    67,    -1,    -1,    11,    -1,
-      72,    14,     6,     7,     6,     7,    -1,    11,    -1,    11,
-      14,    -1,    14,     6,     7,    -1,    -1,    -1,    11,    -1,
-      -1,    14,    -1,     6,     7,     6,     7,    -1,    11,    -1,
-      11,    14,    -1,    14,     6,     7,    -1,    50,    -1,    11,
-      -1,    54,    14,    -1,    -1,    -1,    50,    -1,    50,    -1,
-      54,    -1,    54,    -1,    67,    -1,    -1,    50,    -1,    72,
-      -1,    54,    -1,    67,    -1,    67,    -1,    50,    72,    50,
-      72,    54,    -1,    54,    67,     6,     7,    -1,    50,    72,
-      11,    -1,    54,    14,    67,    -1,    67,    -1,    -1,    72,
-      -1,    72,    -1,    -1,    -1,    67,     6,     7,     6,     7,
-      72,    11,    -1,    11,    14,    -1,    14,     6,     7,    -1,
-      -1,    -1,    11,    -1,    -1,    14,    -1,    -1,    -1,    50,
-      -1,    -1,    -1,    54,    -1,    -1,    -1,    -1,    -1,     6,
-       7,     8,     9,    10,    -1,    -1,    67,    14,    -1,    -1,
-      50,    72,    50,    -1,    54,    -1,    54,    -1,    -1,    -1,
-      -1,    50,    -1,    -1,    -1,    54,    -1,    67,    -1,    67,
-      -1,    -1,    72,    -1,    72,    -1,    -1,    -1,    67,    -1,
-      -1,    -1,    -1,    72,     6,     7,     8,     9,    10,    -1,
-      12,    -1,     6,     7,     8,     9,    10,    64,    65,    66,
-      -1,    68,    69,    -1,    -1,    27,    28,    29,    30,    31,
-      -1,    -1,    34,    27,    28,    29,    30,    31,    -1,    -1,
-      34,     6,     7,     8,     9,    10,    -1,    12,     6,     7,
+      55,    56,    57,    58,    59,    60,    61,    62,    63,    -1,
+      -1,    -1,    67,    -1,    -1,    70,    71,    72,    73,     6,
+       7,     8,     9,    10,    -1,     6,     7,     8,     9,    10,
+      -1,    -1,    -1,    -1,    21,    22,    23,    24,     6,     7,
+       8,     9,    10,    -1,    -1,    -1,     6,     7,     8,     9,
+      10,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    55,    56,
+      57,    58,    59,    -1,    -1,    -1,    -1,    64,    65,    66,
+      -1,    68,    69,    64,    65,    66,    -1,    68,    69,    76,
+      -1,    -1,    -1,    -1,    75,    -1,    64,    65,    66,    -1,
+      68,    69,    -1,    -1,    64,    65,    66,    75,    68,    69,
+      -1,     6,     7,    -1,    -1,    75,    11,    -1,    -1,    -1,
+      15,    16,    17,    18,    -1,    -1,    -1,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    -1,    -1,     5,     6,     7,
+      35,    -1,    -1,    11,    39,    40,    41,    42,    -1,    44,
+      45,    46,    -1,    -1,    -1,    50,    51,    52,    53,    54,
+      55,    56,    57,    58,    59,    60,    61,    62,    63,    37,
+      38,    -1,    67,    -1,    -1,    70,    71,    72,    73,     6,
+       7,    -1,    50,    -1,    11,    -1,    54,    -1,    15,    16,
+      17,    18,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    67,
+      -1,    -1,    -1,    -1,    72,     5,     6,     7,    35,    -1,
+      -1,    11,    39,    40,    41,    42,    -1,    -1,    45,    46,
+      -1,    -1,    -1,    50,    51,    52,    53,    54,    55,    56,
+      57,    58,    59,    60,    61,    62,    63,    37,    38,    -1,
+      67,    -1,    -1,    70,    71,    72,    73,     6,     7,    -1,
+      50,    -1,    11,    -1,    54,    -1,    15,    16,    17,    18,
+      -1,    -1,    -1,    -1,    -1,    -1,    -1,    67,    -1,    -1,
+      -1,    -1,    72,    -1,    -1,    -1,    35,    -1,    -1,    -1,
+      39,    40,    41,    42,    -1,    -1,    45,    46,    -1,    -1,
+      -1,    50,    51,    52,    53,    54,    55,    56,    57,    58,
+      59,    60,    61,    62,    63,     5,     6,     7,    67,    -1,
+      -1,    11,    71,    72,    73,    -1,    -1,    -1,    -1,    -1,
+       6,     7,    -1,    -1,    -1,    11,    -1,     6,     7,    -1,
+      -1,    -1,    11,    -1,    -1,    -1,    -1,    37,    38,    -1,
+      40,    41,    42,    -1,    -1,    45,    -1,    -1,    -1,    -1,
+      50,    51,    -1,    -1,    54,    -1,    -1,    -1,    -1,    -1,
+      60,    61,    62,    63,    50,     6,     7,    67,    54,    -1,
+      11,    50,    72,    -1,    -1,    54,    55,    56,    57,    58,
+      59,    67,    -1,    -1,     6,     7,    72,    73,    67,    11,
+       6,     7,    14,    72,    -1,    11,    -1,    -1,    14,    40,
+      41,    42,    -1,    -1,    45,    -1,    -1,    -1,    -1,    50,
+      51,    -1,    -1,    54,    -1,    -1,    -1,    -1,    -1,    60,
+      61,    62,    63,    -1,    -1,    -1,    67,    -1,    50,    -1,
+      -1,    72,    54,    -1,    50,     6,     7,    -1,    54,    -1,
+      11,     6,     7,    14,    -1,    67,    11,     6,     7,    14,
+      72,    67,    11,    -1,    -1,    14,    72,    -1,    -1,    -1,
+      -1,     6,     7,    -1,    -1,    -1,    11,     6,     7,    14,
+      -1,    -1,    11,     6,     7,    14,    -1,    -1,    11,    50,
+      -1,    14,    -1,    54,    -1,    50,    -1,    -1,    -1,    54,
+      -1,    50,     6,     7,    -1,    54,    67,    11,     6,     7,
+      14,    72,    67,    11,    12,    50,    -1,    72,    67,    54,
+      -1,    50,    -1,    72,    -1,    54,    -1,    50,     6,     7,
+      -1,    54,    67,    11,    12,     6,     7,    72,    67,    -1,
+      11,    -1,    -1,    72,    67,    -1,    50,    -1,    -1,    72,
+      54,    -1,    50,    -1,    -1,    -1,    54,    -1,    -1,    -1,
+      -1,    -1,    -1,    67,    -1,    -1,    -1,    -1,    72,    67,
+      -1,    -1,    50,    -1,    72,    -1,    54,    -1,    -1,    50,
+      -1,    -1,    -1,    54,     6,     7,     8,     9,    10,    67,
+      12,    -1,    -1,    -1,    72,    -1,    67,    -1,    -1,    -1,
+      -1,    72,    -1,    -1,    -1,    27,    28,    29,    30,    31,
+      -1,    -1,    34,     6,     7,     8,     9,    10,    -1,     6,
+       7,     8,     9,    10,    -1,    -1,    -1,    14,     6,     7,
+       8,     9,    10,    -1,    27,    28,    29,    30,    31,    -1,
+      -1,    34,    64,    65,    66,    -1,    68,    69,     6,     7,
        8,     9,    10,    -1,    12,     6,     7,     8,     9,    10,
-      -1,    12,    64,    65,    66,    -1,    68,    69,    -1,    -1,
-      64,    65,    66,    -1,    68,    69,     6,     7,     8,     9,
-      10,    -1,     6,     7,     8,     9,    10,    -1,    -1,    -1,
-      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    64,
-      65,    66,    -1,    68,    69,    -1,    64,    65,    66,    -1,
+      -1,    12,     6,     7,     8,     9,    10,    -1,    12,    -1,
+      -1,    64,    65,    66,    -1,    68,    69,    64,    65,    66,
+      -1,    68,    69,    -1,    -1,    -1,    64,    65,    66,    -1,
+      68,    69,     6,     7,     8,     9,    10,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    -1,    64,    65,    66,    -1,
       68,    69,    -1,    64,    65,    66,    -1,    68,    69,    -1,
-      -1,    -1,    -1,    -1,    -1,    -1,    40,    41,    42,    -1,
-      -1,    45,    -1,    -1,    64,    65,    66,    51,    68,    69,
-      64,    -1,    66,    -1,    68,    69,    60,    61,    62,    63
+      64,    65,    66,    -1,    68,    69,    -1,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,
+      64,    -1,    66,    -1,    68,    69
 };
 
 /* YYSTOS[STATE-NUM] -- The symbol kind of the accessing symbol of
@@ -2165,32 +3488,33 @@ static const yytype_int8 yystos[] =
       46,    50,    51,    52,    53,    54,    55,    56,    57,    58,
       59,    60,    61,    62,    63,    67,    70,    71,    72,    73,
       82,    83,    86,    97,   101,   102,   107,   108,   109,   113,
-     117,   101,   108,    14,    14,    11,   105,     5,    11,    37,
-      38,   104,   108,   105,   101,    11,    11,    11,    11,   108,
-     101,    14,   108,    19,    74,    92,   105,    82,   105,    19,
-      99,   105,     1,    14,     1,     6,     7,     8,     9,    10,
-      14,    21,    22,    23,    24,    55,    56,    57,    58,    59,
-      64,    65,    66,    68,    69,    76,   103,   111,    19,    20,
-      25,    26,    43,   114,    12,    12,   107,   108,    89,    11,
-     104,   104,   108,    12,    32,    33,    27,    28,    29,    30,
-      31,    34,    11,   104,   108,   108,   108,    19,    19,    14,
-      11,   102,    44,    75,    76,    77,   100,     1,    14,    86,
-      44,    44,   108,   108,   108,   108,   108,   108,   108,   108,
-     108,   108,   108,    14,    19,    20,    25,    26,    77,   112,
-     114,   116,    25,    26,   116,    20,    20,   116,    19,   108,
-      14,    86,   104,    12,   105,   105,   105,   108,   108,   108,
-     108,   108,   108,   104,    12,    12,    12,    12,    12,    11,
-      12,   108,   110,    74,    99,   108,    20,    75,    76,    44,
-     108,    77,    19,    20,   114,   115,   115,   105,    39,    12,
-     105,    86,   104,   104,    12,   105,    73,    14,    14,    85,
-     101,    75,    12,    75,    78,    99,    73,   108,    78,   108,
-     104,   105,    86,    36,   105,    86,    87,    12,    19,   110,
-      99,   100,    98,   108,    75,    78,    14,    11,    36,   106,
-      88,    47,    48,    93,    94,    84,    75,    74,    75,    99,
-     105,   104,   106,   105,    86,    20,    43,    96,     4,    74,
-     105,    73,    85,    75,    98,   107,    12,   105,    86,     4,
-     105,    93,   102,    99,    90,    14,    86,   105,   102,    74,
-      12,    95,   105,   102,    91,    86
+     117,    72,   101,   108,    14,    14,    11,   105,     5,    11,
+      37,    38,   104,   108,   105,   101,    11,    11,    11,    11,
+     108,   101,    14,   108,    19,    74,    92,   105,    82,   105,
+      19,    99,   105,     1,    14,     1,     6,     7,     8,     9,
+      10,    14,    21,    22,    23,    24,    55,    56,    57,    58,
+      59,    64,    65,    66,    68,    69,    76,   103,   111,    19,
+      20,    25,    26,    43,   114,    19,    12,    12,   107,   108,
+      89,    11,   104,   104,   108,    12,    32,    33,    27,    28,
+      29,    30,    31,    34,    11,   104,   108,   108,   108,    19,
+      19,    14,    11,   102,    44,    75,    76,    77,   100,     1,
+      14,    86,    44,    44,   108,   108,   108,   108,   108,   108,
+     108,   108,   108,   108,   108,    14,    19,    20,    25,    26,
+      77,   112,   114,   116,    25,    26,   116,    20,    20,   116,
+      19,    11,   108,    14,    86,   104,    12,   105,   105,   105,
+     108,   108,   108,   108,   108,   108,   104,    12,    12,    12,
+      12,    12,    11,    12,   108,   110,    74,    99,   108,    20,
+      75,    76,    44,   108,    77,    19,    20,   114,   115,   115,
+      12,   110,   105,    39,    12,   105,    86,   104,   104,    12,
+     105,    73,    14,    14,    85,   101,    14,    75,    12,    75,
+      78,    99,    73,   108,    78,   108,    12,   104,   105,    86,
+      36,   105,    86,    87,    12,    19,   110,    14,    99,   100,
+      98,   108,    75,    78,    14,    11,    36,   106,    88,    47,
+      48,    93,    94,    84,    75,    74,    75,    99,   105,   104,
+     106,   105,    86,    20,    43,    96,     4,    74,   105,    73,
+      85,    75,    98,   107,    12,   105,    86,     4,   105,    93,
+     102,    99,    90,    14,    86,   105,   102,    74,    12,    95,
+     105,   102,    91,    86
 };
 
 /* YYR1[RULE-NUM] -- Symbol kind of the left-hand side of rule RULE-NUM.  */
@@ -2198,21 +3522,21 @@ static const yytype_int8 yyr1[] =
 {
        0,    79,    81,    80,    80,    80,    82,    82,    82,    84,
       83,    85,    85,    85,    87,    86,    86,    86,    86,    86,
-      86,    86,    86,    86,    86,    86,    86,    86,    88,    86,
-      86,    89,    86,    90,    91,    86,    92,    86,    86,    86,
-      86,    93,    93,    95,    94,    94,    96,    96,    97,    97,
-      98,    98,    99,    99,    99,    99,    99,    99,    99,    99,
-      99,    99,   100,   100,   101,   101,   101,   101,   101,   101,
-     101,   101,   101,   102,   102,   103,   103,   103,   103,   103,
-     103,   103,   103,   103,   103,   104,   104,   104,   104,   104,
-     104,   104,   104,   104,   104,   104,   104,   105,   106,   107,
-     107,   107,   107,   107,   107,   108,   108,   108,   108,   108,
+      86,    86,    86,    86,    86,    86,    86,    86,    86,    86,
+      88,    86,    86,    89,    86,    90,    91,    86,    92,    86,
+      86,    86,    86,    93,    93,    95,    94,    94,    96,    96,
+      97,    97,    98,    98,    99,    99,    99,    99,    99,    99,
+      99,    99,    99,    99,   100,   100,   101,   101,   101,   101,
+     101,   101,   101,   101,   101,   102,   102,   103,   103,   103,
+     103,   103,   103,   103,   103,   103,   103,   104,   104,   104,
+     104,   104,   104,   104,   104,   104,   104,   104,   104,   105,
+     106,   107,   107,   107,   107,   107,   107,   108,   108,   108,
      108,   108,   108,   108,   108,   108,   108,   108,   108,   108,
-     108,   109,   109,   110,   110,   111,   111,   111,   111,   111,
-     111,   111,   111,   111,   111,   112,   112,   113,   113,   113,
-     113,   113,   113,   113,   113,   113,   113,   113,   113,   114,
-     114,   115,   115,   115,   115,   116,   116,   116,   117,   117,
-     117
+     108,   108,   108,   109,   109,   110,   110,   111,   111,   111,
+     111,   111,   111,   111,   111,   111,   111,   112,   112,   113,
+     113,   113,   113,   113,   113,   113,   113,   113,   113,   113,
+     113,   114,   114,   115,   115,   115,   115,   116,   116,   116,
+     117,   117,   117
 };
 
 /* YYR2[RULE-NUM] -- Number of symbols on the right-hand side of rule RULE-NUM.  */
@@ -2220,21 +3544,21 @@ static const yytype_int8 yyr2[] =
 {
        0,     2,     0,     4,     1,     2,     2,     1,     1,     0,
       10,     4,     2,     0,     0,     8,     2,     2,     3,     2,
-       5,     5,     2,     3,     6,    10,     3,     9,     0,     8,
-       6,     0,    10,     0,     0,    14,     0,     4,     2,     2,
-       1,     3,     1,     0,     6,     4,     1,     1,     3,     4,
-       3,     1,     3,     4,     1,     3,     5,     2,     6,     8,
-       4,     6,     3,     4,     1,     1,     1,     1,     1,     1,
-       1,     1,     2,     3,     2,     1,     1,     1,     1,     1,
-       1,     1,     1,     1,     1,     4,     4,     2,     3,     3,
-       3,     3,     3,     3,     3,     1,     1,     0,     0,     1,
-       1,     1,     1,     1,     3,     4,     3,     3,     3,     3,
-       3,     3,     3,     3,     3,     3,     3,     3,     2,     1,
-       1,     5,     4,     3,     1,     1,     1,     1,     1,     1,
-       1,     1,     1,     1,     1,     3,     4,     1,     4,     4,
-       4,     3,     3,     3,     3,     3,     3,     3,     3,     1,
-       1,     1,     1,     1,     0,     1,     1,     0,     1,     1,
-       0
+       6,     5,     5,     5,     2,     3,     6,    10,     3,     9,
+       0,     8,     6,     0,    10,     0,     0,    14,     0,     4,
+       2,     2,     1,     3,     1,     0,     6,     4,     1,     1,
+       3,     4,     3,     1,     3,     4,     1,     3,     5,     2,
+       6,     8,     4,     6,     3,     4,     1,     1,     1,     1,
+       1,     1,     1,     1,     2,     3,     2,     1,     1,     1,
+       1,     1,     1,     1,     1,     1,     1,     4,     4,     2,
+       3,     3,     3,     3,     3,     3,     3,     1,     1,     0,
+       0,     1,     1,     1,     1,     1,     3,     4,     3,     3,
+       3,     3,     3,     3,     3,     3,     3,     3,     3,     3,
+       2,     1,     1,     5,     4,     3,     1,     1,     1,     1,
+       1,     1,     1,     1,     1,     1,     1,     3,     4,     1,
+       4,     4,     4,     3,     3,     3,     3,     3,     3,     3,
+       3,     1,     1,     1,     1,     1,     0,     1,     1,     0,
+       1,     1,     0
 };
 
 
@@ -2698,88 +4022,112 @@ yyreduce:
   switch (yyn)
     {
   case 2: /* $@1: %empty  */
-#line 1042 "parser.y"
+#line 2354 "parser.y"
         {top = create_env(top,0);}
-#line 2704 "y.tab.c"
+#line 4028 "y.tab.c"
     break;
 
   case 3: /* S: $@1 PROGRAM M MEOF  */
-#line 1042 "parser.y"
+#line 2354 "parser.y"
                                                  {
         if (e){
                         printf("%s\nRejected \n%s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
                         e=0;err[0]="\0";buffer[0]='\0';}
                 else {
                         backpatch((yyvsp[-2].b)->N,(yyvsp[-1].addr));
-                                                printf("Source code :\n");
-                        printf("%s\nAccepted -> Generated Three Address code:\n",buffer);
+                        printf("%s\nAccepted -Unoptimized > Three Address :\n",buffer);
+                     /*for (int pass = 0; pass < 12; pass++) {
+    constantFolding();
+     constantFoldConditionals();      
+    copyPropagation();             
+    algebraicSimplification();
+        booleanSimplification();   
+    strengthReduction();            
+    commonSubexpressionElimination();
+    peepholeOptimization();
+    identityAssignmentElimination();
+    deadStoreElimination();         
+    redundantLoadElimination(); 
+        eliminateDeadCode();
+    conservativeJumpChaining();
+        eliminateDeadCode();
+}
+deadVariableElimination();
+int prev_dead_count = -1;
+for (int dce_pass = 0; dce_pass < 10; dce_pass++) {
+    eliminateDeadCode();
+    int dead_count = 0;
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) dead_count++;
+    }
+    if (dead_count == prev_dead_count) break;
+    prev_dead_count = dead_count;
+}*/
                         for (int i=0;i<code;i++){
                                 printf("%s",imcode[i]);
                         }
-
-                            if (strlen(err) > 0) {
+                          /*if (strlen(err) > 0) {
         printf("\n=== Warnings ===\n%s", err);
     }
-
-                        print_all_envs(top);
+                        print_all_envs(top);*/
                 }YYACCEPT;}
-#line 2727 "y.tab.c"
+#line 4075 "y.tab.c"
     break;
 
   case 4: /* S: MEOF  */
-#line 1060 "parser.y"
+#line 2396 "parser.y"
               {YYACCEPT;}
-#line 2733 "y.tab.c"
+#line 4081 "y.tab.c"
     break;
 
   case 5: /* S: error MEOF  */
-#line 1061 "parser.y"
+#line 2397 "parser.y"
                     {e=1;strcpy(err,"Invalid Statements");
-                printf("%s \nRejected -> %s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
+                //printf("%s \nRejected -> %s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
                 YYACCEPT;}
-#line 2741 "y.tab.c"
+#line 4089 "y.tab.c"
     break;
 
   case 6: /* PROGRAM: FUNDECL PROGRAM  */
-#line 1066 "parser.y"
+#line 2402 "parser.y"
                          {
             if(!e){
                 (yyval.b) = createBoolNode();
                 (yyval.b)->N = merge((yyvsp[-1].b)->N, (yyvsp[0].b)->N);
             }
         }
-#line 2752 "y.tab.c"
+#line 4100 "y.tab.c"
     break;
 
   case 7: /* PROGRAM: STMNTS  */
-#line 1072 "parser.y"
+#line 2408 "parser.y"
                  {(yyval.b) = (yyvsp[0].b);}
-#line 2758 "y.tab.c"
+#line 4106 "y.tab.c"
     break;
 
   case 8: /* PROGRAM: FUNDECL  */
-#line 1073 "parser.y"
+#line 2409 "parser.y"
                   {
             if(!e){
                 (yyval.b) = createBoolNode();
                 (yyval.b)->N = (yyvsp[0].b)->N;
             }
         }
-#line 2769 "y.tab.c"
+#line 4117 "y.tab.c"
     break;
 
   case 9: /* $@2: %empty  */
-#line 1081 "parser.y"
+#line 2421 "parser.y"
                                               {
     if(!e){
-        /*"" duplicate parameter check "" */
+        /*  duplicate parameter check */
         if(checkDuplicateParams((yyvsp[-1].decl))){
             e = 1;
             sprintf(err+strlen(err), "Duplicate parameter names in function %s\n", (yyvsp[-3].str));
         }
 
-        //Function* f = createFunction($3, $2->str);
-        char clean_ret_type[100];
+       // Function* f = createFunction($3, $2->str);
+       char clean_ret_type[100];
 strcpy(clean_ret_type, (yyvsp[-4].type)->str);
 if(clean_ret_type[0] == '@') memmove(clean_ret_type, clean_ret_type+1, strlen(clean_ret_type));
 Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void", "int", "float" etc.
@@ -2807,7 +4155,7 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
         sprintf(imcode[code], "%d BeginFunc %s %d\n", code, (yyvsp[-3].str), pcount);
         code++;
 
-        /*"" set current function context for return checking "" */
+        /*  set current function context for return checking */
         char* ret_type_clean = (yyvsp[-4].type)->str;
         if(ret_type_clean[0]=='@') ret_type_clean++;
         strcpy(current_function, (yyvsp[-3].str));
@@ -2837,11 +4185,11 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
         }
     }
 }
-#line 2841 "y.tab.c"
+#line 4189 "y.tab.c"
     break;
 
   case 10: /* FUNDECL: FUNCTION TYPE IDEN '(' PARAMLIST ')' $@2 '{' STMNTS '}'  */
-#line 1147 "parser.y"
+#line 2487 "parser.y"
                  {
     if(!e){
     if(strcmp(current_return_type, "void") != 0 && !has_return_statement) {
@@ -2860,17 +4208,17 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
         if(!top) offset = 0;
         else offset = top->prev_offset;
 
-        /*"" reset function context "" */
+        /*  reset function context */
         in_function = 0;
         current_function[0] = '\0';
         current_return_type[0] = '\0';
     }
 }
-#line 2870 "y.tab.c"
+#line 4218 "y.tab.c"
     break;
 
   case 11: /* PARAMLIST: TYPE IDEN ',' PARAMLIST  */
-#line 1172 "parser.y"
+#line 2512 "parser.y"
                                    {
             if(!e){
                 (yyval.decl) = createDecl((yyvsp[-2].str));
@@ -2881,11 +4229,11 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
                 (yyval.decl)->next = (yyvsp[0].decl);
             }
         }
-#line 2885 "y.tab.c"
+#line 4233 "y.tab.c"
     break;
 
   case 12: /* PARAMLIST: TYPE IDEN  */
-#line 1182 "parser.y"
+#line 2522 "parser.y"
                     {
             if(!e){
                 (yyval.decl) = createDecl((yyvsp[0].str));
@@ -2895,45 +4243,61 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
                 strcpy((yyval.decl)->type, clean_type);
             }
         }
-#line 2899 "y.tab.c"
+#line 4247 "y.tab.c"
     break;
 
   case 13: /* PARAMLIST: %empty  */
-#line 1191 "parser.y"
+#line 2531 "parser.y"
           {(yyval.decl) = NULL;}
-#line 2905 "y.tab.c"
+#line 4253 "y.tab.c"
     break;
 
   case 14: /* $@3: %empty  */
-#line 1194 "parser.y"
+#line 2534 "parser.y"
                             { 
        if(!e) {
            strcpy(current_switch_var, (yyvsp[-2].expr)->str);
-           saveoffset = offset;
+           //saveoffset = offset;
+                   top = create_env(top, offset);  
+                  offset = 0;
+                         char* base = getBaseType((yyvsp[-2].expr)->type);
+if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
+    // it's an array — always reject
+    e = 1;
+    sprintf(err+strlen(err),
+        "Error: switch expression cannot be an array type '%s'\n", (yyvsp[-2].expr)->type);
+} else if(!isIntegerType(base)) {
+    e = 1;
+    sprintf(err+strlen(err),
+        "Error: switch expression must be integer type, got '%s'\n", base);
+}
+
            /*"" track switch depth "" */
            switch_depth++;
        }
    }
-#line 2918 "y.tab.c"
+#line 4280 "y.tab.c"
     break;
 
   case 15: /* A: SWITCH '(' EXPR ')' '{' $@3 CASE_LIST '}'  */
-#line 1201 "parser.y"
+#line 2555 "parser.y"
                    {
        if(!e) {
            (yyval.b) = createBoolNode();
            backpatch((yyvsp[-1].b)->N, code);
            backpatch((yyvsp[-1].b)->B, code);
-           offset = saveoffset;
+           //offset = saveoffset;
+                   top = top->prev;            //  restore scope
+        offset = top->prev_offset;  //  restore offset
            /*   restore switch depth  */
            switch_depth--;
        }
    }
-#line 2933 "y.tab.c"
+#line 4297 "y.tab.c"
     break;
 
   case 16: /* A: BREAK '$'  */
-#line 1211 "parser.y"
+#line 2567 "parser.y"
             {
     if (!e) {
         /*  break must be inside loop or switch */
@@ -2947,14 +4311,14 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
         code++;
     }
 }
-#line 2951 "y.tab.c"
+#line 4315 "y.tab.c"
     break;
 
   case 17: /* A: CONTINUE '$'  */
-#line 1224 "parser.y"
+#line 2580 "parser.y"
                {
     if (!e) {
-        /*  continue must be inside a loop  */
+        /*  continue must be inside a loop */
         if(loop_depth == 0){
             e = 1;
             sprintf(err+strlen(err), "continue statement not within a loop\n");
@@ -2965,14 +4329,15 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
         code++;
     }
 }
-#line 2969 "y.tab.c"
+#line 4333 "y.tab.c"
     break;
 
   case 18: /* A: RETURN EXPR '$'  */
-#line 1237 "parser.y"
+#line 2593 "parser.y"
                   {
     if(!e){
         has_return_statement = 1;
+        /*  return checks */
         if(!in_function){
             e = 1;
             sprintf(err+strlen(err), "return statement outside function\n");
@@ -2996,19 +4361,20 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
             code++;
             strcpy(ret_val, tmp);
         }
-                sprintf(imcode[code], "%d Return %s\n", code, ret_val);
+                        sprintf(imcode[code], "%d Return %s\n", code, ret_val);
         code++;
         (yyval.b) = createBoolNode();
     }
 }
-#line 3005 "y.tab.c"
+#line 4370 "y.tab.c"
     break;
 
   case 19: /* A: RETURN '$'  */
-#line 1268 "parser.y"
+#line 2625 "parser.y"
              {
     if(!e){
         has_return_statement = 1;
+        /*  return checks */
         if(!in_function){
             e = 1;
             sprintf(err+strlen(err), "return statement outside function\n");
@@ -3022,11 +4388,70 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
         (yyval.b) = createBoolNode();
     }
 }
-#line 3026 "y.tab.c"
+#line 4392 "y.tab.c"
     break;
 
-  case 20: /* A: PRINT '(' EXPR ')' '$'  */
-#line 1284 "parser.y"
+  case 20: /* A: CALL IDEN '(' ARGLIST ')' '$'  */
+#line 2643 "parser.y"
+                                {
+    if(!e){
+        Function* f = findFunction((yyvsp[-4].str));
+        if(f == NULL){
+            e=1;
+            sprintf(err+strlen(err), "Function %s not declared\n", (yyvsp[-4].str));
+        } else {
+            struct Expr* arg = (yyvsp[-2].expr);
+            int given = 0;
+            while(arg){ given++; arg = arg->next; }
+            if(given != f->param_count){
+                e=1;
+                sprintf(err+strlen(err),
+                    "Function %s expects %d arguments, got %d\n",
+                    (yyvsp[-4].str), f->param_count, given);
+            } else {
+                arg = (yyvsp[-2].expr);
+                while(arg){
+                    sprintf(imcode[code], "%d PushParam %s\n", code, arg->str);
+                    code++;
+                    arg = arg->next;
+                }
+                sprintf(imcode[code], "%d Call %s\n", code, (yyvsp[-4].str));
+                code++;
+            }
+        }
+        (yyval.b) = createBoolNode();
+    }
+}
+#line 4426 "y.tab.c"
+    break;
+
+  case 21: /* A: CALL IDEN '(' ')' '$'  */
+#line 2672 "parser.y"
+                        {
+    if(!e){
+        Function* f = findFunction((yyvsp[-3].str));
+        if(f == NULL){
+            e=1;
+            sprintf(err+strlen(err), "Function %s not declared\n", (yyvsp[-3].str));
+        } else {
+            if(f->param_count != 0){
+                e=1;
+                sprintf(err+strlen(err),
+                    "Function %s expects %d arguments, got 0\n",
+                    (yyvsp[-3].str), f->param_count);
+            } else {
+                sprintf(imcode[code], "%d Call %s\n", code, (yyvsp[-3].str));
+                code++;
+            }
+        }
+        (yyval.b) = createBoolNode();
+    }
+}
+#line 4451 "y.tab.c"
+    break;
+
+  case 22: /* A: PRINT '(' EXPR ')' '$'  */
+#line 2692 "parser.y"
                         {
     if (!e) {
         char* base_type = getBaseType((yyvsp[-2].expr)->type);
@@ -3042,11 +4467,11 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
         (yyval.b) = createBoolNode();
     }
 }
-#line 3046 "y.tab.c"
+#line 4471 "y.tab.c"
     break;
 
-  case 21: /* A: INPUT '(' EXPR ')' '$'  */
-#line 1299 "parser.y"
+  case 23: /* A: INPUT '(' EXPR ')' '$'  */
+#line 2707 "parser.y"
                         {
     if (!e) {
         if(!(yyvsp[-2].expr)->lv) {
@@ -3068,36 +4493,36 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
     }
 }
 }
-#line 3072 "y.tab.c"
+#line 4497 "y.tab.c"
     break;
 
-  case 22: /* A: ASNEXPR '$'  */
-#line 1320 "parser.y"
+  case 24: /* A: ASNEXPR '$'  */
+#line 2728 "parser.y"
               {if (!e){(yyval.b) = (yyvsp[-1].b);}}
-#line 3078 "y.tab.c"
+#line 4503 "y.tab.c"
     break;
 
-  case 23: /* A: ASNEXPR error MEOF  */
-#line 1321 "parser.y"
+  case 25: /* A: ASNEXPR error MEOF  */
+#line 2729 "parser.y"
                             {strcat(err,"$ missing\n");yyerrok;e=1;
                                                         printf("%s\nRejected -> %s -> Could not generate Three Address Code / Storage Layout\n",buffer,err);
                                                         YYACCEPT;}
-#line 3086 "y.tab.c"
+#line 4511 "y.tab.c"
     break;
 
-  case 24: /* A: IF '(' BOOLEXPR ')' M A  */
-#line 1324 "parser.y"
+  case 26: /* A: IF '(' BOOLEXPR ')' M A  */
+#line 2732 "parser.y"
                                    {if (!e){backpatch((yyvsp[-3].b)->T,(yyvsp[-1].addr));
                                                                                 (yyval.b) = createBoolNode();
                                                                                 (yyval.b)->N = merge((yyvsp[-3].b)->F,(yyvsp[0].b)->N);
                                                                                 (yyval.b)->B = (yyvsp[0].b)->B;
                                                                                 (yyval.b)->C = (yyvsp[0].b)->C;
                                                                                 }}
-#line 3097 "y.tab.c"
+#line 4522 "y.tab.c"
     break;
 
-  case 25: /* A: IF '(' BOOLEXPR ')' M A ELSE NN M A  */
-#line 1330 "parser.y"
+  case 27: /* A: IF '(' BOOLEXPR ')' M A ELSE NN M A  */
+#line 2738 "parser.y"
                                               {if (!e){
                 backpatch((yyvsp[-7].b)->T,(yyvsp[-5].addr));
                 backpatch((yyvsp[-7].b)->F,(yyvsp[-1].addr));
@@ -3106,31 +4531,31 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
                 (yyval.b)->B = merge((yyvsp[-4].b)->B, (yyvsp[0].b)->B);
                 (yyval.b)->C = merge((yyvsp[-4].b)->C, (yyvsp[0].b)->C);
         }}
-#line 3110 "y.tab.c"
+#line 4535 "y.tab.c"
     break;
 
-  case 26: /* A: EXPR error MEOF  */
-#line 1338 "parser.y"
+  case 28: /* A: EXPR error MEOF  */
+#line 2746 "parser.y"
                          {{strcat(err,"$ missing");yyerrok;e=1;}
                                                         printf("%s\nRejected -> %s -> Could not generate Three Address Code / Storage Layout\n",buffer,err);
                                                         YYACCEPT;}
-#line 3118 "y.tab.c"
+#line 4543 "y.tab.c"
     break;
 
-  case 27: /* A: IF BOOLEXPR ')' M A ELSE NN M A  */
-#line 1341 "parser.y"
+  case 29: /* A: IF BOOLEXPR ')' M A ELSE NN M A  */
+#line 2749 "parser.y"
                                          {{strcat(err,"missing (\n");e=1;}}
-#line 3124 "y.tab.c"
+#line 4549 "y.tab.c"
     break;
 
-  case 28: /* $@4: %empty  */
-#line 1343 "parser.y"
+  case 30: /* $@4: %empty  */
+#line 2751 "parser.y"
                                      {loop_depth++;}
-#line 3130 "y.tab.c"
+#line 4555 "y.tab.c"
     break;
 
-  case 29: /* A: WHILE M '(' BOOLEXPR ')' M $@4 A  */
-#line 1343 "parser.y"
+  case 31: /* A: WHILE M '(' BOOLEXPR ')' M $@4 A  */
+#line 2751 "parser.y"
                                                        {if (!e){
     loop_depth--;
     backpatch((yyvsp[0].b)->N,(yyvsp[-6].addr));
@@ -3142,23 +4567,23 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
     (yyval.b) = createBoolNode();
     (yyval.b)->N = (yyvsp[-4].b)->F;
 }}
-#line 3146 "y.tab.c"
+#line 4571 "y.tab.c"
     break;
 
-  case 30: /* A: WHILE M BOOLEXPR ')' M A  */
-#line 1354 "parser.y"
+  case 32: /* A: WHILE M BOOLEXPR ')' M A  */
+#line 2762 "parser.y"
                                    {{strcat(err,"missing (\n");e=1;}}
-#line 3152 "y.tab.c"
+#line 4577 "y.tab.c"
     break;
 
-  case 31: /* $@5: %empty  */
-#line 1356 "parser.y"
+  case 33: /* $@5: %empty  */
+#line 2764 "parser.y"
                {loop_depth++;}
-#line 3158 "y.tab.c"
+#line 4583 "y.tab.c"
     break;
 
-  case 32: /* A: DO M $@5 A WHILE M '(' BOOLEXPR ')' '$'  */
-#line 1356 "parser.y"
+  case 34: /* A: DO M $@5 A WHILE M '(' BOOLEXPR ')' '$'  */
+#line 2764 "parser.y"
                                                               {
     if (!e) {
         loop_depth--;
@@ -3171,26 +4596,26 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
         (yyval.b)->N = NULL;
     }
 }
-#line 3175 "y.tab.c"
+#line 4600 "y.tab.c"
     break;
 
-  case 33: /* $@6: %empty  */
-#line 1369 "parser.y"
+  case 35: /* $@6: %empty  */
+#line 2777 "parser.y"
     { 
         sprintf(imcode[code], "%d goto %d\n", code, (yyvsp[-4].addr)); 
         code++; 
     }
-#line 3184 "y.tab.c"
+#line 4609 "y.tab.c"
     break;
 
-  case 34: /* $@7: %empty  */
-#line 1373 "parser.y"
+  case 36: /* $@7: %empty  */
+#line 2781 "parser.y"
         {loop_depth++;}
-#line 3190 "y.tab.c"
+#line 4615 "y.tab.c"
     break;
 
-  case 35: /* A: FOR '(' ASNEXPR '$' M BOOLEXPR '$' M ASNEXPR $@6 ')' M $@7 A  */
-#line 1374 "parser.y"
+  case 37: /* A: FOR '(' ASNEXPR '$' M BOOLEXPR '$' M ASNEXPR $@6 ')' M $@7 A  */
+#line 2782 "parser.y"
     {
         if (!e) {
             loop_depth--;
@@ -3204,17 +4629,17 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
             (yyval.b)->N = (yyvsp[-8].b)->F;
         }
     }
-#line 3208 "y.tab.c"
+#line 4633 "y.tab.c"
     break;
 
-  case 36: /* $@8: %empty  */
-#line 1387 "parser.y"
+  case 38: /* $@8: %empty  */
+#line 2795 "parser.y"
      {top = create_env(top,offset);offset=0;}
-#line 3214 "y.tab.c"
+#line 4639 "y.tab.c"
     break;
 
-  case 37: /* A: '{' $@8 STMNTS '}'  */
-#line 1387 "parser.y"
+  case 39: /* A: '{' $@8 STMNTS '}'  */
+#line 2795 "parser.y"
                                                          {if (!e) {
                                                 (yyval.b) = createBoolNode();
                                                 (yyval.b)->N = (yyvsp[-1].b)->N;
@@ -3224,31 +4649,31 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
                                                 if (!top) offset =0;
                                                 else offset = top->prev_offset;
                                                 }}
-#line 3228 "y.tab.c"
+#line 4653 "y.tab.c"
     break;
 
-  case 38: /* A: '{' '}'  */
-#line 1396 "parser.y"
+  case 40: /* A: '{' '}'  */
+#line 2804 "parser.y"
                   {if (!e){(yyval.b)=createBoolNode();}}
-#line 3234 "y.tab.c"
+#line 4659 "y.tab.c"
     break;
 
-  case 39: /* A: EXPR '$'  */
-#line 1397 "parser.y"
+  case 41: /* A: EXPR '$'  */
+#line 2805 "parser.y"
                   {if (!e) {(yyval.b)=createBoolNode();}}
-#line 3240 "y.tab.c"
+#line 4665 "y.tab.c"
     break;
 
-  case 40: /* A: DECLSTATEMENT  */
-#line 1398 "parser.y"
+  case 42: /* A: DECLSTATEMENT  */
+#line 2806 "parser.y"
                         {
             if (!e){(yyval.b)=createBoolNode();}
             }
-#line 3248 "y.tab.c"
+#line 4673 "y.tab.c"
     break;
 
-  case 41: /* CASE_LIST: CASE_ITEM M CASE_LIST  */
-#line 1403 "parser.y"
+  case 43: /* CASE_LIST: CASE_ITEM M CASE_LIST  */
+#line 2811 "parser.y"
                                  {
        if(!e) {
            backpatch((yyvsp[-2].b)->N, (yyvsp[-1].addr));
@@ -3257,19 +4682,19 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
            (yyval.b)->B = merge((yyvsp[-2].b)->B, (yyvsp[0].b)->B);
        }
    }
-#line 3261 "y.tab.c"
+#line 4686 "y.tab.c"
     break;
 
-  case 42: /* CASE_LIST: CASE_ITEM  */
-#line 1411 "parser.y"
+  case 44: /* CASE_LIST: CASE_ITEM  */
+#line 2819 "parser.y"
                {
        if(!e) { (yyval.b) = (yyvsp[0].b); }
    }
-#line 3269 "y.tab.c"
+#line 4694 "y.tab.c"
     break;
 
-  case 43: /* @9: %empty  */
-#line 1415 "parser.y"
+  case 45: /* @9: %empty  */
+#line 2823 "parser.y"
                                    {
        if(!e) {
            sprintf(imcode[code], "%d if %s != %s goto ", code, 
@@ -3278,11 +4703,11 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
            code++;
        }
    }
-#line 3282 "y.tab.c"
+#line 4707 "y.tab.c"
     break;
 
-  case 44: /* CASE_ITEM: CASE CASE_EXPR ':' M @9 STMNTS  */
-#line 1422 "parser.y"
+  case 46: /* CASE_ITEM: CASE CASE_EXPR ':' M @9 STMNTS  */
+#line 2830 "parser.y"
             {
        if(!e) {
            (yyval.b) = createBoolNode();
@@ -3290,11 +4715,11 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
            (yyval.b)->B = (yyvsp[0].b)->B;
        }
    }
-#line 3294 "y.tab.c"
+#line 4719 "y.tab.c"
     break;
 
-  case 45: /* CASE_ITEM: DEFAULT ':' M STMNTS  */
-#line 1429 "parser.y"
+  case 47: /* CASE_ITEM: DEFAULT ':' M STMNTS  */
+#line 2837 "parser.y"
                           {
        if(!e) {
            (yyval.b) = createBoolNode();
@@ -3302,11 +4727,11 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
            (yyval.b)->B = (yyvsp[0].b)->B;
        }
    }
-#line 3306 "y.tab.c"
+#line 4731 "y.tab.c"
     break;
 
-  case 46: /* CASE_EXPR: NUM  */
-#line 1437 "parser.y"
+  case 48: /* CASE_EXPR: NUM  */
+#line 2845 "parser.y"
                   {
        if(!e) {
            (yyval.expr) = createExpr();
@@ -3315,11 +4740,11 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
            else strcpy((yyval.expr)->type, "int");
        }
    }
-#line 3319 "y.tab.c"
+#line 4744 "y.tab.c"
     break;
 
-  case 47: /* CASE_EXPR: CHARR  */
-#line 1445 "parser.y"
+  case 49: /* CASE_EXPR: CHARR  */
+#line 2853 "parser.y"
            {
        if(!e) {
            (yyval.expr) = createExpr();
@@ -3327,13 +4752,12 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
            strcpy((yyval.expr)->type, "char");
        }
    }
-#line 3331 "y.tab.c"
+#line 4756 "y.tab.c"
     break;
 
-  case 48: /* DECLSTATEMENT: TYPE DECLLIST '$'  */
-#line 1454 "parser.y"
+  case 50: /* DECLSTATEMENT: TYPE DECLLIST '$'  */
+#line 2866 "parser.y"
                                  {
-    if(!e){
         struct Decl* temp = (yyvsp[-1].decl);
         while(temp){
             char clean_type[100];
@@ -3382,7 +4806,8 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
                     for(int i = 0; i < s->dim_count; i++){ char dim_part[20]; sprintf(dim_part,"[%d]",dims[i]); strcat(s->type,dim_part); }
                 }
             }
-              if (strcmp(temp->lt,"u")!=0 && strcmp(temp->lt,"array_init")!=0
+
+             if (strcmp(temp->lt,"u")!=0 && strcmp(temp->lt,"array_init")!=0
                     && strcmp(temp->lt,"void")==0) {
                 e = 1;
                 sprintf(err+strlen(err),
@@ -3416,11 +4841,11 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
                             temp->key, temp->size, init_count);
                 }
 
-                /*  Check each array element for range overflow */
+                /* NEW: Check each array element for range overflow */
                 char check_copy[1000]; strcpy(check_copy, temp->op);
                 char* check_token = strtok(check_copy, ",");
                 int check_idx = 0;
- char fixed_op[1000]; fixed_op[0] = '\0';
+             char fixed_op[1000]; fixed_op[0] = '\0';
                 while(check_token != NULL){
                     // Trim whitespace
                     while(*check_token == ' ') check_token++;
@@ -3561,7 +4986,7 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
                     code++;
                 }
                 else {
-                    /*  Enhanced type checking and range validation */
+                    /* NEW: Enhanced type checking and range validation */
                     if(temp->is_literal && isNumericConstant(temp->op)){
                         validateNumericLiteral(temp->op, actual_type, temp->key);
                         double val = atof(temp->op);
@@ -3641,35 +5066,34 @@ else if(strcmp(actual_type,"double")==0){
             }
             temp = temp->next;
         }
-        }
 }
-#line 3647 "y.tab.c"
+#line 5071 "y.tab.c"
     break;
 
-  case 49: /* DECLSTATEMENT: TYPE DECLLIST error MEOF  */
-#line 1765 "parser.y"
+  case 51: /* DECLSTATEMENT: TYPE DECLLIST error MEOF  */
+#line 3176 "parser.y"
                            {{strcat(err,"$ missing\n");yyerrok;e=1;}
                                                         printf("%s\nRejected -> %s -> Could not generate Three Address Code / Storage Layout\n",buffer,err);
                                                         YYACCEPT; }
-#line 3655 "y.tab.c"
+#line 5079 "y.tab.c"
     break;
 
-  case 50: /* INIT_LIST: EXPR ',' INIT_LIST  */
-#line 1770 "parser.y"
+  case 52: /* INIT_LIST: EXPR ',' INIT_LIST  */
+#line 3182 "parser.y"
                               {
         if(!e){ (yyval.expr) = (yyvsp[-2].expr); (yyval.expr)->next = (yyvsp[0].expr); }
     }
-#line 3663 "y.tab.c"
+#line 5087 "y.tab.c"
     break;
 
-  case 51: /* INIT_LIST: EXPR  */
-#line 1773 "parser.y"
+  case 53: /* INIT_LIST: EXPR  */
+#line 3185 "parser.y"
            { if(!e){ (yyval.expr) = (yyvsp[0].expr); (yyval.expr)->next = NULL; } }
-#line 3669 "y.tab.c"
+#line 5093 "y.tab.c"
     break;
 
-  case 52: /* DECLLIST: IDEN ',' DECLLIST  */
-#line 1775 "parser.y"
+  case 54: /* DECLLIST: IDEN ',' DECLLIST  */
+#line 3187 "parser.y"
                             {if (get(top->table,(yyvsp[-2].str))==NULL){
                                                                 Symbol* s = createSymbol((yyvsp[-2].str));
                                                                 put(top->table,(yyvsp[-2].str),s);
@@ -3682,11 +5106,11 @@ else if(strcmp(actual_type,"double")==0){
                                                                 (yyval.decl)->re =1;
                                                                 }strcpy((yyval.decl)->lt,"u");
                                                 }
-#line 3686 "y.tab.c"
+#line 5110 "y.tab.c"
     break;
 
-  case 53: /* DECLLIST: IDEN INDEX ',' DECLLIST  */
-#line 1787 "parser.y"
+  case 55: /* DECLLIST: IDEN INDEX ',' DECLLIST  */
+#line 3199 "parser.y"
                                   {
                                 if (get(top->table,(yyvsp[-3].str))==NULL){
                                         Symbol* s = createSymbol((yyvsp[-3].str));
@@ -3702,11 +5126,11 @@ else if(strcmp(actual_type,"double")==0){
                                         (yyval.decl)->re =1;
                                 }strcpy((yyval.decl)->lt,"u");
         }
-#line 3706 "y.tab.c"
+#line 5130 "y.tab.c"
     break;
 
-  case 54: /* DECLLIST: IDEN  */
-#line 1802 "parser.y"
+  case 56: /* DECLLIST: IDEN  */
+#line 3214 "parser.y"
                {if (get(top->table,(yyvsp[0].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[0].str));
                                                 put(top->table,(yyvsp[0].str),s);
@@ -3717,11 +5141,11 @@ else if(strcmp(actual_type,"double")==0){
                                                 strcpy((yyval.decl)->type,"");
                                                 (yyval.decl)->re = 1;
                                                 }strcpy((yyval.decl)->lt,"u");}
-#line 3721 "y.tab.c"
+#line 5145 "y.tab.c"
     break;
 
-  case 55: /* DECLLIST: IDEN '=' EXPR  */
-#line 1812 "parser.y"
+  case 57: /* DECLLIST: IDEN '=' EXPR  */
+#line 3224 "parser.y"
                         {
                                         if (get(top->table,(yyvsp[-2].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[-2].str));
@@ -3739,11 +5163,11 @@ else if(strcmp(actual_type,"double")==0){
                                                 (yyval.decl)->is_literal = isLiteral((yyvsp[0].expr)->str);
                                                 (yyval.decl)->re=1;
                                         }}
-#line 3743 "y.tab.c"
+#line 5167 "y.tab.c"
     break;
 
-  case 56: /* DECLLIST: IDEN '=' EXPR ',' DECLLIST  */
-#line 1829 "parser.y"
+  case 58: /* DECLLIST: IDEN '=' EXPR ',' DECLLIST  */
+#line 3241 "parser.y"
                               {
                                         if (get(top->table,(yyvsp[-4].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[-4].str));
@@ -3763,11 +5187,11 @@ else if(strcmp(actual_type,"double")==0){
                                                 (yyval.decl)->re=1;
                                                 (yyval.decl)->next = (yyvsp[0].decl);
                                         }}
-#line 3767 "y.tab.c"
+#line 5191 "y.tab.c"
     break;
 
-  case 57: /* DECLLIST: IDEN INDEX  */
-#line 1848 "parser.y"
+  case 59: /* DECLLIST: IDEN INDEX  */
+#line 3260 "parser.y"
                      {if (get(top->table,(yyvsp[-1].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[-1].str));
                                                 put(top->table,(yyvsp[-1].str),s);
@@ -3780,11 +5204,11 @@ else if(strcmp(actual_type,"double")==0){
                                                 strcpy((yyval.decl)->type,"");
                                                 (yyval.decl)->re=1;
                                         }strcpy((yyval.decl)->lt,"u");}
-#line 3784 "y.tab.c"
+#line 5208 "y.tab.c"
     break;
 
-  case 58: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}'  */
-#line 1860 "parser.y"
+  case 60: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}'  */
+#line 3272 "parser.y"
                                            {
         if (get(top->table,(yyvsp[-5].str))==NULL){
             Symbol* s = createSymbol((yyvsp[-5].str));
@@ -3801,11 +5225,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.decl) = createDecl((yyvsp[-5].str)); strcpy((yyval.decl)->type,""); (yyval.decl)->re=1;
         }
     }
-#line 3805 "y.tab.c"
+#line 5229 "y.tab.c"
     break;
 
-  case 59: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}' ',' DECLLIST  */
-#line 1876 "parser.y"
+  case 61: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}' ',' DECLLIST  */
+#line 3288 "parser.y"
                                                     {
         if (get(top->table,(yyvsp[-7].str))==NULL){
             Symbol* s = createSymbol((yyvsp[-7].str));
@@ -3823,11 +5247,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.decl) = createDecl((yyvsp[-7].str)); strcpy((yyval.decl)->type,""); (yyval.decl)->re=1; (yyval.decl)->next = (yyvsp[0].decl);
         }
     }
-#line 3827 "y.tab.c"
+#line 5251 "y.tab.c"
     break;
 
-  case 60: /* DECLLIST: IDEN INDEX '=' EXPR  */
-#line 1893 "parser.y"
+  case 62: /* DECLLIST: IDEN INDEX '=' EXPR  */
+#line 3305 "parser.y"
                               {
                 if (get(top->table,(yyvsp[-3].str))==NULL){
                     Symbol* s = createSymbol((yyvsp[-3].str));
@@ -3843,11 +5267,11 @@ else if(strcmp(actual_type,"double")==0){
                     (yyval.decl) = createDecl((yyvsp[-3].str)); strcpy((yyval.decl)->type,""); (yyval.decl)->re=1;
                 }
         }
-#line 3847 "y.tab.c"
+#line 5271 "y.tab.c"
     break;
 
-  case 61: /* DECLLIST: IDEN INDEX '=' EXPR ',' DECLLIST  */
-#line 1908 "parser.y"
+  case 63: /* DECLLIST: IDEN INDEX '=' EXPR ',' DECLLIST  */
+#line 3320 "parser.y"
                                            {
                 if (get(top->table,(yyvsp[-5].str))==NULL){
                     Symbol* s = createSymbol((yyvsp[-5].str));
@@ -3864,11 +5288,11 @@ else if(strcmp(actual_type,"double")==0){
                     (yyval.decl) = createDecl((yyvsp[-5].str)); strcpy((yyval.decl)->type,""); (yyval.decl)->re=1; (yyval.decl)->next = (yyvsp[0].decl);
                 }
         }
-#line 3868 "y.tab.c"
+#line 5292 "y.tab.c"
     break;
 
-  case 62: /* INDEX: '[' NUM ']'  */
-#line 1926 "parser.y"
+  case 64: /* INDEX: '[' NUM ']'  */
+#line 3338 "parser.y"
                    {(yyval.type) = createType();
                     int arr_size = atoi((yyvsp[-1].str));
                     /* positive size check*/
@@ -3881,11 +5305,11 @@ else if(strcmp(actual_type,"double")==0){
                     if (checkfloat((yyvsp[-1].str))){
                             e=1;sprintf(err+strlen(err),"Array index cannot be float\n");
                     }}
-#line 3885 "y.tab.c"
+#line 5309 "y.tab.c"
     break;
 
-  case 63: /* INDEX: '[' NUM ']' INDEX  */
-#line 1938 "parser.y"
+  case 65: /* INDEX: '[' NUM ']' INDEX  */
+#line 3350 "parser.y"
                             {(yyval.type) = createType();
                              int arr_size = atoi((yyvsp[-2].str));
                              /* positive size check  */
@@ -3898,59 +5322,59 @@ else if(strcmp(actual_type,"double")==0){
                              if (checkfloat((yyvsp[-2].str))){
                                      e=1;sprintf(err+strlen(err),"Array index cannot be float\n");
                              }}
-#line 3902 "y.tab.c"
+#line 5326 "y.tab.c"
     break;
 
-  case 64: /* TYPE: INT  */
-#line 1951 "parser.y"
+  case 66: /* TYPE: INT  */
+#line 3363 "parser.y"
           {(yyval.type) = createType(); strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=4;}
-#line 3908 "y.tab.c"
+#line 5332 "y.tab.c"
     break;
 
-  case 65: /* TYPE: FLOAT  */
-#line 1952 "parser.y"
+  case 67: /* TYPE: FLOAT  */
+#line 3364 "parser.y"
                  {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=4;}
-#line 3914 "y.tab.c"
+#line 5338 "y.tab.c"
     break;
 
-  case 66: /* TYPE: BOOL  */
-#line 1953 "parser.y"
+  case 68: /* TYPE: BOOL  */
+#line 3365 "parser.y"
            {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=1;}
-#line 3920 "y.tab.c"
+#line 5344 "y.tab.c"
     break;
 
-  case 67: /* TYPE: CHAR  */
-#line 1954 "parser.y"
+  case 69: /* TYPE: CHAR  */
+#line 3366 "parser.y"
                {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=1;}
-#line 3926 "y.tab.c"
+#line 5350 "y.tab.c"
     break;
 
-  case 68: /* TYPE: SHORT  */
-#line 1955 "parser.y"
+  case 70: /* TYPE: SHORT  */
+#line 3367 "parser.y"
             {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=2;}
-#line 3932 "y.tab.c"
+#line 5356 "y.tab.c"
     break;
 
-  case 69: /* TYPE: LONG  */
-#line 1956 "parser.y"
+  case 71: /* TYPE: LONG  */
+#line 3368 "parser.y"
            {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=8;}
-#line 3938 "y.tab.c"
+#line 5362 "y.tab.c"
     break;
 
-  case 70: /* TYPE: DOUBLE  */
-#line 1957 "parser.y"
+  case 72: /* TYPE: DOUBLE  */
+#line 3369 "parser.y"
              {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=8;}
-#line 3944 "y.tab.c"
+#line 5368 "y.tab.c"
     break;
 
-  case 71: /* TYPE: VOID  */
-#line 1958 "parser.y"
+  case 73: /* TYPE: VOID  */
+#line 3370 "parser.y"
            {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=0;}
-#line 3950 "y.tab.c"
+#line 5374 "y.tab.c"
     break;
 
-  case 72: /* TYPE: CONST TYPE  */
-#line 1959 "parser.y"
+  case 74: /* TYPE: CONST TYPE  */
+#line 3371 "parser.y"
                  {
     (yyval.type) = (yyvsp[0].type);
     char base[100];
@@ -3958,256 +5382,256 @@ else if(strcmp(actual_type,"double")==0){
     if (base[0] == '@') memmove(base, base+1, strlen(base));
     sprintf((yyval.type)->str, "const %s", base);
 }
-#line 3962 "y.tab.c"
+#line 5386 "y.tab.c"
     break;
 
-  case 73: /* STMNTS: STMNTS M A  */
-#line 1968 "parser.y"
+  case 75: /* STMNTS: STMNTS M A  */
+#line 3380 "parser.y"
                    {if (!e){backpatch((yyvsp[-2].b)->N,(yyvsp[-1].addr));
                                         (yyval.b) = createBoolNode();
                                         (yyval.b)->N = (yyvsp[0].b)->N;
                                         (yyval.b)->B = merge((yyvsp[-2].b)->B, (yyvsp[0].b)->B);
                                         (yyval.b)->C = merge((yyvsp[-2].b)->C, (yyvsp[0].b)->C);
 }}
-#line 3973 "y.tab.c"
+#line 5397 "y.tab.c"
     break;
 
-  case 74: /* STMNTS: A M  */
-#line 1974 "parser.y"
+  case 76: /* STMNTS: A M  */
+#line 3386 "parser.y"
              {if (!e){(yyval.b) = createBoolNode();
                 (yyval.b)->N = (yyvsp[-1].b)->N;
                 (yyval.b)->B = (yyvsp[-1].b)->B;
                 (yyval.b)->C = (yyvsp[-1].b)->C;
 }}
-#line 3983 "y.tab.c"
+#line 5407 "y.tab.c"
     break;
 
-  case 75: /* ASSGN: '='  */
-#line 1981 "parser.y"
+  case 77: /* ASSGN: '='  */
+#line 3393 "parser.y"
            {strcpy((yyval.str),"=");}
-#line 3989 "y.tab.c"
+#line 5413 "y.tab.c"
     break;
 
-  case 76: /* ASSGN: PASN  */
-#line 1982 "parser.y"
+  case 78: /* ASSGN: PASN  */
+#line 3394 "parser.y"
                 {strcpy((yyval.str),(yyvsp[0].str));}
-#line 3995 "y.tab.c"
+#line 5419 "y.tab.c"
     break;
 
-  case 77: /* ASSGN: MASN  */
-#line 1983 "parser.y"
+  case 79: /* ASSGN: MASN  */
+#line 3395 "parser.y"
                 {strcpy((yyval.str),(yyvsp[0].str));}
-#line 4001 "y.tab.c"
+#line 5425 "y.tab.c"
     break;
 
-  case 78: /* ASSGN: DASN  */
-#line 1984 "parser.y"
+  case 80: /* ASSGN: DASN  */
+#line 3396 "parser.y"
             {strcpy((yyval.str),(yyvsp[0].str));}
-#line 4007 "y.tab.c"
+#line 5431 "y.tab.c"
     break;
 
-  case 79: /* ASSGN: SASN  */
-#line 1985 "parser.y"
+  case 81: /* ASSGN: SASN  */
+#line 3397 "parser.y"
             {strcpy((yyval.str),(yyvsp[0].str));}
-#line 4013 "y.tab.c"
+#line 5437 "y.tab.c"
     break;
 
-  case 80: /* ASSGN: BANDASN  */
-#line 1986 "parser.y"
+  case 82: /* ASSGN: BANDASN  */
+#line 3398 "parser.y"
                {strcpy((yyval.str),"&=");}
-#line 4019 "y.tab.c"
+#line 5443 "y.tab.c"
     break;
 
-  case 81: /* ASSGN: BORASN  */
-#line 1987 "parser.y"
+  case 83: /* ASSGN: BORASN  */
+#line 3399 "parser.y"
                {strcpy((yyval.str),"|=");}
-#line 4025 "y.tab.c"
+#line 5449 "y.tab.c"
     break;
 
-  case 82: /* ASSGN: BXORASN  */
-#line 1988 "parser.y"
+  case 84: /* ASSGN: BXORASN  */
+#line 3400 "parser.y"
                {strcpy((yyval.str),"^=");}
-#line 4031 "y.tab.c"
+#line 5455 "y.tab.c"
     break;
 
-  case 83: /* ASSGN: LSHIFTASN  */
-#line 1989 "parser.y"
+  case 85: /* ASSGN: LSHIFTASN  */
+#line 3401 "parser.y"
                  {strcpy((yyval.str),"<<=");}
-#line 4037 "y.tab.c"
+#line 5461 "y.tab.c"
     break;
 
-  case 84: /* ASSGN: RSHIFTASN  */
-#line 1990 "parser.y"
+  case 86: /* ASSGN: RSHIFTASN  */
+#line 3402 "parser.y"
                  {strcpy((yyval.str),">>=");}
-#line 4043 "y.tab.c"
+#line 5467 "y.tab.c"
     break;
 
-  case 85: /* BOOLEXPR: BOOLEXPR OR M BOOLEXPR  */
-#line 1993 "parser.y"
+  case 87: /* BOOLEXPR: BOOLEXPR OR M BOOLEXPR  */
+#line 3405 "parser.y"
                                 {  if (!e){backpatch((yyvsp[-3].b)->F,(yyvsp[-1].addr));
                                                                 (yyval.b) = createBoolNode();
                                                                 (yyval.b)->T = merge((yyvsp[-3].b)->T,(yyvsp[0].b)->T);
                                                                 (yyval.b)->F = (yyvsp[0].b)->F;
                                                          }}
-#line 4053 "y.tab.c"
+#line 5477 "y.tab.c"
     break;
 
-  case 86: /* BOOLEXPR: BOOLEXPR AND M BOOLEXPR  */
-#line 1998 "parser.y"
+  case 88: /* BOOLEXPR: BOOLEXPR AND M BOOLEXPR  */
+#line 3410 "parser.y"
                               { if (!e){backpatch((yyvsp[-3].b)->T,(yyvsp[-1].addr));
                                                                 (yyval.b) = createBoolNode();
                                                                 (yyval.b)->T = (yyvsp[0].b)->T;
                                                                 (yyval.b)->F = merge((yyvsp[-3].b)->F,(yyvsp[0].b)->F);
                                                                 }}
-#line 4063 "y.tab.c"
+#line 5487 "y.tab.c"
     break;
 
-  case 87: /* BOOLEXPR: '!' BOOLEXPR  */
-#line 2003 "parser.y"
+  case 89: /* BOOLEXPR: '!' BOOLEXPR  */
+#line 3415 "parser.y"
                        {
                 if (!e){ (yyval.b) = createBoolNode(); (yyval.b)->T = (yyvsp[0].b)->F; (yyval.b)->F = (yyvsp[0].b)->T; }
         }
-#line 4071 "y.tab.c"
+#line 5495 "y.tab.c"
     break;
 
-  case 88: /* BOOLEXPR: '(' BOOLEXPR ')'  */
-#line 2006 "parser.y"
+  case 90: /* BOOLEXPR: '(' BOOLEXPR ')'  */
+#line 3418 "parser.y"
                            {
                 if (!e){ (yyval.b) = createBoolNode(); (yyval.b)->T = (yyvsp[-1].b)->T; (yyval.b)->F = (yyvsp[-1].b)->F; }
         }
-#line 4079 "y.tab.c"
+#line 5503 "y.tab.c"
     break;
 
-  case 89: /* BOOLEXPR: EXPR LT EXPR  */
-#line 2009 "parser.y"
+  case 91: /* BOOLEXPR: EXPR LT EXPR  */
+#line 3421 "parser.y"
                         {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
                                                         sprintf(imcode[code],"%d goto ",code);
                                                         (yyval.b)->F = createNode(code); code++;}}
-#line 4089 "y.tab.c"
+#line 5513 "y.tab.c"
     break;
 
-  case 90: /* BOOLEXPR: EXPR GT EXPR  */
-#line 2014 "parser.y"
+  case 92: /* BOOLEXPR: EXPR GT EXPR  */
+#line 3426 "parser.y"
                     {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
                                                         sprintf(imcode[code],"%d goto ",code);
                                                         (yyval.b)->F = createNode(code); code++;}}
-#line 4099 "y.tab.c"
+#line 5523 "y.tab.c"
     break;
 
-  case 91: /* BOOLEXPR: EXPR EQ EXPR  */
-#line 2019 "parser.y"
+  case 93: /* BOOLEXPR: EXPR EQ EXPR  */
+#line 3431 "parser.y"
                         {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
                                                         sprintf(imcode[code],"%d goto ",code);
                                                         (yyval.b)->F = createNode(code); code++;}}
-#line 4109 "y.tab.c"
+#line 5533 "y.tab.c"
     break;
 
-  case 92: /* BOOLEXPR: EXPR NE EXPR  */
-#line 2024 "parser.y"
+  case 94: /* BOOLEXPR: EXPR NE EXPR  */
+#line 3436 "parser.y"
                     {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
                                                         sprintf(imcode[code],"%d goto ",code);
                                                         (yyval.b)->F = createNode(code); code++;}}
-#line 4119 "y.tab.c"
+#line 5543 "y.tab.c"
     break;
 
-  case 93: /* BOOLEXPR: EXPR LE EXPR  */
-#line 2029 "parser.y"
+  case 95: /* BOOLEXPR: EXPR LE EXPR  */
+#line 3441 "parser.y"
                         {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
                                                         sprintf(imcode[code],"%d goto ",code);
                                                         (yyval.b)->F = createNode(code); code++;}}
-#line 4129 "y.tab.c"
+#line 5553 "y.tab.c"
     break;
 
-  case 94: /* BOOLEXPR: EXPR GE EXPR  */
-#line 2034 "parser.y"
+  case 96: /* BOOLEXPR: EXPR GE EXPR  */
+#line 3446 "parser.y"
                     {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
                                                         sprintf(imcode[code],"%d goto ",code);
                                                         (yyval.b)->F = createNode(code); code++;}}
-#line 4139 "y.tab.c"
+#line 5563 "y.tab.c"
     break;
 
-  case 95: /* BOOLEXPR: TR  */
-#line 2039 "parser.y"
+  case 97: /* BOOLEXPR: TR  */
+#line 3451 "parser.y"
              {if (!e){
                 (yyval.b) = createBoolNode();
                 (yyval.b)->T = createNode(code);
                 sprintf(imcode[code],"%d goto ",code);
                 code++;
         }}
-#line 4150 "y.tab.c"
+#line 5574 "y.tab.c"
     break;
 
-  case 96: /* BOOLEXPR: FL  */
-#line 2045 "parser.y"
+  case 98: /* BOOLEXPR: FL  */
+#line 3457 "parser.y"
              {if (!e){
                 (yyval.b) = createBoolNode();
                 (yyval.b)->F = createNode(code);
                 sprintf(imcode[code],"%d goto ",code);
                 code++;
         }}
-#line 4161 "y.tab.c"
+#line 5585 "y.tab.c"
     break;
 
-  case 97: /* M: %empty  */
-#line 2053 "parser.y"
+  case 99: /* M: %empty  */
+#line 3465 "parser.y"
    {(yyval.addr)=code;}
-#line 4167 "y.tab.c"
+#line 5591 "y.tab.c"
     break;
 
-  case 98: /* NN: %empty  */
-#line 2054 "parser.y"
+  case 100: /* NN: %empty  */
+#line 3466 "parser.y"
     {(yyval.b)=createBoolNode();
         (yyval.b)->N = createNode(code);
         sprintf(imcode[code],"%d goto ",code);
         code++;
         }
-#line 4177 "y.tab.c"
+#line 5601 "y.tab.c"
     break;
 
-  case 99: /* ASNEXPR: BANDASN  */
-#line 2061 "parser.y"
+  case 101: /* ASNEXPR: BANDASN  */
+#line 3473 "parser.y"
                  {strcpy((yyval.b), "&=");}
-#line 4183 "y.tab.c"
+#line 5607 "y.tab.c"
     break;
 
-  case 100: /* ASNEXPR: BORASN  */
-#line 2062 "parser.y"
+  case 102: /* ASNEXPR: BORASN  */
+#line 3474 "parser.y"
               {strcpy((yyval.b), "|=");}
-#line 4189 "y.tab.c"
+#line 5613 "y.tab.c"
     break;
 
-  case 101: /* ASNEXPR: BXORASN  */
-#line 2063 "parser.y"
+  case 103: /* ASNEXPR: BXORASN  */
+#line 3475 "parser.y"
                {strcpy((yyval.b), "^=");}
-#line 4195 "y.tab.c"
+#line 5619 "y.tab.c"
     break;
 
-  case 102: /* ASNEXPR: LSHIFTASN  */
-#line 2064 "parser.y"
+  case 104: /* ASNEXPR: LSHIFTASN  */
+#line 3476 "parser.y"
                  {strcpy((yyval.b), "<<=");}
-#line 4201 "y.tab.c"
+#line 5625 "y.tab.c"
     break;
 
-  case 103: /* ASNEXPR: RSHIFTASN  */
-#line 2065 "parser.y"
+  case 105: /* ASNEXPR: RSHIFTASN  */
+#line 3477 "parser.y"
                  {strcpy((yyval.b), ">>=");}
-#line 4207 "y.tab.c"
+#line 5631 "y.tab.c"
     break;
 
-  case 104: /* ASNEXPR: EXPR ASSGN EXPR  */
-#line 2067 "parser.y"
+  case 106: /* ASNEXPR: EXPR ASSGN EXPR  */
+#line 3478 "parser.y"
                  {
     if (!e && (yyvsp[-2].expr)->lv){
          if(strcmp((yyvsp[0].expr)->type, "void")==0){
@@ -4319,11 +5743,11 @@ else if(strcmp(actual_type,"double")==0){
     }
     if (!(yyvsp[-2].expr)->lv){e=1;strcat(err,"L value not assignable\n");}
 }
-#line 4323 "y.tab.c"
+#line 5747 "y.tab.c"
     break;
 
-  case 105: /* EXPR: SIZEOF '(' IDEN ')'  */
-#line 2179 "parser.y"
+  case 107: /* EXPR: SIZEOF '(' IDEN ')'  */
+#line 3591 "parser.y"
                           {
     if(!e){
         (yyval.expr) = createExpr();
@@ -4352,11 +5776,11 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv = 0;
     }
 }
-#line 4356 "y.tab.c"
+#line 5780 "y.tab.c"
     break;
 
-  case 106: /* EXPR: EXPR '+' EXPR  */
-#line 2207 "parser.y"
+  case 108: /* EXPR: EXPR '+' EXPR  */
+#line 3619 "parser.y"
                 {
     if (!e){
         (yyval.expr) = createExpr();
@@ -4373,11 +5797,11 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv=0;
     }
 }
-#line 4377 "y.tab.c"
+#line 5801 "y.tab.c"
     break;
 
-  case 107: /* EXPR: EXPR '-' EXPR  */
-#line 2223 "parser.y"
+  case 109: /* EXPR: EXPR '-' EXPR  */
+#line 3635 "parser.y"
                 {
     if (!e){
         (yyval.expr) = createExpr();
@@ -4394,11 +5818,11 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv=0;
     }
 }
-#line 4398 "y.tab.c"
+#line 5822 "y.tab.c"
     break;
 
-  case 108: /* EXPR: EXPR '*' EXPR  */
-#line 2239 "parser.y"
+  case 110: /* EXPR: EXPR '*' EXPR  */
+#line 3651 "parser.y"
                 {
     if (!e){
         (yyval.expr) = createExpr();
@@ -4415,11 +5839,11 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv=0;
     }
 }
-#line 4419 "y.tab.c"
+#line 5843 "y.tab.c"
     break;
 
-  case 109: /* EXPR: EXPR '/' EXPR  */
-#line 2255 "parser.y"
+  case 111: /* EXPR: EXPR '/' EXPR  */
+#line 3667 "parser.y"
                 {
     if (!e){
         /*  division by zero check */
@@ -4440,11 +5864,11 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv=0;
     }
 }
-#line 4444 "y.tab.c"
+#line 5868 "y.tab.c"
     break;
 
-  case 110: /* EXPR: EXPR '%' EXPR  */
-#line 2275 "parser.y"
+  case 112: /* EXPR: EXPR '%' EXPR  */
+#line 3687 "parser.y"
                 {
     if (!e){
         /* modulo by zero check*/
@@ -4469,23 +5893,23 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv=0;
     }
 }
-#line 4473 "y.tab.c"
+#line 5897 "y.tab.c"
     break;
 
-  case 111: /* EXPR: '(' EXPR ')'  */
-#line 2299 "parser.y"
+  case 113: /* EXPR: '(' EXPR ')'  */
+#line 3711 "parser.y"
                {if (!e){(yyval.expr) = createExpr();strcpy((yyval.expr)->str,(yyvsp[-1].expr)->str); strcpy((yyval.expr)->type,(yyvsp[-1].expr)->type);(yyval.expr)->lv=(yyvsp[-1].expr)->lv;}}
-#line 4479 "y.tab.c"
+#line 5903 "y.tab.c"
     break;
 
-  case 112: /* EXPR: EXPR OP '$'  */
-#line 2300 "parser.y"
+  case 114: /* EXPR: EXPR OP '$'  */
+#line 3712 "parser.y"
                      {e=1;strcpy(err,"Missing operand");yyerrok;}
-#line 4485 "y.tab.c"
+#line 5909 "y.tab.c"
     break;
 
-  case 113: /* EXPR: EXPR BAND EXPR  */
-#line 2301 "parser.y"
+  case 115: /* EXPR: EXPR BAND EXPR  */
+#line 3713 "parser.y"
                      {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -4502,11 +5926,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.expr)->lv=0;
         }
     }
-#line 4506 "y.tab.c"
+#line 5930 "y.tab.c"
     break;
 
-  case 114: /* EXPR: EXPR BOR EXPR  */
-#line 2317 "parser.y"
+  case 116: /* EXPR: EXPR BOR EXPR  */
+#line 3729 "parser.y"
                     {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -4523,11 +5947,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.expr)->lv=0;
         }
     }
-#line 4527 "y.tab.c"
+#line 5951 "y.tab.c"
     break;
 
-  case 115: /* EXPR: EXPR BXOR EXPR  */
-#line 2333 "parser.y"
+  case 117: /* EXPR: EXPR BXOR EXPR  */
+#line 3745 "parser.y"
                      {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -4544,11 +5968,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.expr)->lv=0;
         }
     }
-#line 4548 "y.tab.c"
+#line 5972 "y.tab.c"
     break;
 
-  case 116: /* EXPR: EXPR LSHIFT EXPR  */
-#line 2349 "parser.y"
+  case 118: /* EXPR: EXPR LSHIFT EXPR  */
+#line 3761 "parser.y"
                        {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -4561,11 +5985,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.expr)->lv=0;
         }
     }
-#line 4565 "y.tab.c"
+#line 5989 "y.tab.c"
     break;
 
-  case 117: /* EXPR: EXPR RSHIFT EXPR  */
-#line 2361 "parser.y"
+  case 119: /* EXPR: EXPR RSHIFT EXPR  */
+#line 3773 "parser.y"
                        {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -4578,11 +6002,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.expr)->lv=0;
         }
     }
-#line 4582 "y.tab.c"
+#line 6006 "y.tab.c"
     break;
 
-  case 118: /* EXPR: BNOT EXPR  */
-#line 2373 "parser.y"
+  case 120: /* EXPR: BNOT EXPR  */
+#line 3785 "parser.y"
                 {
     if (!e){
         if (isFloatingType((yyvsp[0].expr)->type)){ e=1; sprintf(err+strlen(err),"invalid operand to bitwise ~ (float/double)\n"); }
@@ -4599,23 +6023,23 @@ else if(strcmp(actual_type,"double")==0){
         }
     }
 }
-#line 4603 "y.tab.c"
+#line 6027 "y.tab.c"
     break;
 
-  case 119: /* EXPR: FUNCALL  */
-#line 2389 "parser.y"
+  case 121: /* EXPR: FUNCALL  */
+#line 3801 "parser.y"
               {(yyval.expr) = (yyvsp[0].expr);}
-#line 4609 "y.tab.c"
+#line 6033 "y.tab.c"
     break;
 
-  case 120: /* EXPR: TERM  */
-#line 2390 "parser.y"
+  case 122: /* EXPR: TERM  */
+#line 3802 "parser.y"
            {(yyval.expr) = (yyvsp[0].expr);}
-#line 4615 "y.tab.c"
+#line 6039 "y.tab.c"
     break;
 
-  case 121: /* FUNCALL: CALL IDEN '(' ARGLIST ')'  */
-#line 2393 "parser.y"
+  case 123: /* FUNCALL: CALL IDEN '(' ARGLIST ')'  */
+#line 3805 "parser.y"
                                    {
             if(!e){
                 Function* f = findFunction((yyvsp[-3].str));
@@ -4665,7 +6089,7 @@ else if(strcmp(actual_type,"double")==0){
                         arg = arg->next;
                     }
 
-                      (yyval.expr) = createExpr();
+                   (yyval.expr) = createExpr();
                     strcpy((yyval.expr)->type, f->return_type);
                     (yyval.expr)->lv = 0;
                     if(strcmp(f->return_type, "void") == 0) {
@@ -4684,11 +6108,11 @@ else if(strcmp(actual_type,"double")==0){
                 }
             }
         }
-#line 4688 "y.tab.c"
+#line 6112 "y.tab.c"
     break;
 
-  case 122: /* FUNCALL: CALL IDEN '(' ')'  */
-#line 2461 "parser.y"
+  case 124: /* FUNCALL: CALL IDEN '(' ')'  */
+#line 3873 "parser.y"
                     {
             if(!e){
                 Function* f = findFunction((yyvsp[-2].str));
@@ -4703,7 +6127,7 @@ else if(strcmp(actual_type,"double")==0){
                                 (yyvsp[-2].str), f->param_count);
                     }
 
-(yyval.expr) = createExpr();
+                  (yyval.expr) = createExpr();
                     strcpy((yyval.expr)->type, f->return_type);
                     (yyval.expr)->lv = 0;
                     if(strcmp(f->return_type, "void") == 0) {
@@ -4722,27 +6146,27 @@ else if(strcmp(actual_type,"double")==0){
                 }
             }
         }
-#line 4726 "y.tab.c"
+#line 6150 "y.tab.c"
     break;
 
-  case 123: /* ARGLIST: EXPR ',' ARGLIST  */
-#line 2495 "parser.y"
+  case 125: /* ARGLIST: EXPR ',' ARGLIST  */
+#line 3907 "parser.y"
                           {
             if(!e){ (yyval.expr) = (yyvsp[-2].expr); (yyval.expr)->next = (yyvsp[0].expr); }
         }
-#line 4734 "y.tab.c"
+#line 6158 "y.tab.c"
     break;
 
-  case 124: /* ARGLIST: EXPR  */
-#line 2498 "parser.y"
+  case 126: /* ARGLIST: EXPR  */
+#line 3910 "parser.y"
                {
             if(!e){ (yyval.expr) = (yyvsp[0].expr); (yyval.expr)->next = NULL; }
         }
-#line 4742 "y.tab.c"
+#line 6166 "y.tab.c"
     break;
 
-  case 135: /* SUBSCRIPTS: '[' EXPR ']'  */
-#line 2504 "parser.y"
+  case 137: /* SUBSCRIPTS: '[' EXPR ']'  */
+#line 3916 "parser.y"
                          {
                 if (!e) {
                         (yyval.sub) = createSubscript();
@@ -4750,11 +6174,11 @@ else if(strcmp(actual_type,"double")==0){
                         (yyval.sub)->count = 1;
                 }
         }
-#line 4754 "y.tab.c"
+#line 6178 "y.tab.c"
     break;
 
-  case 136: /* SUBSCRIPTS: SUBSCRIPTS '[' EXPR ']'  */
-#line 2511 "parser.y"
+  case 138: /* SUBSCRIPTS: SUBSCRIPTS '[' EXPR ']'  */
+#line 3923 "parser.y"
                                   {
                 if (!e) {
                         (yyval.sub) = createSubscript();
@@ -4762,11 +6186,11 @@ else if(strcmp(actual_type,"double")==0){
                         (yyval.sub)->count = (yyvsp[-3].sub)->count + 1;
                 }
         }
-#line 4766 "y.tab.c"
+#line 6190 "y.tab.c"
     break;
 
-  case 137: /* TERM: STRING  */
-#line 2518 "parser.y"
+  case 139: /* TERM: STRING  */
+#line 3932 "parser.y"
              {
     (yyval.expr) = createExpr();
     strcpy((yyval.expr)->str, (yyvsp[0].str));
@@ -4774,11 +6198,11 @@ else if(strcmp(actual_type,"double")==0){
     (yyval.expr)->str_len = strlen((yyvsp[0].str)) - 2 + 1;
     (yyval.expr)->lv = 0;
 }
-#line 4778 "y.tab.c"
+#line 6202 "y.tab.c"
     break;
 
-  case 138: /* TERM: '(' TYPE ')' EXPR  */
-#line 2525 "parser.y"
+  case 140: /* TERM: '(' TYPE ')' EXPR  */
+#line 3939 "parser.y"
                     {
     if(!e){
         (yyval.expr) = createExpr();
@@ -4801,11 +6225,11 @@ else if(strcmp(actual_type,"double")==0){
         }
     }
 }
-#line 4805 "y.tab.c"
+#line 6229 "y.tab.c"
     break;
 
-  case 139: /* TERM: UN OPR IDEN B  */
-#line 2547 "parser.y"
+  case 141: /* TERM: UN OPR IDEN B  */
+#line 3961 "parser.y"
                 {
     (yyval.expr) = createExpr();  
     if (strcmp((yyvsp[-3].str),"-")){
@@ -4850,11 +6274,11 @@ else if(strcmp(actual_type,"double")==0){
     }
     (yyval.expr)->lv = 0;
 }
-#line 4854 "y.tab.c"
+#line 6278 "y.tab.c"
     break;
 
-  case 140: /* TERM: UN IDEN OPR B  */
-#line 2591 "parser.y"
+  case 142: /* TERM: UN IDEN OPR B  */
+#line 4005 "parser.y"
                 {
     (yyval.expr) = createExpr();  
     if (strcmp((yyvsp[-3].str),"-")){
@@ -4868,7 +6292,7 @@ else if(strcmp(actual_type,"double")==0){
             if (get(temp->table,(yyvsp[-2].str))){
                 found = 1;
                 Symbol* t = get(temp->table,(yyvsp[-2].str));
-                /*  const check on post-inc/dec  */
+                /*  const check on post-inc/dec */
                 if(strstr(t->type,"const")!=NULL){ e=1; sprintf(err+strlen(err),"Cannot modify const variable %s\n",(yyvsp[-2].str)); }
                 strcpy((yyval.expr)->type,t->type);
                 break;
@@ -4898,11 +6322,11 @@ else if(strcmp(actual_type,"double")==0){
     }
     (yyval.expr)->lv=0;
 }
-#line 4902 "y.tab.c"
+#line 6326 "y.tab.c"
     break;
 
-  case 141: /* TERM: UN NUM C  */
-#line 2634 "parser.y"
+  case 143: /* TERM: UN NUM C  */
+#line 4048 "parser.y"
            {
     (yyval.expr) = createExpr();  
     if (!strcmp((yyvsp[-2].str),"-")) {
@@ -4915,11 +6339,11 @@ else if(strcmp(actual_type,"double")==0){
     else strcpy((yyval.expr)->type,"int");
     (yyval.expr)->lv = 0;
 }
-#line 4919 "y.tab.c"
+#line 6343 "y.tab.c"
     break;
 
-  case 142: /* TERM: UN IDEN SUBSCRIPTS  */
-#line 2646 "parser.y"
+  case 144: /* TERM: UN IDEN SUBSCRIPTS  */
+#line 4060 "parser.y"
                      {
     (yyval.expr) = createExpr();  
     Env* temp = top; int found=0; Symbol* sym_found = NULL;
@@ -4958,11 +6382,11 @@ else if(strcmp(actual_type,"double")==0){
         }
     }
 }
-#line 4962 "y.tab.c"
+#line 6386 "y.tab.c"
     break;
 
-  case 143: /* TERM: UN IDEN C  */
-#line 2684 "parser.y"
+  case 145: /* TERM: UN IDEN C  */
+#line 4098 "parser.y"
             {
     (yyval.expr) = createExpr();  
     if (!strcmp((yyvsp[-2].str),"-")) {
@@ -4985,11 +6409,11 @@ else if(strcmp(actual_type,"double")==0){
     }
     if (!found){ sprintf(err+strlen(err),"%s is not declared in scope\n",(yyvsp[-1].str)); e=1; }
 }
-#line 4989 "y.tab.c"
+#line 6413 "y.tab.c"
     break;
 
-  case 144: /* TERM: UN CHARR C  */
-#line 2706 "parser.y"
+  case 146: /* TERM: UN CHARR C  */
+#line 4120 "parser.y"
              {
     (yyval.expr) = createExpr();
     if (!strcmp((yyvsp[-2].str),"-")) {
@@ -5002,95 +6426,95 @@ else if(strcmp(actual_type,"double")==0){
     }
     strcpy((yyval.expr)->type, "char");
 }
-#line 5006 "y.tab.c"
+#line 6430 "y.tab.c"
     break;
 
-  case 145: /* TERM: UN INC NUM  */
-#line 2718 "parser.y"
+  case 147: /* TERM: UN INC NUM  */
+#line 4132 "parser.y"
              {e=1;strcpy(err,"cannot increment a constant value");}
-#line 5012 "y.tab.c"
+#line 6436 "y.tab.c"
     break;
 
-  case 146: /* TERM: UN DEC NUM  */
-#line 2719 "parser.y"
+  case 148: /* TERM: UN DEC NUM  */
+#line 4133 "parser.y"
              {e=1;strcpy(err,"cannot decrement a constant value");}
-#line 5018 "y.tab.c"
+#line 6442 "y.tab.c"
     break;
 
-  case 147: /* TERM: UN NUM INC  */
-#line 2720 "parser.y"
+  case 149: /* TERM: UN NUM INC  */
+#line 4134 "parser.y"
              {e=1;strcpy(err,"cannot increment a constant value");}
-#line 5024 "y.tab.c"
+#line 6448 "y.tab.c"
     break;
 
-  case 148: /* TERM: UN NUM DEC  */
-#line 2721 "parser.y"
+  case 150: /* TERM: UN NUM DEC  */
+#line 4135 "parser.y"
              {e=1;strcpy(err,"cannot decrement a constant value");}
-#line 5030 "y.tab.c"
+#line 6454 "y.tab.c"
     break;
 
-  case 149: /* OPR: INC  */
-#line 2724 "parser.y"
+  case 151: /* OPR: INC  */
+#line 4138 "parser.y"
              {strcpy((yyval.str),(yyvsp[0].str));}
-#line 5036 "y.tab.c"
+#line 6460 "y.tab.c"
     break;
 
-  case 150: /* OPR: DEC  */
-#line 2724 "parser.y"
+  case 152: /* OPR: DEC  */
+#line 4138 "parser.y"
                                    {strcpy((yyval.str),(yyvsp[0].str));}
-#line 5042 "y.tab.c"
+#line 6466 "y.tab.c"
     break;
 
-  case 151: /* B: OPR  */
-#line 2726 "parser.y"
+  case 153: /* B: OPR  */
+#line 4140 "parser.y"
         {e=1;strcpy(err,"expression is not assignable");}
-#line 5048 "y.tab.c"
+#line 6472 "y.tab.c"
     break;
 
-  case 152: /* B: IDEN  */
-#line 2727 "parser.y"
+  case 154: /* B: IDEN  */
+#line 4141 "parser.y"
          {e=1;strcpy(err,"missing operator");}
-#line 5054 "y.tab.c"
+#line 6478 "y.tab.c"
     break;
 
-  case 153: /* B: NUM  */
-#line 2728 "parser.y"
+  case 155: /* B: NUM  */
+#line 4142 "parser.y"
         {e=1;strcpy(err,"missing operator");}
-#line 5060 "y.tab.c"
+#line 6484 "y.tab.c"
     break;
 
-  case 155: /* C: IDEN  */
-#line 2730 "parser.y"
+  case 157: /* C: IDEN  */
+#line 4144 "parser.y"
          {e=1;strcpy(err,"missing operator");}
-#line 5066 "y.tab.c"
+#line 6490 "y.tab.c"
     break;
 
-  case 156: /* C: NUM  */
-#line 2731 "parser.y"
+  case 158: /* C: NUM  */
+#line 4145 "parser.y"
         {e=1;strcpy(err,"missing operator");}
-#line 5072 "y.tab.c"
+#line 6496 "y.tab.c"
     break;
 
-  case 158: /* UN: '-'  */
-#line 2733 "parser.y"
+  case 160: /* UN: '-'  */
+#line 4147 "parser.y"
          {strcpy((yyval.str),"-");}
-#line 5078 "y.tab.c"
+#line 6502 "y.tab.c"
     break;
 
-  case 159: /* UN: '+'  */
-#line 2733 "parser.y"
+  case 161: /* UN: '+'  */
+#line 4147 "parser.y"
                                   {strcpy((yyval.str),"+");}
-#line 5084 "y.tab.c"
+#line 6508 "y.tab.c"
     break;
 
-  case 160: /* UN: %empty  */
-#line 2733 "parser.y"
+  case 162: /* UN: %empty  */
+#line 4147 "parser.y"
                                                       {strcpy((yyval.str),"");}
-#line 5090 "y.tab.c"
+#line 6514 "y.tab.c"
     break;
 
 
-#line 5094 "y.tab.c"
+#line 6518 "y.tab.c"
 
       default: break;
     }
@@ -5283,7 +6707,8 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 2734 "parser.y"
+#line 4148 "parser.y"
+
 
 char* genvar(){
     char *re = (char*)malloc(sizeof(char)*100);
@@ -5294,34 +6719,953 @@ char* genvar(){
 
 int yyerror(char* msg){ return 0; }
 
+
+void generateSymbolTableDOT() {
+    FILE* dot = fopen("symbol_table.dot", "w");
+    fprintf(dot, "digraph SymbolTable {\n");
+        fprintf(dot, "  node [shape=record, style=filled, fillcolor=lightblue];\n");
+    for (int i = 0; i < env_count; i++) {
+        fprintf(dot, "  scope%d [label=\"{Scope %d|", i, i);
+        
+        Table* table = envs[i]->table;
+        int first = 1;
+        for (int j = 0; j < table->size; j++) {
+            TableEntry* entry = table->buckets[j];
+            while (entry) {
+                if (!first) fprintf(dot, "|");
+                fprintf(dot, "%s : %s - %d", 
+                    entry->value->name, 
+                    entry->value->type, 
+                    entry->value->offset);
+                   
+                first = 0;
+                entry = entry->next;
+            }
+        }
+        fprintf(dot, "}\"];\n");
+        
+        // Connect to parent scope
+        if (envs[i]->prev != NULL) {
+            for (int k = 0; k < i; k++) {
+                if (envs[k] == envs[i]->prev) {
+                    fprintf(dot, "  scope%d -> scope%d;\n", i, k);
+                    break;
+                }
+            }
+        }
+    }
+    
+    fprintf(dot, "}\n");
+    fclose(dot);
+}
+
+void generateTACFlowDOT() {
+    FILE* dot = fopen("tac_flow.dot", "w");
+    fprintf(dot, "digraph TAC {\n");
+    //fprintf(dot, "  node [shape=box];\n");
+        fprintf(dot, "  node [shape=box, style=filled, fillcolor=lightblue];\n");
+
+    for (int i = 0; i < code; i++) {
+        //if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        // Escape quotes in labels
+        char label[10000];
+        strcpy(label, imcode[i]);
+        char* newline = strchr(label, '\n');
+        if (newline) *newline = '\0';
+        
+        fprintf(dot, "  n%d [label=\"%s\"];\n",  i, label);
+        
+        //  FIX: Check if this is a conditional jump (has both "if" and "goto")
+        int is_conditional = 0;
+        if (strstr(imcode[i], "if") != NULL && strstr(imcode[i], "goto") != NULL) {
+            char* if_ptr = strstr(imcode[i], "if");
+            char* goto_ptr = strstr(imcode[i], "goto");
+            if (if_ptr < goto_ptr) {
+                is_conditional = 1;
+            }
+        }
+        
+        // Draw edges for control flow
+        if (is_conditional) {
+            //  CONDITIONAL JUMP: Draw both true and false edges
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            
+            if (isdigit(*ptr)) {
+                int target = atoi(ptr);
+                // True branch (goto target)
+                fprintf(dot, "  n%d -> n%d [label=\"true\", color=green];\n", i, target);
+            }
+            
+            //  FIX: False branch (fall-through to next line)
+            if (i + 1 < code) {
+                fprintf(dot, "  n%d -> n%d [label=\"false\", color=red];\n", i, i+1);
+            }
+        }
+        else if (strstr(imcode[i], "goto") != NULL) {
+            //  UNCONDITIONAL JUMP: Only goto edge, no fall-through
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            
+            if (isdigit(*ptr)) {
+                int target = atoi(ptr);
+                fprintf(dot, "  n%d -> n%d [label=\"goto\"];\n", i, target);
+            }
+        }
+        else if (strstr(imcode[i], "Return") == NULL &&
+                 strstr(imcode[i], "BeginFunc") == NULL &&
+                 strstr(imcode[i], "EndFunc") == NULL) {
+            //  SEQUENTIAL FLOW: Normal statement, fall-through to next
+            if (i + 1 < code) {
+                fprintf(dot, "  n%d -> n%d [style=dashed];\n", i, i+1);
+            }
+        }
+    }
+    
+    fprintf(dot, "}\n");
+    fclose(dot);
+}
+
+
+
+// Function to identify basic block leaders
+void identifyBasicBlocks() {
+    int is_leader[10000] = {0};
+    
+    // Rule 1: First instruction is a leader
+    is_leader[0] = 1;
+    
+    // Rule 2: Any target of a jump is a leader
+    // Rule 3: Any instruction immediately following a jump is a leader
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        // Check for goto statements
+        if (strstr(imcode[i], "goto") != NULL) {
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            
+            if (isdigit(*ptr)) {
+                int target = atoi(ptr);
+                if (target >= 0 && target < code) {
+                    is_leader[target] = 1;  // Target is a leader
+                }
+            }
+            
+            // Instruction after goto is a leader
+            if (i + 1 < code) {
+                is_leader[i + 1] = 1;
+            }
+        }
+        
+        // BeginFunc and EndFunc boundaries
+        if (strstr(imcode[i], "BeginFunc") != NULL) {
+            if (i + 1 < code) is_leader[i + 1] = 1;
+        }
+        if (strstr(imcode[i], "EndFunc") != NULL) {
+            if (i + 1 < code) is_leader[i + 1] = 1;
+        }
+    }
+    
+    // Build basic blocks
+    int current_start = -1;
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        if (is_leader[i]) {
+            // End previous block
+            if (current_start != -1) {
+                BasicBlock* bb = (BasicBlock*)malloc(sizeof(BasicBlock));
+                bb->start_line = current_start;
+                bb->end_line = i - 1;
+                bb->block_id = block_count++;
+                bb->next = blocks;
+                blocks = bb;
+            }
+            current_start = i;
+        }
+    }
+    
+    // End last block
+    if (current_start != -1) {
+        BasicBlock* bb = (BasicBlock*)malloc(sizeof(BasicBlock));
+        bb->start_line = current_start;
+        bb->end_line = code - 1;
+        bb->block_id = block_count++;
+        bb->next = blocks;
+        blocks = bb;
+    }
+    
+}
+
+// Function to find which block a line belongs to
+int getBlockForLine(int line) {
+    BasicBlock* bb = blocks;
+    while (bb) {
+        if (line >= bb->start_line && line <= bb->end_line) {
+            return bb->block_id;
+        }
+        bb = bb->next;
+    }
+    return -1;
+}
+
+// Enhanced DOT generation with basic blocks
+void generateTACFlowWithBlocks() {
+    identifyBasicBlocks();
+    
+    FILE* dot = fopen("tac_flow_blocks.dot", "w");
+    fprintf(dot, "digraph TAC_Blocks {\n");
+    fprintf(dot, "  node [shape=record, style=filled, fillcolor=lightblue];\n");
+    fprintf(dot, "  rankdir=TB;\n\n");
+    
+    // Generate one node per basic block
+    BasicBlock* bb = blocks;
+    while (bb) {
+        fprintf(dot, "  bb%d [label=\"{<b>Block %d|", bb->block_id, bb->block_id);
+        
+        // Add all instructions in this block
+        int first = 1;
+        for (int i = bb->start_line; i <= bb->end_line && i < code; i++) {
+            //if (strstr(imcode[i], "// DEAD") != NULL) continue;
+            
+            char label[10000];
+            strcpy(label, imcode[i]);
+            
+            // Escape special characters for DOT
+            char escaped[10000];
+            int j = 0, k = 0;
+            while (label[j] != '\0' && label[j] != '\n') {
+                if (label[j] == '|' || label[j] == '{' || label[j] == '}' || 
+                    label[j] == '<' || label[j] == '>') {
+                    escaped[k++] = '\\';
+                }
+                escaped[k++] = label[j++];
+            }
+            escaped[k] = '\0';
+            
+            if (!first) fprintf(dot, "\\l");  // Left-aligned line break
+            //fprintf(dot, "%d: %s", i, escaped);
+            fprintf(dot, "%s", escaped);
+            first = 0;
+        }
+        
+        fprintf(dot, "\\l}\"];\n");
+        bb = bb->next;
+    }
+    
+    fprintf(dot, "\n  // Control flow edges\n");
+    
+    // Draw edges between basic blocks
+    for (int i = 0; i < code; i++) {
+        //if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        int current_block = getBlockForLine(i);
+        if (current_block == -1) continue;
+        
+        // Check if this is the last instruction in its block
+        bb = blocks;
+        int is_block_end = 0;
+        while (bb) {
+            if (bb->block_id == current_block && i == bb->end_line) {
+                is_block_end = 1;
+                break;
+            }
+            bb = bb->next;
+        }
+        
+        if (!is_block_end) continue;  // Only process block-ending instructions
+        
+        // Check for conditional jump
+        int is_conditional = 0;
+        if (strstr(imcode[i], "if") != NULL && strstr(imcode[i], "goto") != NULL) {
+            char* if_ptr = strstr(imcode[i], "if");
+            char* goto_ptr = strstr(imcode[i], "goto");
+            if (if_ptr < goto_ptr) {
+                is_conditional = 1;
+            }
+        }
+        
+        if (is_conditional) {
+            // True branch (goto target)
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            
+            if (isdigit(*ptr)) {
+                int target = atoi(ptr);
+                int target_block = getBlockForLine(target);
+                if (target_block != -1) {
+                    fprintf(dot, "  bb%d -> bb%d [label=\"T\", color=green, penwidth=2];\n", 
+                            current_block, target_block);
+                }
+            }
+            
+            // False branch (fall-through)
+            if (i + 1 < code) {
+                int next_block = getBlockForLine(i + 1);
+                if (next_block != -1 && next_block != current_block) {
+                    fprintf(dot, "  bb%d -> bb%d [label=\"F\", color=red, penwidth=2];\n", 
+                            current_block, next_block);
+                }
+            }
+        }
+        else if (strstr(imcode[i], "goto") != NULL) {
+            // Unconditional jump
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            
+            if (isdigit(*ptr)) {
+                int target = atoi(ptr);
+                int target_block = getBlockForLine(target);
+                if (target_block != -1) {
+                    fprintf(dot, "  bb%d -> bb%d [label=\"goto\", penwidth=2];\n", 
+                            current_block, target_block);
+                }
+            }
+        }
+        else if (strstr(imcode[i], "Return") == NULL &&
+                 strstr(imcode[i], "EndFunc") == NULL) {
+            // Sequential flow
+            if (i + 1 < code) {
+                int next_block = getBlockForLine(i + 1);
+                if (next_block != -1 && next_block != current_block) {
+                    fprintf(dot, "  bb%d -> bb%d [style=dashed, color=gray];\n", 
+                            current_block, next_block);
+                }
+            }
+        }
+    }
+    
+    fprintf(dot, "}\n");
+    fclose(dot);
+}
+
+// Add statistics function
+void printBasicBlockStats() {
+    printf("\n=== Basic Block Statistics ===\n");
+    printf("Total blocks: %d\n", block_count);
+    
+    BasicBlock* bb = blocks;
+    while (bb) {
+        int inst_count = 0;
+        for (int i = bb->start_line; i <= bb->end_line && i < code; i++) {
+            if (strstr(imcode[i], "// DEAD") == NULL) {
+                inst_count++;
+            }
+        }
+        printf("Block %d: Lines %d-%d (%d instructions)\n", 
+               bb->block_id, bb->start_line, bb->end_line, inst_count);
+        bb = bb->next;
+    }
+}
+
+/*
+void generateCallGraphDOT() {
+    FILE* dot = fopen("call_graph.dot", "w");
+    fprintf(dot, "digraph CallGraph {\n");
+    fprintf(dot, "  node [shape=record, style=filled];\n");
+    fprintf(dot, "  rankdir=TB;\n");
+    fprintf(dot, "  concentrate=true;\n\n");
+    
+    // Track edges with call site information
+    typedef struct CallEdge {
+        char caller[100];
+        char callee[100];
+        int line_number;
+        int call_count;
+        struct CallEdge* next;
+    } CallEdge;
+    
+    CallEdge* edges = NULL;
+    char current_func[100] = "";
+    
+    // Calculate function metrics
+    typedef struct FuncMetrics {
+        char name[100];
+        int tac_lines;
+        int start_line;
+        int end_line;
+        int call_count;  // How many times this function is called
+        struct FuncMetrics* next;
+    } FuncMetrics;
+    
+    FuncMetrics* metrics = NULL;
+    
+    // Scan TAC for function boundaries, calls, and metrics
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        // Track current function and calculate lines
+        if (strstr(imcode[i], "BeginFunc") != NULL) {
+            int param_count;
+            sscanf(imcode[i], "%*d BeginFunc %s %d", current_func, &param_count);
+            
+            // Create metrics entry
+            FuncMetrics* m = malloc(sizeof(FuncMetrics));
+            strcpy(m->name, current_func);
+            m->start_line = i;
+            m->tac_lines = 0;
+            m->call_count = 0;
+            m->next = metrics;
+            metrics = m;
+        }
+        
+        if (strstr(imcode[i], "EndFunc") != NULL && strcmp(current_func, "") != 0) {
+            // Update end line and count TAC instructions
+            FuncMetrics* m = metrics;
+            while (m) {
+                if (strcmp(m->name, current_func) == 0) {
+                    m->end_line = i;
+                    // Count non-dead, non-control instructions
+                    for (int j = m->start_line; j <= m->end_line; j++) {
+                        if (strstr(imcode[j], "// DEAD") == NULL &&
+                            strstr(imcode[j], "BeginFunc") == NULL &&
+                            strstr(imcode[j], "EndFunc") == NULL &&
+                            strstr(imcode[j], "PopParam") == NULL) {
+                            m->tac_lines++;
+                        }
+                    }
+                    break;
+                }
+                m = m->next;
+            }
+        }
+        
+        // Track function calls with line numbers
+        if (strstr(imcode[i], "Call") != NULL && strcmp(current_func, "") != 0) {
+            char callee[100];
+            if (sscanf(imcode[i], "%*d %*s = Call %s", callee) == 1 ||
+                sscanf(imcode[i], "%*d Call %s", callee) == 1) {
+                
+                // Increment callee's call count
+                FuncMetrics* m = metrics;
+                while (m) {
+                    if (strcmp(m->name, callee) == 0) {
+                        m->call_count++;
+                        break;
+                    }
+                    m = m->next;
+                }
+                
+                // Check if edge already exists
+                CallEdge* check = edges;
+                int exists = 0;
+                while (check) {
+                    if (strcmp(check->caller, current_func) == 0 &&
+                        strcmp(check->callee, callee) == 0) {
+                        check->call_count++;
+                        exists = 1;
+                        break;
+                    }
+                    check = check->next;
+                }
+                
+                if (!exists) {
+                    CallEdge* edge = malloc(sizeof(CallEdge));
+                    strcpy(edge->caller, current_func);
+                    strcpy(edge->callee, callee);
+                    edge->line_number = i;
+                    edge->call_count = 1;
+                    edge->next = edges;
+                    edges = edge;
+                }
+            }
+        }
+    }
+    
+    // Helper function to get color based on return type
+    const char* getColorForType(const char* type) {
+        if (strcmp(type, "void") == 0) return "lightgray";
+        if (strcmp(type, "int") == 0) return "lightblue";
+        if (strcmp(type, "float") == 0 || strcmp(type, "double") == 0) return "lightyellow";
+        if (strcmp(type, "char") == 0) return "lightgreen";
+        return "white";
+    }
+    
+    // Draw function nodes with detailed information
+    Function* f = func_list;
+    while (f) {
+        // Find metrics for this function
+        FuncMetrics* m = metrics;
+        int tac_lines = 0;
+        int total_calls = 0;
+        while (m) {
+            if (strcmp(m->name, f->name) == 0) {
+                tac_lines = m->tac_lines;
+                total_calls = m->call_count;
+                break;
+            }
+            m = m->next;
+        }
+        
+        // Build parameter string
+        char param_str[500] = "";
+        if (f->param_count > 0) {
+            Param* p = f->params;
+            int first = 1;
+            while (p) {
+                if (!first) strcat(param_str, ", ");
+                char temp[100];
+                sprintf(temp, "%s %s", p->type, p->name);
+                strcat(param_str, temp);
+                first = 0;
+                p = p->next;
+            }
+        } else {
+            strcpy(param_str, "void");
+        }
+        
+        // Determine complexity badge
+        const char* complexity;
+        if (tac_lines < 5) complexity = "Simple";
+        else if (tac_lines < 20) complexity = "Medium";
+        else complexity = "Complex";
+        
+        // Generate node with all information
+        fprintf(dot, "  \"%s\" [fillcolor=\"%s\", label=<\n", 
+                f->name, getColorForType(f->return_type));
+        fprintf(dot, "    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n");
+        fprintf(dot, "      <TR><TD BGCOLOR=\"navy\"><FONT COLOR=\"white\"><B>%s</B></FONT></TD></TR>\n", 
+                f->name);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Returns:</B> %s</TD></TR>\n", 
+                f->return_type);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Params:</B> %s</TD></TR>\n", 
+                param_str);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>TAC Lines:</B> %d (%s)</TD></TR>\n", 
+                tac_lines, complexity);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Called:</B> %d time%s</TD></TR>\n", 
+                total_calls, total_calls == 1 ? "" : "s");
+        fprintf(dot, "    </TABLE>\n");
+        fprintf(dot, "  >];\n\n");
+        
+        f = f->next;
+    }
+    
+    fprintf(dot, "\n  // Call relationships\n");
+    
+    // Draw edges with call information
+    CallEdge* e = edges;
+    while (e) {
+        // Determine edge style based on call frequency
+        const char* color = "black";
+        int penwidth = 1;
+        
+        if (e->call_count > 5) {
+            penwidth = 3;
+            color = "red";
+        } else if (e->call_count > 2) {
+            penwidth = 2;
+            color = "orange";
+        }
+        
+        fprintf(dot, "  \"%s\" -> \"%s\" [label=\"%d call%s\\n@line %d\", "
+                     "color=\"%s\", penwidth=%d];\n",
+                e->caller, e->callee, 
+                e->call_count, e->call_count == 1 ? "" : "s",
+                e->line_number,
+                color, penwidth);
+        e = e->next;
+    }
+    
+    // Add legend (FIXED - removed HR tag)
+    fprintf(dot, "\n  // Legend\n");
+    fprintf(dot, "  legend [shape=none, margin=0, label=<\n");
+    fprintf(dot, "    <TABLE BORDER=\"1\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n");
+    fprintf(dot, "      <TR><TD COLSPAN=\"2\" BGCOLOR=\"black\"><FONT COLOR=\"white\"><B>Legend</B></FONT></TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightblue\">int</TD><TD>Integer return type</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightyellow\">float/double</TD><TD>Floating-point return</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightgreen\">char</TD><TD>Character return type</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightgray\">void</TD><TD>No return value</TD></TR>\n");
+    fprintf(dot, "      <TR><TD COLSPAN=\"2\" BGCOLOR=\"gray\"></TD></TR>\n");  // ← FIXED: Separator row
+    fprintf(dot, "      <TR><TD>Black edge</TD><TD>Called 1-2 times</TD></TR>\n");
+    fprintf(dot, "      <TR><TD><FONT COLOR=\"orange\">Orange edge</FONT></TD><TD>Called 3-5 times</TD></TR>\n");
+    fprintf(dot, "      <TR><TD><FONT COLOR=\"red\">Red edge</FONT></TD><TD>Called 6+ times</TD></TR>\n");
+    fprintf(dot, "    </TABLE>\n");
+    fprintf(dot, "  >];\n");
+    
+    fprintf(dot, "}\n");
+    fclose(dot);
+    
+    
+    // Print statistics
+    printf("\n=== Call Graph Statistics ===\n");
+    printf("Total functions: ");
+    int func_count = 0;
+    f = func_list;
+    while (f) { func_count++; f = f->next; }
+    printf("%d\n", func_count);
+    
+    printf("\nMost called functions:\n");
+    FuncMetrics* m = metrics;
+    while (m) {
+        if (m->call_count > 0) {
+            printf("  %s: called %d time%s\n", 
+                   m->name, m->call_count, m->call_count == 1 ? "" : "s");
+        }
+        m = m->next;
+    }
+    
+    printf("\nFunction complexity:\n");
+    m = metrics;
+    while (m) {
+        const char* complexity;
+        if (m->tac_lines < 5) complexity = "Simple";
+        else if (m->tac_lines < 20) complexity = "Medium";
+        else complexity = "Complex";
+        
+        printf("  %s: %d TAC lines (%s)\n", m->name, m->tac_lines, complexity);
+        m = m->next;
+    }
+    printf("=============================\n");
+}
+
+*/
+
+
+void generateCallGraphDOT() {
+    FILE* dot = fopen("call_graph.dot", "w");
+    fprintf(dot, "digraph CallGraph {\n");
+    fprintf(dot, "  node [shape=record, style=filled, fillcolor=lightblue];\n");
+    fprintf(dot, "  rankdir=TB;\n");
+    fprintf(dot, "  concentrate=true;\n\n");
+    
+    // Track edges with call site information
+    typedef struct CallEdge {
+        char caller[100];
+        char callee[100];
+        int line_number;
+        int call_count;
+        struct CallEdge* next;
+    } CallEdge;
+    
+    CallEdge* edges = NULL;
+    char current_func[100] = "";
+    
+    // Calculate function metrics
+    typedef struct FuncMetrics {
+        char name[100];
+        int tac_lines;
+        int start_line;
+        int end_line;
+        int call_count;  // How many times this function is called
+        struct FuncMetrics* next;
+    } FuncMetrics;
+    
+    FuncMetrics* metrics = NULL;
+    
+    // Scan TAC for function boundaries, calls, and metrics
+    for (int i = 0; i < code; i++) {
+        //if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        // Track current function and calculate lines
+        if (strstr(imcode[i], "BeginFunc") != NULL) {
+            int param_count;
+            sscanf(imcode[i], "%*d BeginFunc %s %d", current_func, &param_count);
+            
+            // Create metrics entry
+            FuncMetrics* m = malloc(sizeof(FuncMetrics));
+            strcpy(m->name, current_func);
+            m->start_line = i;
+            m->tac_lines = 0;
+            m->call_count = 0;
+            m->next = metrics;
+            metrics = m;
+        }
+        
+        if (strstr(imcode[i], "EndFunc") != NULL && strcmp(current_func, "") != 0) {
+            // Update end line and count TAC instructions
+            FuncMetrics* m = metrics;
+            while (m) {
+                if (strcmp(m->name, current_func) == 0) {
+                    m->end_line = i;
+                    // Count non-dead, non-control instructions
+                    for (int j = m->start_line; j <= m->end_line; j++) {
+                        if (strstr(imcode[j], "// DEAD") == NULL &&
+                            strstr(imcode[j], "BeginFunc") == NULL &&
+                            strstr(imcode[j], "EndFunc") == NULL &&
+                            strstr(imcode[j], "PopParam") == NULL) {
+                            m->tac_lines++;
+                        }
+                    }
+                    break;
+                }
+                m = m->next;
+            }
+        }
+        
+        // Track function calls with line numbers
+        if (strstr(imcode[i], "Call") != NULL && strcmp(current_func, "") != 0) {
+            char callee[100];
+            if (sscanf(imcode[i], "%*d %*s = Call %s", callee) == 1 ||
+                sscanf(imcode[i], "%*d Call %s", callee) == 1) {
+                
+                // Increment callee's call count
+                FuncMetrics* m = metrics;
+                while (m) {
+                    if (strcmp(m->name, callee) == 0) {
+                        m->call_count++;
+                        break;
+                    }
+                    m = m->next;
+                }
+                
+                // Check if edge already exists
+                CallEdge* check = edges;
+                int exists = 0;
+                while (check) {
+                    if (strcmp(check->caller, current_func) == 0 &&
+                        strcmp(check->callee, callee) == 0) {
+                        check->call_count++;
+                        exists = 1;
+                        break;
+                    }
+                    check = check->next;
+                }
+                
+                if (!exists) {
+                    CallEdge* edge = malloc(sizeof(CallEdge));
+                    strcpy(edge->caller, current_func);
+                    strcpy(edge->callee, callee);
+                    edge->line_number = i;
+                    edge->call_count = 1;
+                    edge->next = edges;
+                    edges = edge;
+                }
+            }
+        }
+    }
+    
+    //  UPDATED: Helper function to get color based on return type (ALL TYPES)
+    const char* getColorForType(const char* type) {
+        if (strcmp(type, "void") == 0) return "lightgray";
+        if (strcmp(type, "int") == 0) return "lightyellow";
+        if (strcmp(type, "short") == 0) return "lightcyan";
+        if (strcmp(type, "long") == 0) return "lightskyblue";
+        if (strcmp(type, "float") == 0) return "lightyellow";
+        if (strcmp(type, "double") == 0) return "wheat";
+        if (strcmp(type, "char") == 0) return "lightgreen";
+        if (strcmp(type, "bool") == 0) return "lightpink";
+        return "white";
+    }
+    
+    // Draw function nodes with detailed information
+    Function* f = func_list;
+    while (f) {
+        // Find metrics for this function
+        FuncMetrics* m = metrics;
+        int tac_lines = 0;
+        int total_calls = 0;
+        while (m) {
+            if (strcmp(m->name, f->name) == 0) {
+                tac_lines = m->tac_lines;
+                total_calls = m->call_count;
+                break;
+            }
+            m = m->next;
+        }
+        
+        // Build parameter string
+        char param_str[500] = "";
+        if (f->param_count > 0) {
+            Param* p = f->params;
+            int first = 1;
+            while (p) {
+                if (!first) strcat(param_str, ", ");
+                char temp[100];
+                sprintf(temp, "%s %s", p->type, p->name);
+                strcat(param_str, temp);
+                first = 0;
+                p = p->next;
+            }
+        } else {
+            strcpy(param_str, "void");
+        }
+        
+        // Determine complexity badge
+        const char* complexity;
+        if (tac_lines < 5) complexity = "Simple";
+        else if (tac_lines < 20) complexity = "Medium";
+        else complexity = "Complex";
+        
+        // Generate node with all information
+        fprintf(dot, "  \"%s\" [fillcolor=lightblue, label=<\n", 
+                f->name);
+        fprintf(dot, "    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n");
+        fprintf(dot, "      <TR><TD BGCOLOR=\"lightblue\"><FONT COLOR=\"black\"><B>%s</B></FONT></TD></TR>\n", 
+                f->name);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Returns:</B> %s</TD></TR>\n", 
+                f->return_type);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Params:</B> %s</TD></TR>\n", 
+                param_str);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>TAC Lines:</B> %d (%s)</TD></TR>\n", 
+                tac_lines, complexity);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Called:</B> %d time%s</TD></TR>\n", 
+                total_calls, total_calls == 1 ? "" : "s");
+        fprintf(dot, "    </TABLE>\n");
+        fprintf(dot, "  >];\n\n");
+        
+        f = f->next;
+    }
+    
+    fprintf(dot, "\n  // Call relationships\n");
+    
+    // Draw edges with call information
+    CallEdge* e = edges;
+    while (e) {
+        // Determine edge style based on call frequency
+        const char* color = "black";
+        int penwidth = 1;
+        
+        if (e->call_count > 5) {
+            penwidth = 3;
+            color = "red";
+        } else if (e->call_count > 2) {
+            penwidth = 2;
+            color = "orange";
+        }
+        
+        fprintf(dot, "  \"%s\" -> \"%s\" [label=\"%d call%s\\n@line %d\", "
+                     "color=\"%s\", penwidth=%d];\n",
+                e->caller, e->callee, 
+                e->call_count, e->call_count == 1 ? "" : "s",
+                e->line_number,
+                color, penwidth);
+        e = e->next;
+    }
+    
+    //  UPDATED: Add complete legend with ALL return types
+    fprintf(dot, "\n  // Legend\n");
+    fprintf(dot, "  legend [shape=none, margin=0, label=<\n");
+    fprintf(dot, "    <TABLE BORDER=\"1\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n");
+   /* fprintf(dot, "      <TR><TD COLSPAN=\"2\" BGCOLOR=\"black\"><FONT COLOR=\"white\"><B>Return Type Legend</B></FONT></TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightblue\">int</TD><TD>Integer (32-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightcyan\">short</TD><TD>Short integer (16-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightskyblue\">long</TD><TD>Long integer (64-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightyellow\">float</TD><TD>Float (32-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"wheat\">double</TD><TD>Double (64-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightgreen\">char</TD><TD>Character (8-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightpink\">bool</TD><TD>Boolean</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightgray\">void</TD><TD>No return value</TD></TR>\n");*/
+    fprintf(dot, "      <TR><TD>Black edge</TD><TD>Called 1-2 times</TD></TR>\n");
+    fprintf(dot, "      <TR><TD><FONT COLOR=\"orange\">Orange edge</FONT></TD><TD>Called 3-5 times</TD></TR>\n");
+    fprintf(dot, "      <TR><TD><FONT COLOR=\"red\">Red edge</FONT></TD><TD>Called 6+ times</TD></TR>\n");
+    fprintf(dot, "    </TABLE>\n");
+    fprintf(dot, "  >];\n");
+    
+    fprintf(dot, "}\n");
+    fclose(dot);
+    
+    
+    // Print statistics
+    printf("\n=== Call Graph Statistics ===\n");
+    printf("Total functions: ");
+    int func_count = 0;
+    f = func_list;
+    while (f) { func_count++; f = f->next; }
+    printf("%d\n", func_count);
+    
+    printf("\nMost called functions:\n");
+    FuncMetrics* m = metrics;
+    while (m) {
+        if (m->call_count > 0) {
+            printf("  %s: called %d time%s\n", 
+                   m->name, m->call_count, m->call_count == 1 ? "" : "s");
+        }
+        m = m->next;
+    }
+    
+    printf("\nFunction complexity:\n");
+    m = metrics;
+    while (m) {
+        const char* complexity;
+        if (m->tac_lines < 5) complexity = "Simple";
+        else if (m->tac_lines < 20) complexity = "Medium";
+        else complexity = "Complex";
+        
+        printf("  %s: %d TAC lines (%s)\n", m->name, m->tac_lines, complexity);
+        m = m->next;
+    }
+    printf("=============================\n");
+}
+
+void generateAllImages() {
+    system("dot -Tpng tac_flow.dot -o tac_flow.png 2>/dev/null");
+    system("dot -Tpng tac_flow_blocks.dot -o tac_flow_blocks.png 2>/dev/null");
+    //system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
+    //system("dot -Tpng symbol_table.dot -o symbol_table.png 2>/dev/null");
+}
+
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         printf("Enter your code \n");
         yyin = stdin;
+        memset(imcode, 0, sizeof(imcode));
+        yyparse();
     } else {
-        yyin = fopen(argv[1], "r");
-        if (!yyin) {
+        FILE* f = fopen(argv[1], "r");
+        if (!f) {
             printf("Error: Cannot open file %s\n", argv[1]);
             return 1;
         }
+
+        fseek(f, 0, SEEK_END);
+        long fsize = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char* raw = (char*)malloc(fsize + 2);
+        if (!raw) { fclose(f); return 1; }
+        fread(raw, 1, fsize, f);
+        raw[fsize] = '\0';
+        fclose(f);
+
+        /* Preprocess:
+           - strip carriage returns (\r) so Windows files work
+           - ensure a space before and after every '$' so "2$" lexes as NUM + '$'
+           - ensure file ends with a newline so flex sees a clean EOF */
+        char* clean = (char*)malloc(fsize * 3 + 4);
+        if (!clean) { free(raw); return 1; }
+        int j = 0;
+        for (int i = 0; i < (int)fsize; i++) {
+            if (raw[i] == '\r') continue;              /* strip \r */
+            if (raw[i] == '$') {
+                if (j > 0 && clean[j-1] != ' ' && clean[j-1] != '\t' && clean[j-1] != '\n')
+                    clean[j++] = ' ';                  /* space before $ */
+                clean[j++] = '$';
+                clean[j++] = ' ';                      /* space after $ */
+            } else {
+                clean[j++] = raw[i];
+            }
+        }
+        if (j == 0 || clean[j-1] != '\n') clean[j++] = '\n'; /* trailing newline */
+        clean[j] = '\0';
+        free(raw);
+
+        memset(imcode, 0, sizeof(imcode));
+        yy_scan_string(clean);  /* feed preprocessed source to lexer */
+        yyparse();
+        free(clean);
     }
-    memset(imcode, 0, sizeof(imcode));  
-    yyin = fopen(argv[1],"r");
-    yyparse();
-    
-    if (!e) {  
-        // Write TAC files
+
+    remove("output.tac");
+    if (!e) {
+        /* Write TAC file */
         FILE* tac_file = fopen("output.tac", "w");
         if (tac_file) {
-            for (int i = 0; i < code; i++) {
+            for (int i = 0; i < code; i++)
                 fprintf(tac_file, "%s", imcode[i]);
-            }
             fclose(tac_file);
         }
-       
-    } 
-    if (argc >= 2 && yyin != stdin) {
-        fclose(yyin);
+       // generateSymbolTableDOT();
+        generateTACFlowDOT();
+        generateTACFlowWithBlocks();
+       // generateCallGraphDOT();
+        generateAllImages();
     }
     return 0;
 }

@@ -185,7 +185,7 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 986 "parser.y"
+#line 2298 "parser.y"
 
         char str[1000];
         struct BoolNode* b;

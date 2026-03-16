@@ -1,0 +1,16 @@
+func @int main() {
+    @int a, b, c, d, e,f ,g $
+    a = 5 $
+    b = 10 $
+    c = a + b $
+    d = a + b $
+    e = c + d $
+    f= a +b $
+    g= c + d $
+    show(c) $
+    show(d) $
+    show(e) $
+    show(f) $
+    show(g) $
+    ret 0 $
+}

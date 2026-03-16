@@ -67,12 +67,10 @@ Param* createParam(char* name, char* type){
 
 Function* createFunction(char* name, char* ret_type){
     Function* f = (Function*)malloc(sizeof(Function));
-    memset(f, 0, sizeof(Function));
     strcpy(f->name, name);
     strcpy(f->return_type, ret_type);
     f->params = NULL;
     f->param_count = 0;
-    f->start_label = 0;
     f->next = NULL;
     return f;
 }
@@ -162,11 +160,8 @@ struct Expr* createExpr(){
     e->next = NULL;
     e->str_len = 0;
     e->lv = 0;
-    e->str[0] = '\0';      
-    e->type[0] = '\0';     
     return e;
 }
-
 
 struct Type* createType(){
         return (struct Type*)malloc(sizeof(struct Type));
@@ -327,6 +322,9 @@ int isTypeCompatible(char* expected, char* actual) {
     return 0;
 }
 
+
+
+
 void validateNumericLiteral(char* literal, char* target_type, char* var_name) {
     if (!isNumericConstant(literal)) return;
 
@@ -380,7 +378,6 @@ void validateNumericLiteral(char* literal, char* target_type, char* var_name) {
     }
 }
 
-
 /*duplicate parameter name check*/
 int checkDuplicateParams(struct Decl* params) {
     struct Decl* p1 = params;
@@ -394,8 +391,6 @@ int checkDuplicateParams(struct Decl* params) {
     }
     return 0;
 }
-
-
 
 int tryConstantFold(struct Expr* op1, struct Expr* op2, char op, struct Expr* result) {
     if (!isNumericConstant(op1->str) || !isNumericConstant(op2->str)) return 0;
@@ -517,7 +512,6 @@ Symbol* env_get(Env* env, const char* key) {
 }
 
 Env* top = NULL;
-
 /*
 void print_table(Table* table) {
     for (int i = 0; i < table->size; i++) {
@@ -542,7 +536,9 @@ printf("-----------------------------------------------\n");
         print_table(envs[i]->table);
     }
     printf("======================================\n");
-}*/
+}
+
+*/
 
 
 
@@ -565,6 +561,7 @@ static void extract_base(const char* full_type, char* out) {
     /* strip leading @ if present */
     if (out[0] == '@') memmove(out, out+1, strlen(out));
 }
+
 
 /* Collect all symbols from a table into a sorted array (by offset) */
 #define MAX_SYMS 512
@@ -699,6 +696,7 @@ void print_all_envs() {
 
 
 }
+
 
 char* calculateArrayOffset(Symbol* sym, struct Subscript* sub, char* base_name) {
     if (sym->dim_count == 0) return base_name;
@@ -842,41 +840,66 @@ int isLiteral(char* str) {
 
 int checkLiteralRange(char* literal, char* target_type) {
     if (!isNumericConstant(literal)) return 1;
-    
+
     double value = atof(literal);
     int has_warning = 0;
-    
+
     if (strcmp(target_type, "char") == 0) {
         if (value < -128 || value > 127) {
-            sprintf(err+strlen(err), 
+            sprintf(err+strlen(err),
                 "Warning: Value %.0f out of range for char (valid range: -128 to 127)\n", value);
             has_warning = 1;
         }
     }
     else if (strcmp(target_type, "short") == 0) {
         if (value < -32768 || value > 32767) {
-            sprintf(err+strlen(err), 
+            sprintf(err+strlen(err),
                 "Warning: Value %.0f out of range for short (valid range: -32768 to 32767)\n", value);
             has_warning = 1;
         }
     }
     else if (strcmp(target_type, "int") == 0) {
         if (value < -2147483648.0 || value > 2147483647.0) {
-            sprintf(err+strlen(err), 
+            sprintf(err+strlen(err),
                 "Warning: Value %.0f out of range for int (valid range: -2147483648 to 2147483647)\n", value);
             has_warning = 1;
         }
     }
     else if (strcmp(target_type, "long") == 0) {
-        // For long, we can't really check with double precision, but we can try
         if (fabs(value) > 9.223372e18) {
-            sprintf(err+strlen(err), 
+            sprintf(err+strlen(err),
                 "Warning: Value %.0f may be out of range for long\n", value);
             has_warning = 1;
         }
     }
-    
-    return !has_warning;  // Return 1 if no warning, 0 if warning issued
+    else if (strcmp(target_type, "float") == 0) {
+        if (value > FLT_MAX || value < -FLT_MAX) {
+            sprintf(err+strlen(err),
+                "Warning: Value %g exceeds float range [-%g, %g] (will be inf)\n",
+                value, FLT_MAX, FLT_MAX);
+            has_warning = 1;
+        } else if (value != 0.0 && fabs(value) < FLT_MIN) {
+            sprintf(err+strlen(err),
+                "Warning: Value %g is too small for float (will underflow to 0)\n",
+                value);
+            has_warning = 1;
+        }
+    }
+    else if (strcmp(target_type, "double") == 0) {
+        if (isinf(value) || value > DBL_MAX || value < -DBL_MAX) {
+            sprintf(err+strlen(err),
+                "Warning: Value %g exceeds double range (will be inf)\n",
+                value);
+            has_warning = 1;
+        } else if (value != 0.0 && fabs(value) < DBL_MIN) {
+            sprintf(err+strlen(err),
+                "Warning: Value %g is too small for double (will underflow to 0)\n",
+                value);
+            has_warning = 1;
+        }
+    }
+
+    return !has_warning;
 }
 
 /* Check for narrowing conversions between types */
@@ -985,7 +1008,1293 @@ void checkTypeAssign(struct Expr* op1, struct Expr* op2, char* opr){
 }
 
 
+void identityAssignmentElimination() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char lhs[100], rhs[100];
+        if (sscanf(line, "%d %s = %[^\n]", &line_num, lhs, rhs) == 3) {
+            char* end = rhs + strlen(rhs) - 1;
+            while (end > rhs && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+            if (strcmp(lhs, rhs) == 0)
+                sprintf(imcode[i], "%d // IDENTITY: %s = %s (eliminated)\n", line_num, lhs, rhs);
+        }
+    }
+}
+
+void deadStoreElimination() {
+    for (int i = 0; i < code - 1; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char lhs[100], rhs[100];
+        if (sscanf(line, "%d %s = %[^\n]", &line_num, lhs, rhs) == 3) {
+            if (strstr(rhs, "Call") != NULL || strstr(rhs, "PopParam") != NULL) continue;
+            for (int j = i + 1; j < code; j++) {
+                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                /* Stop at control flow boundaries */
+                if (strstr(imcode[j], "if ") != NULL || strstr(imcode[j], "goto ") != NULL ||
+                    strstr(imcode[j], "BeginFunc") != NULL ||
+                    strstr(imcode[j], "EndFunc") != NULL) break;
+                char check_line[10000]; strcpy(check_line, imcode[j]);
+                char check_lhs[100];
+                char* equals = strchr(check_line, '=');
+                if (equals) {
+                    /* Variable used on RHS of an assignment — not a dead store */
+                    char* rhs_part = equals + 1;
+                    if (strstr(rhs_part, lhs) != NULL) break;
+                } else {
+                    /* No '=' — this is a use-only instruction:
+                       printint/printfloat/printchar/printstring,
+                       PushParam, Return, inputint etc.
+                       If lhs appears anywhere in the line it is being used. */
+                    /* Build a word-boundary check to avoid false matches
+                       e.g. lhs="x" matching inside "xy" */
+                    char* p = check_line;
+                    int lhs_len = strlen(lhs);
+                    int used = 0;
+                    while ((p = strstr(p, lhs)) != NULL) {
+                        char before = (p == check_line) ? ' ' : *(p - 1);
+                        char after  = *(p + lhs_len);
+                        if (!isalnum((unsigned char)before) && before != '_' &&
+                            !isalnum((unsigned char)after)  && after  != '_') {
+                            used = 1; break;
+                        }
+                        p++;
+                    }
+                    if (used) break;
+                }
+                /* Variable overwritten before any use — dead store */
+                if (sscanf(check_line, "%*d %s =", check_lhs) == 1) {
+                    if (strcmp(check_lhs, lhs) == 0) {
+                        sprintf(imcode[i], "%d // DEAD STORE: %s = %s\n", line_num, lhs, rhs);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+void redundantLoadElimination() {
+    for (int i = 0; i < code - 1; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char lhs[100], rhs[100];
+        if (sscanf(line, "%d %s = %[^\n]", &line_num, lhs, rhs) == 3) {
+            char* end = rhs + strlen(rhs) - 1;
+            while (end > rhs && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+
+            /* Skip complex expressions and non-variable RHS */
+            if (strchr(rhs, '+') != NULL || strchr(rhs, '-') != NULL ||
+                strchr(rhs, '*') != NULL || strchr(rhs, '/') != NULL ||
+                strchr(rhs, '%') != NULL || strchr(rhs, '&') != NULL ||
+                strchr(rhs, '|') != NULL || strchr(rhs, '^') != NULL ||
+                strstr(rhs, "<<") != NULL || strstr(rhs, ">>") != NULL ||
+                strstr(rhs, "Call") != NULL) continue;
+            if (isNumericConstant(rhs) || isLiteral(rhs)) continue;
+
+            int lhs_len = strlen(lhs);
+            int rhs_len = strlen(rhs);
+
+            /* Scan forward for a redundant load of the same rhs */
+            for (int j = i + 1; j < code; j++) {
+                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+
+                /* Stop at control-flow / function boundaries */
+                if (strstr(imcode[j], "if ")      != NULL ||
+                    strstr(imcode[j], "goto ")     != NULL ||
+                    strstr(imcode[j], "Return")    != NULL ||
+                    strstr(imcode[j], "BeginFunc") != NULL ||
+                    strstr(imcode[j], "EndFunc")   != NULL) break;
+
+                char jline[10000]; strcpy(jline, imcode[j]);
+                int j_line_num; char j_lhs[100], j_rhs[100];
+
+                /* Word-boundary check: is lhs used on this line?
+                   (prevents "a" matching inside "arr") */
+                {
+                    int used = 0;
+                    char* p = jline;
+                    while ((p = strstr(p, lhs)) != NULL) {
+                        char before = (p == jline) ? ' ' : *(p - 1);
+                        char after  = *(p + lhs_len);
+                        if (!isalnum((unsigned char)before) && before != '_' &&
+                            !isalnum((unsigned char)after)  && after  != '_') {
+                            used = 1; break;
+                        }
+                        p++;
+                    }
+                    if (used) break;
+                }
+
+                /* If rhs (source) is overwritten here, stop — later loads differ */
+                if (sscanf(jline, "%*d %s =", j_lhs) == 1) {
+                    /* word-boundary check on rhs too (e.g. rhs="arr[8]", lhs="arr") */
+                    if (strcmp(j_lhs, rhs) == 0) break;
+                    /* also stop if LHS of this line IS rhs (handles array base names) */
+                    if (strncmp(j_lhs, rhs, rhs_len) == 0 &&
+                        (j_lhs[rhs_len] == '[' || j_lhs[rhs_len] == '\0')) break;
+                }
+
+                /* Found another load of the same rhs into a different variable */
+                if (sscanf(jline, "%d %s = %[^\n]", &j_line_num, j_lhs, j_rhs) == 3) {
+                    char* je = j_rhs + strlen(j_rhs) - 1;
+                    while (je > j_rhs && (*je == ' ' || *je == '\n')) { *je = '\0'; je--; }
+                    if (strcmp(j_rhs, rhs) == 0 && strcmp(j_lhs, lhs) != 0) {
+                        sprintf(imcode[j], "%d %s = %s\n", j_line_num, j_lhs, lhs);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void peepholeOptimization() {
+    for (int i = 0; i < code - 1; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line1[10000], line2[10000];
+        strcpy(line1, imcode[i]); strcpy(line2, imcode[i+1]);
+        int line_num1, line_num2; char lhs1[100], rhs1[100], lhs2[100], rhs2[100];
+        if (sscanf(line1, "%d %s = %[^\n]", &line_num1, lhs1, rhs1) == 3 &&
+            sscanf(line2, "%d %s = %[^\n]", &line_num2, lhs2, rhs2) == 3) {
+            char* end = rhs1 + strlen(rhs1) - 1;
+            while (end > rhs1 && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+            end = rhs2 + strlen(rhs2) - 1;
+            while (end > rhs2 && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+            if (strchr(rhs1,'+') == NULL && strchr(rhs1,'-') == NULL &&
+                strchr(rhs1,'*') == NULL && strchr(rhs1,'/') == NULL &&
+                strchr(rhs2,'+') == NULL && strchr(rhs2,'-') == NULL &&
+                strchr(rhs2,'*') == NULL && strchr(rhs2,'/') == NULL) {
+                if (strcmp(lhs1, rhs2) == 0 && strcmp(rhs1, lhs2) == 0)
+                    sprintf(imcode[i+1], "%d // PEEPHOLE: %s = %s (redundant swap)\n", line_num2, lhs2, rhs2);
+            }
+        }
+    }
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        if (strstr(imcode[i], "// PEEPHOLE") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char lhs[100], rhs[100];
+        if (sscanf(line, "%d %s = %[^\n]", &line_num, lhs, rhs) == 3) {
+            char* end = rhs + strlen(rhs) - 1;
+            while (end > rhs && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+            if (strchr(rhs,'+') != NULL || strchr(rhs,'-') != NULL ||
+                strchr(rhs,'*') != NULL || strchr(rhs,'/') != NULL ||
+                strchr(rhs,'(') != NULL) continue;
+            for (int j = i + 1; j < code; j++) {
+                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                if (strstr(imcode[j], "// PEEPHOLE") != NULL) continue;
+                char check_line[10000]; strcpy(check_line, imcode[j]);
+                if (strstr(check_line, "BeginFunc") != NULL || strstr(check_line, "EndFunc") != NULL) break;
+                if (strstr(check_line, "if ") != NULL || strstr(check_line, "goto ") != NULL ||
+                    strstr(check_line, "Return") != NULL) break;
+                char check_lhs[100], check_rhs[100];
+                if (sscanf(check_line, "%*d %s = %[^\n]", check_lhs, check_rhs) == 2) {
+                    char* check_end = check_rhs + strlen(check_rhs) - 1;
+                    while (check_end > check_rhs && (*check_end == ' ' || *check_end == '\n')) { *check_end = '\0'; check_end--; }
+                    if (strcmp(check_lhs, lhs) == 0) {
+                        if (strcmp(check_rhs, rhs) == 0) {
+                            int check_line_num; sscanf(imcode[j], "%d", &check_line_num);
+                            sprintf(imcode[j], "%d // PEEPHOLE: %s = %s (redundant reassignment)\n", check_line_num, check_lhs, check_rhs);
+                        }
+                        break;
+                    }
+                    if (strcmp(check_lhs, rhs) == 0) break;
+                }
+            }
+        }
+    }
+}
+
+void strengthReduction() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char result[100], op1[100], op[10], op2[100];
+        if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1, op, op2) == 5) {
+            if (!isNumericConstant(op2)) {
+                if (!isNumericConstant(op1)) continue;
+                char temp[100]; strcpy(temp, op1); strcpy(op1, op2); strcpy(op2, temp);
+            }
+            int constant = atoi(op2);
+            if (strcmp(op, "*") == 0 && constant > 0) {
+                if ((constant & (constant - 1)) == 0) {
+                    int shift = 0; int temp = constant;
+                    while (temp > 1) { temp >>= 1; shift++; }
+                    if (constant == 2) sprintf(imcode[i], "%d %s = %s + %s\n", line_num, result, op1, op1);
+                    else sprintf(imcode[i], "%d %s = %s << %d\n", line_num, result, op1, shift);
+                    continue;
+                }
+            }
+            if (strcmp(op, "/") == 0 && constant > 0) {
+                if ((constant & (constant - 1)) == 0) {
+                    int shift = 0; int temp = constant;
+                    while (temp > 1) { temp >>= 1; shift++; }
+                    sprintf(imcode[i], "%d %s = %s >> %d\n", line_num, result, op1, shift);
+                    continue;
+                }
+            }
+        }
+    }
+}
+
+void algebraicSimplification() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char result[100], op1[100], op[10], op2[100];
+        if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1, op, op2) == 5) {
+
+            /*  Multiplication  */
+            if (strcmp(op,"*")==0 && strcmp(op2,"1")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            if (strcmp(op,"*")==0 && strcmp(op1,"1")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            if (strcmp(op,"*")==0 && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+            if (strcmp(op,"*")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+
+            /*  Addition / Subtraction  */
+            if ((strcmp(op,"+")==0||strcmp(op,"-")==0) && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            if (strcmp(op,"+")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            if (strcmp(op,"-")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+
+            /*  Division  */
+            if (strcmp(op,"/")==0 && strcmp(op2,"1")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            if (strcmp(op,"/")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = 1\n",line_num,result); continue; }
+            if (strcmp(op,"/")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+
+            /*  Modulo  */
+            if (strcmp(op,"%")==0 && strcmp(op2,"1")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }  /* x % 1 == 0 */
+            if (strcmp(op,"%")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }  /* 0 % x == 0 */
+            if (strcmp(op,"%")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }  /* x % x == 0 */
+
+            /*  Bitwise AND (bitand)  */
+            if (strcmp(op,"&")==0 && (strcmp(op2,"0")==0||strcmp(op1,"0")==0)){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+            if (strcmp(op,"&")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }  /* x & x == x */
+
+            /*  Bitwise OR (bitor)  */
+            if (strcmp(op,"|")==0 && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            if (strcmp(op,"|")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            if (strcmp(op,"|")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }  /* x | x == x */
+
+            /*  Bitwise XOR (bitxor)  */
+            if (strcmp(op,"^")==0 && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            if (strcmp(op,"^")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            if (strcmp(op,"^")==0 && strcmp(op1,op2)==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }  /* x ^ x == 0 */
+
+            /*  Left Shift (lshift → <<)  */
+            if (strcmp(op,"<<")==0 && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }  /* x << 0 == x */
+            if (strcmp(op,"<<")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }        /* 0 << x == 0 */
+
+            /*  Right Shift (rshift → >>)  */
+            if (strcmp(op,">>")==0 && strcmp(op2,"0")==0){ sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }  /* x >> 0 == x */
+            if (strcmp(op,">>")==0 && strcmp(op1,"0")==0){ sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }        /* 0 >> x == 0 */
+        }
+    }
+}
+
+/*
+void constantFoldConditionals() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        char line[10000];
+        strcpy(line, imcode[i]);
+        
+        int line_num;
+        char cond[1000];
+        if (sscanf(line, "%d if %[^\n]", &line_num, cond) == 2) {
+            char op1[100], op[10], op2[100], rest[100];
+            if (sscanf(cond, "%s %s %s %[^\n]", op1, op, op2, rest) == 4) {
+                if (isNumericConstant(op1) && isNumericConstant(op2)) {
+                    double v1 = atof(op1), v2 = atof(op2);
+                    int result = 0;
+                    if (strcmp(op, "<") == 0) result = (v1 < v2);
+                    else if (strcmp(op, ">") == 0) result = (v1 > v2);
+                    else if (strcmp(op, "<=") == 0) result = (v1 <= v2);
+                    else if (strcmp(op, ">=") == 0) result = (v1 >= v2);
+                    else if (strcmp(op, "==") == 0) result = (v1 == v2);
+                    else if (strcmp(op, "!=") == 0) result = (v1 != v2);
+                    
+                    if (result) {
+                        char* goto_ptr = strstr(rest, "goto");
+                        if (goto_ptr) {
+                            sprintf(imcode[i], "%d %s\n", line_num, goto_ptr);
+                        }
+                    } else {
+                        sprintf(imcode[i], "%d // DEAD BRANCH: if %s %s %s always false\n", 
+                                line_num, op1, op, op2);
+                    }
+                }
+            }
+        }
+    }
+}
+*/
+
+
+
+
+
+void constantFoldConditionals() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        char line[10000];
+        strcpy(line, imcode[i]);
+        
+        int line_num;
+        char cond[1000];
+        if (sscanf(line, "%d if %[^\n]", &line_num, cond) == 2) {
+            char op1[100], op[10], op2[100], rest[100];
+            if (sscanf(cond, "%s %s %s %[^\n]", op1, op, op2, rest) == 4) {
+                // Try to resolve operands to their constant values
+                char resolved_op1[100], resolved_op2[100];
+                strcpy(resolved_op1, op1);
+                strcpy(resolved_op2, op2);
+                int op1_is_truly_constant = 1;
+                int op2_is_truly_constant = 1;
+                
+                // Look up op1 if it's a variable
+                if (!isNumericConstant(op1)) {
+                    int assignment_count = 0;
+                    for (int j = 0; j < code; j++) {
+                        if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                        char check_line[10000]; strcpy(check_line, imcode[j]);
+                        char lhs[100];
+                        if (sscanf(check_line, "%*d %s = %*[^\n]", lhs) == 1) {
+                            if (strcmp(lhs, op1) == 0) {
+                                assignment_count++;
+                                if (assignment_count > 1) {
+                                    op1_is_truly_constant = 0;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (op1_is_truly_constant) {
+                        for (int j = i - 1; j >= 0; j--) {
+                            if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                            char check_line[10000]; strcpy(check_line, imcode[j]);
+                            char lhs[100], rhs[100];
+                            if (sscanf(check_line, "%*d %s = %[^\n]", lhs, rhs) == 2) {
+                                if (strcmp(lhs, op1) == 0) {
+                                    char* trimmed = rhs;
+                                    while (*trimmed == ' ') trimmed++;
+                                    char* end = trimmed + strlen(trimmed) - 1;
+                                    while (end > trimmed && (*end == ' ' || *end == '\n')) end--;
+                                    *(end + 1) = '\0';
+                                    
+                                    if (isNumericConstant(trimmed) && 
+                                        !strchr(trimmed, '+') && !strchr(trimmed, '-') &&
+                                        !strchr(trimmed, '*') && !strchr(trimmed, '/')) {
+                                        strcpy(resolved_op1, trimmed);
+                                    } else {
+                                        op1_is_truly_constant = 0;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Look up op2 if it's a variable
+                if (!isNumericConstant(op2)) {
+                    int assignment_count = 0;
+                    for (int j = 0; j < code; j++) {
+                        if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                        char check_line[10000]; strcpy(check_line, imcode[j]);
+                        char lhs[100];
+                        if (sscanf(check_line, "%*d %s = %*[^\n]", lhs) == 1) {
+                            if (strcmp(lhs, op2) == 0) {
+                                assignment_count++;
+                                if (assignment_count > 1) {
+                                    op2_is_truly_constant = 0;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (op2_is_truly_constant) {
+                        for (int j = i - 1; j >= 0; j--) {
+                            if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                            char check_line[10000]; strcpy(check_line, imcode[j]);
+                            char lhs[100], rhs[100];
+                            if (sscanf(check_line, "%*d %s = %[^\n]", lhs, rhs) == 2) {
+                                if (strcmp(lhs, op2) == 0) {
+                                    char* trimmed = rhs;
+                                    while (*trimmed == ' ') trimmed++;
+                                    char* end = trimmed + strlen(trimmed) - 1;
+                                    while (end > trimmed && (*end == ' ' || *end == '\n')) end--;
+                                    *(end + 1) = '\0';
+                                    
+                                    if (isNumericConstant(trimmed) && 
+                                        !strchr(trimmed, '+') && !strchr(trimmed, '-') &&
+                                        !strchr(trimmed, '*') && !strchr(trimmed, '/')) {
+                                        strcpy(resolved_op2, trimmed);
+                                    } else {
+                                        op2_is_truly_constant = 0;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Only fold if both are truly constant (assigned only once with constant values)
+                if (op1_is_truly_constant && op2_is_truly_constant &&
+                    isNumericConstant(resolved_op1) && isNumericConstant(resolved_op2)) {
+                    double v1 = atof(resolved_op1), v2 = atof(resolved_op2);
+                    int result = 0;
+                    if (strcmp(op, "<") == 0) result = (v1 < v2);
+                    else if (strcmp(op, ">") == 0) result = (v1 > v2);
+                    else if (strcmp(op, "<=") == 0) result = (v1 <= v2);
+                    else if (strcmp(op, ">=") == 0) result = (v1 >= v2);
+                    else if (strcmp(op, "==") == 0) result = (v1 == v2);
+                    else if (strcmp(op, "!=") == 0) result = (v1 != v2);
+                    
+                    if (result) {
+                        char* goto_ptr = strstr(rest, "goto");
+                        if (goto_ptr) {
+                            sprintf(imcode[i], "%d %s // FOLDED: if %s %s %s always true\n", 
+                                    line_num, goto_ptr, resolved_op1, op, resolved_op2);
+                        }
+                    } else {
+                        sprintf(imcode[i], "%d // DEAD BRANCH: if %s %s %s always false\n", 
+                                line_num, resolved_op1, op, resolved_op2);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+void copyPropagation() {
+    int is_jump_target[10000] = {0};
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "goto") != NULL) {
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            if (isdigit(*ptr)) { int target = atoi(ptr); if (target >= 0 && target < code) is_jump_target[target] = 1; }
+        }
+    }
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char lhs[100], rhs[100];
+        if (sscanf(line, "%d %s = %[^\n]", &line_num, lhs, rhs) == 3) {
+            char* end = rhs + strlen(rhs) - 1;
+            while (end > rhs && (*end == ' ' || *end == '\n' || *end == '\r')) { *end = '\0'; end--; }
+            if (strchr(lhs, '[') != NULL) continue;
+            if (strchr(rhs,'+')!=NULL||strchr(rhs,'-')!=NULL||strchr(rhs,'*')!=NULL||strchr(rhs,'/')!=NULL||
+                strchr(rhs,'%')!=NULL||strchr(rhs,'&')!=NULL||strchr(rhs,'|')!=NULL||strchr(rhs,'^')!=NULL||
+                strchr(rhs,'<')!=NULL||strchr(rhs,'>')!=NULL||strchr(rhs,'~')!=NULL||strchr(rhs,'(')!=NULL||
+                strstr(rhs,"Call")!=NULL||strstr(rhs,"PopParam")!=NULL||strstr(rhs,"PushParam")!=NULL) continue;
+            if (is_jump_target[i]) continue;
+            int func_start = i, func_end = code;
+            for (int k = i; k >= 0; k--) { if (strstr(imcode[k], "BeginFunc") != NULL) { func_start = k; break; } }
+            for (int k = i; k < code; k++) { if (strstr(imcode[k], "EndFunc") != NULL) { func_end = k; break; } }
+            int in_loop = 0;
+            for (int j = func_start; j < func_end; j++) {
+                if (strstr(imcode[j], "goto") != NULL) {
+                    char* goto_ptr = strstr(imcode[j], "goto");
+                    char* ptr = goto_ptr + 4;
+                    while (*ptr == ' ' || *ptr == '\t') ptr++;
+                    if (isdigit(*ptr)) { int target = atoi(ptr); if (target <= i && j >= i && i >= target && i <= j) { in_loop = 1; break; } }
+                }
+            }
+            int first_modification = func_end;
+            for (int j = i + 1; j < func_end; j++) {
+                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                if (strstr(imcode[j], "EndFunc") != NULL) break;
+                char check_lhs[100];
+                if (sscanf(imcode[j], "%*d %s =", check_lhs) == 1) { if (strcmp(check_lhs, lhs) == 0) { first_modification = j; break; } }
+            }
+            int rhs_first_modification = func_end;
+            if (!isNumericConstant(rhs)) {
+                for (int j = i + 1; j < func_end; j++) {
+                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                    if (strstr(imcode[j], "EndFunc") != NULL) break;
+                    char check_lhs[100];
+                    if (sscanf(imcode[j], "%*d %s =", check_lhs) == 1) { if (strcmp(check_lhs, rhs) == 0) { rhs_first_modification = j; break; } }
+                }
+            }
+            if (in_loop) continue;
+            
+            // Check if there's a goto between current line and first_modification
+            int has_goto_before_modification = 0;
+            int goto_target = -1;
+            for (int j = i + 1; j < first_modification && j < code; j++) {
+                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                if (strstr(imcode[j], "goto") != NULL) {
+                    char* goto_ptr = strstr(imcode[j], "goto");
+                    char* ptr = goto_ptr + 4;
+                    while (*ptr == ' ' || *ptr == '\t') ptr++;
+                    if (isdigit(*ptr)) {
+                        goto_target = atoi(ptr);
+                        // If goto jumps past first_modification, we need to check beyond
+                        if (goto_target > first_modification || goto_target > i + 1) {
+                            has_goto_before_modification = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // If there's a goto, extend safe_limit to check beyond the goto target
+            int safe_limit = (first_modification < rhs_first_modification) ? first_modification : rhs_first_modification;
+            if (has_goto_before_modification && goto_target > safe_limit) {
+                // Only extend safe_limit if there are no further live assignments
+                // to lhs between goto_target and func_end. If there are, the goto
+                // skips over one assignment but another follows — we cannot safely
+                // propagate the current value all the way to a use past that point.
+                int has_later_assignment = 0;
+                for (int j = goto_target; j < func_end; j++) {
+                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                    if (strstr(imcode[j], "EndFunc") != NULL) break;
+                    char check_lhs2[100];
+                    if (sscanf(imcode[j], "%*d %s =", check_lhs2) == 1) {
+                        if (strcmp(check_lhs2, lhs) == 0) { has_later_assignment = 1; break; }
+                    }
+                }
+                if (!has_later_assignment) {
+                    // Safe to extend: goto skips intermediate assignment but no
+                    // further writes exist, so the current value reaches the use.
+                    safe_limit = (goto_target + 10 < func_end) ? goto_target + 10 : func_end;
+                }
+                // else: leave safe_limit at first_modification — don't propagate past it
+            }
+            
+            int is_used = 0, last_use_line = -1;
+            for (int j = i + 1; j < safe_limit && j < code; j++) {
+                if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
+                char check_line[10000]; strcpy(check_line, imcode[j]);
+                if (strstr(check_line, lhs) != NULL) {
+                    char* pos = strstr(check_line, lhs);
+                    while (pos) {
+                        int is_whole = 1;
+                        if (pos > check_line && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole = 0;
+char after = *(pos + strlen(lhs));
+if (isalnum(after) || after == '_' || after == '\'') is_whole = 0;
+
+                        if (is_whole) { is_used = 1; last_use_line = j; }
+                        pos = strstr(pos + 1, lhs);
+                    }
+                }
+            }
+            int is_constant = isLiteral(rhs); 
+            if (is_used) {
+               
+                int use_inside_loop = 0;
+                for (int j = func_start; j < func_end; j++) {
+                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                    if (strstr(imcode[j], "goto") != NULL) {
+                        char* goto_ptr = strstr(imcode[j],"goto");
+                        char* ptr = goto_ptr + 4;
+                        while (*ptr == ' ' || *ptr == '\t') ptr++;
+                        if (isdigit(*ptr)) {
+                            int target = atoi(ptr);
+                            /* backward branch whose target is at or before
+                               last_use_line: use sites are inside a loop */
+                            if (target <= last_use_line && j > target) {
+                                use_inside_loop = 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+                /* lhs is modified somewhere in the function after its definition
+                   - its pre-loop value is stale on iteration 2+ - unsafe */
+                if (use_inside_loop && first_modification < func_end) continue;
+
+                int has_use_at_jump_target = 0;
+                for (int j = i + 1; j <= last_use_line && j < code; j++) {
+                    if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
+                    if (is_jump_target[j]) {
+                        char check_line[10000]; strcpy(check_line, imcode[j]);
+                        if (strstr(check_line, lhs) != NULL) {
+                            char* pos = strstr(check_line, lhs);
+                            while (pos) {
+                                int is_whole = 1;
+                                if (pos > check_line && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole = 0;
+char after = *(pos + strlen(lhs));
+if (isalnum(after) || after == '_' || after == '\'') is_whole = 0;
+
+                                if (is_whole) { has_use_at_jump_target = 1; break; }
+                                pos = strstr(pos + 1, lhs);
+                            }
+                        }
+                    }
+                    if (has_use_at_jump_target) break;
+                }
+                if (has_use_at_jump_target) continue;
+                int used_in_subscript = 0;
+                for (int j = i + 1; j <= last_use_line && j < code; j++) {
+                    if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
+                    char check_line[10000]; strcpy(check_line, imcode[j]);
+                    char* bracket_start = strchr(check_line, '[');
+                    while (bracket_start) {
+                        char* bracket_end = strchr(bracket_start, ']');
+                        if (bracket_end) {
+                            *bracket_end = '\0';
+                            if (strstr(bracket_start, lhs) != NULL) { used_in_subscript = 1; *bracket_end = ']'; break; }
+                            *bracket_end = ']';
+                            bracket_start = strchr(bracket_end + 1, '[');
+                        } else break;
+                    }
+                    if (used_in_subscript) break;
+                }
+                if (used_in_subscript && lhs[0] == 't' && isdigit(lhs[1]) && !is_constant) continue;
+                int can_propagate = 0;
+                if (lhs[0] == 't' && isdigit(lhs[1])) can_propagate = 1;
+                else if (is_constant && !used_in_subscript) can_propagate = 1;
+                if (!can_propagate) continue;
+                /* Safety check for user variables (non-temps):
+                   If any goto in the function can SKIP OVER line i
+                   (goto source < i, goto target > i) then line i is inside
+                   a conditional branch and may not execute — unsafe to propagate. */
+                if (!(lhs[0] == 't' && isdigit(lhs[1]))) {
+                    int inside_branch = 0;
+                    for (int k = 0; k < func_end; k++) {
+                        if (strstr(imcode[k], "// DEAD") != NULL) continue;
+                        if (strstr(imcode[k], "goto") != NULL) {
+                            char* goto_ptr = strstr(imcode[k], "goto");
+                            char* ptr = goto_ptr + 4;
+                            while (*ptr == ' ' || *ptr == '\t') ptr++;
+                            if (isdigit(*ptr)) {
+                                int gtarget = atoi(ptr);
+                                /* A goto from before i that jumps past i means
+                                   line i can be bypassed → it's in a branch */
+                                if (k < i && gtarget > i) {
+                                    inside_branch = 1;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (inside_branch) continue;
+                }
+                for (int j = i + 1; j <= last_use_line && j < code && j < safe_limit; j++) {
+                    if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
+                    char new_line[10000]; strcpy(new_line, imcode[j]);
+                    char* equals_sign = strchr(new_line, '=');
+                    if (equals_sign == NULL) {
+                        char* line_num_end = strchr(new_line, ' ');
+                        char* search_start = line_num_end ? line_num_end + 1 : new_line;
+                        char* pos = strstr(search_start, lhs);
+                        while (pos != NULL) {
+                            int is_whole_word = 1;
+                             if (pos > search_start && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole_word = 0;
+char after = *(pos + strlen(lhs));
+if (isalnum(after) || after == '_' || after == '\'') is_whole_word = 0;
+                            if (is_whole_word) {
+                                char temp[10000]; *pos = '\0';
+                                sprintf(temp, "%s%s%s", new_line, rhs, pos + strlen(lhs));
+                                strcpy(new_line, temp); strcpy(imcode[j], new_line);
+                                line_num_end = strchr(new_line, ' ');
+                                search_start = line_num_end ? line_num_end + 1 : new_line;
+                                pos = strstr(search_start, lhs);
+                            } else pos = strstr(pos + 1, lhs);
+                        }
+                    } else {
+                        char* line_num_end = strchr(new_line, ' ');
+                        char* lhs_start = line_num_end ? line_num_end + 1 : new_line;
+                        char* bracket_in_lhs = strchr(lhs_start, '[');
+                        if (bracket_in_lhs && bracket_in_lhs < equals_sign) {
+                            char* bracket_end = strchr(bracket_in_lhs, ']');
+                            if (bracket_end && bracket_end < equals_sign) {
+                                char* pos = strstr(bracket_in_lhs, lhs);
+                                while (pos && pos < bracket_end) {
+                                    int is_whole_word = 1;
+                                    if (pos > bracket_in_lhs && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole_word = 0;
+char after = *(pos + strlen(lhs));
+if (isalnum(after) || after == '_' || after == '\'') is_whole_word = 0;
+                                    if (is_whole_word) {
+                                        char temp[10000]; *pos = '\0';
+                                        sprintf(temp, "%s%s%s", new_line, rhs, pos + strlen(lhs));
+                                        strcpy(new_line, temp); strcpy(imcode[j], new_line);
+                                        equals_sign = strchr(new_line, '=');
+                                        bracket_in_lhs = strchr(new_line, '[');
+                                        bracket_end = strchr(bracket_in_lhs, ']');
+                                        pos = strstr(bracket_in_lhs, lhs);
+                                    } else { pos = strstr(pos + 1, lhs); if (pos >= bracket_end) break; }
+                                }
+                            }
+                        }
+                        char* rhs_start = equals_sign + 1;
+                        char* pos = strstr(rhs_start, lhs);
+                        while (pos != NULL) {
+                            int is_whole_word = 1;
+                            if (pos > rhs_start && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole_word = 0;
+char after = *(pos + strlen(lhs));
+if (isalnum(after) || after == '_' || after == '\'') is_whole_word = 0;
+
+                            if (is_whole_word) {
+                                char temp[10000]; *pos = '\0';
+                                sprintf(temp, "%s%s%s", new_line, rhs, pos + strlen(lhs));
+                                strcpy(new_line, temp); strcpy(imcode[j], new_line);
+                                equals_sign = strchr(new_line, '=');
+                                rhs_start = equals_sign + 1;
+                                pos = strstr(rhs_start, lhs);
+                            } else pos = strstr(pos + 1, lhs);
+                        }
+                    }
+               /* }
+                sprintf(imcode[i], "%d // DEAD COPY: %s = %s\n", line_num, lhs, rhs);
+            }
+            if (!is_used && is_constant) sprintf(imcode[i], "%d // DEAD CONST: %s = %s\n", line_num, lhs, rhs);
+            */                }
+                // Don't mark as DEAD COPY - keep the source definition
+            } else if (!is_used && is_constant) {
+                /* Before marking as DEAD CONST, do a full scan of the entire
+                   function to make sure lhs is truly never READ anywhere after
+                   this point. safe_limit may have cut the search short (stopped
+                   at first_modification), missing a printint/return further down. */
+                int globally_used = 0;
+                for (int j = i + 1; j < func_end; j++) {
+                    if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
+                    char check_line[10000]; strcpy(check_line, imcode[j]);
+                    /* Only count lhs as "used" when it appears on the READ side.
+                       For an assignment "N lhs = ...", lhs on the LHS is a write,
+                       not a read — skip those. We check reads by looking at:
+                         - print/if/goto lines (no '=' before lhs)
+                         - the RHS of assignment lines (after the '=')           */
+                    char* eq = strchr(check_line, '=');
+                    char* search_start;
+                    if (eq == NULL) {
+                        /* No '=' → whole line is a read context (printint, goto, if) */
+                        search_start = check_line;
+                    } else {
+                        /* Has '=' → only scan the RHS (after '=') for reads */
+                        search_start = eq + 1;
+                    }
+                    char* pos = strstr(search_start, lhs);
+                    while (pos) {
+                        int is_whole = 1;
+                        if (pos > check_line &&
+                            (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\''))
+                            is_whole = 0;
+                        char after2 = *(pos + strlen(lhs));
+                        if (isalnum(after2) || after2 == '_' || after2 == '\'')
+                            is_whole = 0;
+                        if (is_whole) { globally_used = 1; break; }
+                        pos = strstr(pos + 1, lhs);
+                    }
+                    if (globally_used) break;
+                }
+                if (!globally_used)
+                    sprintf(imcode[i], "%d // DEAD CONST: %s = %s\n", line_num, lhs, rhs);
+                /* else: keep the assignment live so the variable is initialised */
+            }
+        }      
+    }
+}
+
+
+
+void booleanSimplification() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char result[100], op1[100], op[10], op2[100];
+
+        if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1, op, op2) == 5) {
+
+            /* ── && (logical AND) ─────────────────────────────────────── */
+
+            /* true && x  →  x */
+            if (strcmp(op,"&&")==0 && strcmp(op1,"1")==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            /* x && true  →  x */
+            if (strcmp(op,"&&")==0 && strcmp(op2,"1")==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            /* false && x  →  0 */
+            if (strcmp(op,"&&")==0 && strcmp(op1,"0")==0){
+                sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+            /* x && false  →  0 */
+            if (strcmp(op,"&&")==0 && strcmp(op2,"0")==0){
+                sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+            /* x && x  →  x */
+            if (strcmp(op,"&&")==0 && strcmp(op1,op2)==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+
+            /* ── || (logical OR) ─────────────────────────────────────── */
+
+            /* false || x  →  x */
+            if (strcmp(op,"||")==0 && strcmp(op1,"0")==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op2); continue; }
+            /* x || false  →  x */
+            if (strcmp(op,"||")==0 && strcmp(op2,"0")==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+            /* true || x  →  1 */
+            if (strcmp(op,"||")==0 && strcmp(op1,"1")==0){
+                sprintf(imcode[i],"%d %s = 1\n",line_num,result); continue; }
+            /* x || true  →  1 */
+            if (strcmp(op,"||")==0 && strcmp(op2,"1")==0){
+                sprintf(imcode[i],"%d %s = 1\n",line_num,result); continue; }
+            /* x || x  →  x */
+            if (strcmp(op,"||")==0 && strcmp(op1,op2)==0){
+                sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
+
+            /* ── == (equality) ───────────────────────────────────────── */
+
+            /* x == x  →  1 */
+            if (strcmp(op,"==")==0 && strcmp(op1,op2)==0){
+                sprintf(imcode[i],"%d %s = 1\n",line_num,result); continue; }
+            /* two different numeric constants: fold at compile time */
+            if (strcmp(op,"==")==0 && isNumericConstant(op1) && isNumericConstant(op2)){
+                int r = (atof(op1) == atof(op2));
+                sprintf(imcode[i],"%d %s = %d\n",line_num,result,r); continue; }
+
+            /* ── != (not-equal) ──────────────────────────────────────── */
+
+            /* x != x  →  0 */
+            if (strcmp(op,"!=")==0 && strcmp(op1,op2)==0){
+                sprintf(imcode[i],"%d %s = 0\n",line_num,result); continue; }
+            /* two different numeric constants: fold at compile time */
+            if (strcmp(op,"!=")==0 && isNumericConstant(op1) && isNumericConstant(op2)){
+                int r = (atof(op1) != atof(op2));
+                sprintf(imcode[i],"%d %s = %d\n",line_num,result,r); continue; }
+        }
+    }
+}
+
+
+
+
+void conservativeJumpChaining() {
+    // Pass 1: Count how many live gotos point to each line number.
+    int ref_count[10000] = {0};
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char* p = imcode[i];
+        char* gp;
+        while ((gp = strstr(p, "goto")) != NULL) {
+            char* tp = gp + 4;
+            while (*tp == ' ' || *tp == '\t') tp++;
+            if (isdigit(*tp)) {
+                int t = atoi(tp);
+                if (t >= 0 && t < code) ref_count[t]++;
+            }
+            p = gp + 1;
+        }
+    }
+
+    // Pass 2: For each unconditional goto, follow the chain when safe.
+    // We follow through line T only when:
+    //   (a) T is a live, pure unconditional goto (no "if" before "goto"), AND
+    //   (b) ref_count[T] == 1, meaning only the current jumper reaches T,
+    //       so we can redirect past it without affecting other paths.
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+
+        char line[10000];
+        strcpy(line, imcode[i]);
+
+        // Must be an unconditional goto: "N goto M"
+        char* if_ptr   = strstr(line, "if");
+        char* goto_ptr = strstr(line, "goto");
+        if (!goto_ptr) continue;
+        if (if_ptr && if_ptr < goto_ptr) continue;  // conditional — leave alone
+
+        int line_num, target;
+        if (sscanf(line, "%d goto %d", &line_num, &target) != 2) continue;
+
+        int final_target = target;
+        int steps = 0;
+
+        while (steps++ < 1000) {
+            if (final_target < 0 || final_target >= code) break;
+            if (strstr(imcode[final_target], "// DEAD") != NULL) break;
+
+            // Only safe to skip through if exactly one jumper reaches it
+            if (ref_count[final_target] != 1) break;
+
+            char mid[10000];
+            strcpy(mid, imcode[final_target]);
+
+            char* mid_if   = strstr(mid, "if");
+            char* mid_goto = strstr(mid, "goto");
+            if (!mid_goto) break;
+            if (mid_if && mid_if < mid_goto) break;  // conditional
+
+            int mid_num, next_target;
+            if (sscanf(mid, "%d goto %d", &mid_num, &next_target) != 2) break;
+
+            // Redirect: the intermediate line loses our reference, next gains it
+            ref_count[final_target]--;
+            ref_count[next_target]++;
+            final_target = next_target;
+        }
+
+        if (final_target != target) {
+            sprintf(imcode[i], "%d goto %d\n", line_num, final_target);
+        }
+    }
+}
+
+
+void constantFolding() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char result[100], op1_str[100], op[10], op2_str[100];
+        if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1_str, op, op2_str) == 5) {
+            char resolved_op1[100], resolved_op2[100];
+            strcpy(resolved_op1, op1_str); strcpy(resolved_op2, op2_str);
+            int in_loop = 0;
+            int func_start = i, func_end = code;
+            for (int k = i; k >= 0; k--) { if (strstr(imcode[k], "BeginFunc") != NULL) { func_start = k; break; } }
+            for (int k = i; k < code; k++) { if (strstr(imcode[k], "EndFunc") != NULL) { func_end = k; break; } }
+            for (int k = func_start; k < func_end; k++) {
+                if (strstr(imcode[k], "goto") != NULL) {
+                    char* goto_ptr = strstr(imcode[k], "goto");
+                    char* ptr = goto_ptr + 4;
+                    while (*ptr == ' ' || *ptr == '\t') ptr++;
+                    if (isdigit(*ptr)) { int target = atoi(ptr); if (target <= i && k >= i && i >= target && i <= k) { in_loop = 1; break; } }
+                }
+            }
+            if (!isNumericConstant(op1_str)) {
+                for (int j = i - 1; j >= 0; j--) {
+                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                    if (strstr(imcode[j], "BeginFunc") != NULL) break;
+                    char check_line[10000]; strcpy(check_line, imcode[j]);
+                    char check_lhs[100], check_rhs[100];
+                    if (sscanf(check_line, "%*d %s = %[^\n]", check_lhs, check_rhs) == 2) {
+                        char* end = check_rhs + strlen(check_rhs) - 1;
+                        while (end > check_rhs && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+                        if (strcmp(check_lhs, op1_str) == 0) {
+                            int is_modified = 0;
+                            for (int k = j + 1; k < i; k++) {
+                                if (strstr(imcode[k], "// DEAD") != NULL) continue;
+                                char mod_check[100];
+                                if (sscanf(imcode[k], "%*d %s =", mod_check) == 1) { if (strcmp(mod_check, op1_str) == 0) { is_modified = 1; break; } }
+                            }
+                            if (!is_modified && !in_loop && isNumericConstant(check_rhs) &&
+                                strchr(check_rhs,'+')==NULL && strchr(check_rhs,'-')==NULL &&
+                                strchr(check_rhs,'*')==NULL && strchr(check_rhs,'/')==NULL)
+                                strcpy(resolved_op1, check_rhs);
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!isNumericConstant(op2_str)) {
+                for (int j = i - 1; j >= 0; j--) {
+                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                    if (strstr(imcode[j], "BeginFunc") != NULL) break;
+                    char check_line[10000]; strcpy(check_line, imcode[j]);
+                    char check_lhs[100], check_rhs[100];
+                    if (sscanf(check_line, "%*d %s = %[^\n]", check_lhs, check_rhs) == 2) {
+                        char* end = check_rhs + strlen(check_rhs) - 1;
+                        while (end > check_rhs && (*end == ' ' || *end == '\n')) { *end = '\0'; end--; }
+                        if (strcmp(check_lhs, op2_str) == 0) {
+                            int is_modified = 0;
+                            for (int k = j + 1; k < i; k++) {
+                                if (strstr(imcode[k], "// DEAD") != NULL) continue;
+                                char mod_check[100];
+                                if (sscanf(imcode[k], "%*d %s =", mod_check) == 1) { if (strcmp(mod_check, op2_str) == 0) { is_modified = 1; break; } }
+                            }
+                            if (!is_modified && !in_loop && isNumericConstant(check_rhs) &&
+                                strchr(check_rhs,'+')==NULL && strchr(check_rhs,'-')==NULL &&
+                                strchr(check_rhs,'*')==NULL && strchr(check_rhs,'/')==NULL)
+                                strcpy(resolved_op2, check_rhs);
+                            break;
+                        }
+                    }
+                }
+            }
+            if (isNumericConstant(resolved_op1) && isNumericConstant(resolved_op2)) {
+                double val1 = atof(resolved_op1), val2 = atof(resolved_op2), res = 0;
+                int is_valid = 1;
+                int is_float = (strchr(resolved_op1,'.')!=NULL || strchr(resolved_op2,'.')!=NULL);
+                if (strcmp(op,"+")==0) res = val1+val2;
+                else if (strcmp(op,"-")==0) res = val1-val2;
+                else if (strcmp(op,"*")==0) res = val1*val2;
+                else if (strcmp(op,"/")==0) { if (val2==0) is_valid=0; else { res=val1/val2;  } }
+                else if (strcmp(op,"%")==0) { if (val2==0||is_float) is_valid=0; else res=(int)val1%(int)val2; }
+                else if (strcmp(op,"&")==0) res=(int)val1&(int)val2;
+                else if (strcmp(op,"|")==0) res=(int)val1|(int)val2;
+                else if (strcmp(op,"^")==0) res=(int)val1^(int)val2;
+                else if (strcmp(op,"<<")==0) res=(int)val1<<(int)val2;
+                else if (strcmp(op,">>")==0) res=(int)val1>>(int)val2;
+                else is_valid=0;
+                if (is_valid) {
+                    if (is_float) sprintf(imcode[i], "%d %s = %g\n", line_num, result, res);
+                    else sprintf(imcode[i], "%d %s = %d\n", line_num, result, (int)res);
+                }
+            }
+        }
+    }
+}
+
+void deadVariableElimination() {
+    int used[10000] = {0};
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        if (strstr(line,"print")!=NULL||strstr(line,"Return")!=NULL||strstr(line,"PushParam")!=NULL||
+            strstr(line,"Call")!=NULL||strstr(line,"if")!=NULL) {
+            char* ptr = line;
+            while (*ptr) {
+                if (isalpha(*ptr) || *ptr == '_') {
+                    char var[100]; int idx = 0;
+                    while (isalnum(*ptr) || *ptr == '_') var[idx++] = *ptr++;
+                    var[idx] = '\0';
+                    if (strcmp(var,"if")==0||strcmp(var,"goto")==0||strcmp(var,"print")==0||
+                        strcmp(var,"printint")==0||strcmp(var,"printfloat")==0||strcmp(var,"printchar")==0||
+                        strcmp(var,"printstring")==0||strcmp(var,"Return")==0||strcmp(var,"Call")==0||
+                        strcmp(var,"PushParam")==0||strcmp(var,"PopParam")==0||strcmp(var,"BeginFunc")==0||
+                        strcmp(var,"EndFunc")==0) continue;
+                    for (int j = 0; j < code; j++) {
+                        if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                        char check_line[10000]; strcpy(check_line, imcode[j]);
+                        char lhs[100];
+                        if (sscanf(check_line, "%*d %s =", lhs) == 1) { if (strcmp(lhs, var) == 0) used[j] = 1; }
+                    }
+                } else ptr++;
+            }
+        }
+        char lhs_full[100];
+        if (sscanf(line, "%*d %[^=]", lhs_full) == 1) {
+            char* bracket_start = strchr(lhs_full, '[');
+            if (bracket_start) {
+                char* bracket_end = strchr(bracket_start, ']');
+                if (bracket_end) {
+                    char* ptr = bracket_start + 1;
+                    while (ptr < bracket_end) {
+                        if (isalpha(*ptr) || *ptr == '_') {
+                            char var[100]; int idx = 0;
+                            while ((isalnum(*ptr) || *ptr == '_') && ptr < bracket_end) var[idx++] = *ptr++;
+                            var[idx] = '\0';
+                            for (int j = 0; j < code; j++) {
+                                if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                                char check_line[10000]; strcpy(check_line, imcode[j]);
+                                char check_lhs[100];
+                                if (sscanf(check_line, "%*d %s =", check_lhs) == 1) { if (strcmp(check_lhs, var) == 0) used[j] = 1; }
+                            }
+                        } else ptr++;
+                    }
+                }
+            }
+        }
+        char lhs[100];
+        if (sscanf(line, "%*d %s =", lhs) == 1) {
+            char* equals = strchr(line, '=');
+            if (equals) {
+                char* rhs = equals + 1;
+                char* ptr = rhs;
+                while (*ptr) {
+                    if (isalpha(*ptr) || *ptr == '_') {
+                        char var[100]; int idx = 0;
+                        while (isalnum(*ptr) || *ptr == '_') var[idx++] = *ptr++;
+                        var[idx] = '\0';
+                        if (strcmp(var,"Call")==0||strcmp(var,"PopParam")==0||strcmp(var,"int")==0||
+                            strcmp(var,"float")==0||strcmp(var,"char")==0||strcmp(var,"double")==0||
+                            strcmp(var,"long")==0||strcmp(var,"short")==0) continue;
+                        for (int j = 0; j < code; j++) {
+                            if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                            char check_line[10000]; strcpy(check_line, imcode[j]);
+                            char check_lhs[100];
+                            if (sscanf(check_line, "%*d %s =", check_lhs) == 1) { if (strcmp(check_lhs, var) == 0) used[j] = 1; }
+                        }
+                    } else ptr++;
+                }
+            }
+        }
+    }
+    for (int i = 0; i < code; i++) {
+        if (used[i] == 0 && strstr(imcode[i], "// DEAD") == NULL) {
+            char line[10000]; strcpy(line, imcode[i]);
+            char lhs[100];
+            if (sscanf(line, "%*d %s =", lhs) == 1) {
+                if (strstr(line,"BeginFunc")!=NULL||strstr(line,"EndFunc")!=NULL||
+                    strstr(line,"PopParam")!=NULL||strstr(line,"Call")!=NULL) continue;
+                if (lhs[0] == 't' && isdigit(lhs[1])) {
+                    char* content = strchr(line, ' ');
+                    if (content) { content++; sprintf(imcode[i], "%d // DEAD VAR: %s", i, content); }
+                }
+            }
+        }
+    }
+}
+
+
+
+void eliminateDeadCode() {
+    // BUILD JUMP TARGET TABLE FIRST (moved to top) 
+    int is_jump_target[10000] = {0};
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
+        if (strstr(imcode[i], "goto") != NULL) {
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            if (isdigit(*ptr)) { int target = atoi(ptr); if (target >= 0 && target < code) is_jump_target[target] = 1; }
+        }
+    }
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
+        int is_unconditional = 0;
+        if (strstr(imcode[i], "Return") != NULL) is_unconditional = 1;
+        else if (strstr(imcode[i], "goto") != NULL) {
+            char* if_ptr = strstr(imcode[i], "if");
+            char* goto_ptr = strstr(imcode[i], "goto");
+            if (goto_ptr && (!if_ptr || if_ptr > goto_ptr)) is_unconditional = 1;
+        }
+        if (is_unconditional) {
+            int j = i + 1;
+            if (j < code && strstr(imcode[j],"BeginFunc")==NULL && strstr(imcode[j],"EndFunc")==NULL &&
+                strstr(imcode[j],"// DEAD CODE:")==NULL) {
+                int is_live_target = is_jump_target[j];  // USE PREBUILT TABLE 
+                if (!is_live_target) {
+                    char original[10000]; strcpy(original, imcode[j]);
+                    char* space_ptr = strchr(original, ' ');
+                    if (space_ptr != NULL) { space_ptr++; sprintf(imcode[j], "%d // DEAD CODE: %s", j, space_ptr); }
+                }
+            }
+        }
+    }
+    for (int i = 0; i < code; i++) {
+        char* line = imcode[i];
+        if (strstr(line, "// DEAD CODE:") != NULL) continue;
+        int is_unconditional_jump = 0;
+        if (strstr(line, "goto") != NULL) {
+            char* if_ptr = strstr(line, "if");
+            char* goto_ptr = strstr(line, "goto");
+            if (goto_ptr && (!if_ptr || if_ptr > goto_ptr)) is_unconditional_jump = 1;
+        } else if (strstr(line, "Return") != NULL) is_unconditional_jump = 1;
+        if (is_unconditional_jump) {
+            int j = i + 1;
+            while (j < code) {
+                if (strstr(imcode[j],"BeginFunc")!=NULL||strstr(imcode[j],"EndFunc")!=NULL) break;
+                if (is_jump_target[j]) break;
+                if (strstr(imcode[j],"// DEAD CODE:")!=NULL) { j++; continue; }
+                char original[10000]; strcpy(original, imcode[j]);
+                char* space_ptr = strchr(original, ' ');
+                if (space_ptr != NULL) { space_ptr++; sprintf(imcode[j], "%d // DEAD CODE: %s", j, space_ptr); }
+                j++;
+            }
+        }
+    }
+    int has_live_pred[10000] = {0};
+    for (int i = 0; i < code; i++) { if (strstr(imcode[i],"BeginFunc")!=NULL && i+1<code) has_live_pred[i+1]=1; }
+    has_live_pred[0] = 1;
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i],"// DEAD CODE:")!=NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        if (strstr(line,"goto")!=NULL) {
+            char* goto_ptr = strstr(line,"goto");
+            char* ptr = goto_ptr+4;
+            while (*ptr==' '||*ptr=='\t') ptr++;
+            if (isdigit(*ptr)) { int target=atoi(ptr); if (target>=0&&target<code) has_live_pred[target]=1; }
+        }
+        int is_uncond = 0;
+        if (strstr(line,"Return")!=NULL) is_uncond=1;
+        else if (strstr(line,"goto")!=NULL) {
+            char* if_ptr=strstr(line,"if"); char* goto_ptr=strstr(line,"goto");
+            if (goto_ptr&&(!if_ptr||if_ptr>goto_ptr)) is_uncond=1;
+        }
+        if (!is_uncond && i+1<code) has_live_pred[i+1]=1;
+    }
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i],"// DEAD CODE:")!=NULL) continue;
+        if (strstr(imcode[i],"BeginFunc")!=NULL||strstr(imcode[i],"EndFunc")!=NULL) continue;
+        if (!has_live_pred[i]) {
+            char original[10000]; strcpy(original, imcode[i]);
+            char* space_ptr = strchr(original, ' ');
+            if (space_ptr!=NULL) { space_ptr++; sprintf(imcode[i], "%d // DEAD CODE: %s", i, space_ptr); }
+        }
+    }
+}
+
+
+void commonSubexpressionElimination() {
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
+        char line[10000]; strcpy(line, imcode[i]);
+        int line_num; char result[100], op1[100], op[10], op2[100];
+        if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1, op, op2) == 5) {
+            int func_start = i, func_end = code;
+            for (int k = i; k >= 0; k--) { if (strstr(imcode[k],"BeginFunc")!=NULL) { func_start=k; break; } }
+            for (int k = i; k < code; k++) { if (strstr(imcode[k],"EndFunc")!=NULL) { func_end=k; break; } }
+            int loop_start = -1, loop_end = -1, min_loop_size = func_end;
+            for (int k = i; k < func_end; k++) {
+                if (strstr(imcode[k],"goto")!=NULL) {
+                    char* goto_ptr=strstr(imcode[k],"goto");
+                    char* if_ptr=strstr(imcode[k],"if");
+                    if (if_ptr && if_ptr < goto_ptr) continue;
+                    char* ptr = goto_ptr+4;
+                    while (*ptr==' '||*ptr=='\t') ptr++;
+                    if (isdigit(*ptr)) {
+                        int target=atoi(ptr);
+                        if (target<=i && k>=i) { int sz=k-target; if (sz<min_loop_size) { loop_start=target; loop_end=k; min_loop_size=sz; } }
+                    }
+                }
+            }
+            int search_start = i+1, search_end = (loop_start!=-1) ? loop_end : func_end;
+            char resolved_op1[100], resolved_op2[100];
+            strcpy(resolved_op1, op1); strcpy(resolved_op2, op2);
+            for (int k = i-1; k >= func_start; k--) {
+                if (strstr(imcode[k],"// DEAD")!=NULL) continue;
+                if (strstr(imcode[k],"BeginFunc")!=NULL) break;
+                char check_lhs[100], check_rhs[100];
+                if (sscanf(imcode[k], "%*d %s = %[^\n]", check_lhs, check_rhs) == 2) {
+                    char* end = check_rhs+strlen(check_rhs)-1;
+                    while (end>check_rhs && (*end==' '||*end=='\n')) { *end='\0'; end--; }
+                    if (strchr(check_rhs,'+')==NULL&&strchr(check_rhs,'-')==NULL&&strchr(check_rhs,'*')==NULL&&strchr(check_rhs,'/')==NULL&&strchr(check_rhs,'(')==NULL) {
+                        if (strcmp(check_lhs,op1)==0) strcpy(resolved_op1, check_rhs);
+                        if (strcmp(check_lhs,op2)==0) strcpy(resolved_op2, check_rhs);
+                    }
+                    if (strcmp(resolved_op1,op1)!=0 && strcmp(resolved_op2,op2)!=0) break;
+                }
+            }
+            for (int j = search_start; j < search_end; j++) {
+                if (strstr(imcode[j],"// DEAD CODE:")!=NULL) continue;
+                char check_line[10000]; strcpy(check_line, imcode[j]);
+                if (strstr(check_line,"if ")!=NULL||strstr(check_line,"goto ")!=NULL||strstr(check_line,"Return")!=NULL||
+                    strstr(check_line,"BeginFunc")!=NULL||strstr(check_line,"EndFunc")!=NULL||
+                    strstr(check_line,"PopParam")!=NULL||strstr(check_line,"PushParam")!=NULL||strstr(check_line,"Call")!=NULL) continue;
+                char redefined_var[100];
+                if (sscanf(check_line, "%*d %s =", redefined_var) == 1) {
+                    if (strcmp(redefined_var,resolved_op1)==0||strcmp(redefined_var,resolved_op2)==0) break;
+                }
+                int check_line_num; char check_result[100], check_op1[100], check_op[10], check_op2[100];
+                if (sscanf(check_line, "%d %s = %s %s %s", &check_line_num, check_result, check_op1, check_op, check_op2) == 5) {
+                    char resolved_check_op1[100], resolved_check_op2[100];
+                    strcpy(resolved_check_op1, check_op1); strcpy(resolved_check_op2, check_op2);
+                    for (int k = j-1; k >= func_start; k--) {
+                        if (strstr(imcode[k],"// DEAD")!=NULL) continue;
+                        if (strstr(imcode[k],"BeginFunc")!=NULL) break;
+                        char k_lhs[100], k_rhs[100];
+                        if (sscanf(imcode[k], "%*d %s = %[^\n]", k_lhs, k_rhs) == 2) {
+                            char* end = k_rhs+strlen(k_rhs)-1;
+                            while (end>k_rhs && (*end==' '||*end=='\n')) { *end='\0'; end--; }
+                            if (strchr(k_rhs,'+')==NULL&&strchr(k_rhs,'-')==NULL&&strchr(k_rhs,'*')==NULL&&strchr(k_rhs,'/')==NULL&&strchr(k_rhs,'(')==NULL) {
+                                if (strcmp(k_lhs,check_op1)==0) strcpy(resolved_check_op1, k_rhs);
+                                if (strcmp(k_lhs,check_op2)==0) strcpy(resolved_check_op2, k_rhs);
+                            }
+                            if (strcmp(resolved_check_op1,check_op1)!=0 && strcmp(resolved_check_op2,check_op2)!=0) break;
+                        }
+                    }
+                    if (strcmp(op,check_op)==0 && strcmp(resolved_op1,resolved_check_op1)==0 && strcmp(resolved_op2,resolved_check_op2)==0)
+                        sprintf(imcode[j], "%d %s = %s\n", check_line_num, check_result, result);
+                }
+            }
+        }
+    }
+}
+
 %}
+
 %union{
         char str[1000];
         struct BoolNode* b;
@@ -1048,21 +2357,45 @@ S:      {top = create_env(top,0);} PROGRAM M MEOF{
                         e=0;err[0]="\0";buffer[0]='\0';}
                 else {
                         backpatch($2->N,$3);
-                                                printf("Source code :\n");
-                        printf("%s\nAccepted -> Generated Three Address code:\n",buffer);
+                        printf("%s\nAccepted -Unoptimized > Three Address :\n",buffer);
+                     /*for (int pass = 0; pass < 12; pass++) {
+    constantFolding();
+     constantFoldConditionals();      
+    copyPropagation();             
+    algebraicSimplification();
+        booleanSimplification();   
+    strengthReduction();            
+    commonSubexpressionElimination();
+    peepholeOptimization();
+    identityAssignmentElimination();
+    deadStoreElimination();         
+    redundantLoadElimination(); 
+        eliminateDeadCode();
+    conservativeJumpChaining();
+        eliminateDeadCode();
+}
+deadVariableElimination();
+int prev_dead_count = -1;
+for (int dce_pass = 0; dce_pass < 10; dce_pass++) {
+    eliminateDeadCode();
+    int dead_count = 0;
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) dead_count++;
+    }
+    if (dead_count == prev_dead_count) break;
+    prev_dead_count = dead_count;
+}*/
                         for (int i=0;i<code;i++){
                                 printf("%s",imcode[i]);
                         }
-
-                            if (strlen(err) > 0) {
+                          /*if (strlen(err) > 0) {
         printf("\n=== Warnings ===\n%s", err);
     }
-
-                        print_all_envs(top);
+                        print_all_envs(top);*/
                 }YYACCEPT;}
         | MEOF{YYACCEPT;}
         | error MEOF{e=1;strcpy(err,"Invalid Statements");
-                printf("%s \nRejected -> %s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
+                //printf("%s \nRejected -> %s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
                 YYACCEPT;};
 
 
@@ -1081,16 +2414,20 @@ PROGRAM: FUNDECL PROGRAM {
         };
 
 
+/* 
+   FUNDECL  –   with: duplicate param check, loop/switch depth reset,
+               function context tracking, non-void return warning
+    */
 FUNDECL: FUNCTION TYPE IDEN '(' PARAMLIST ')' {
     if(!e){
-        /*"" duplicate parameter check "" */
+        /*  duplicate parameter check */
         if(checkDuplicateParams($5)){
             e = 1;
             sprintf(err+strlen(err), "Duplicate parameter names in function %s\n", $3);
         }
 
-        //Function* f = createFunction($3, $2->str);
-        char clean_ret_type[100];
+       // Function* f = createFunction($3, $2->str);
+       char clean_ret_type[100];
 strcpy(clean_ret_type, $2->str);
 if(clean_ret_type[0] == '@') memmove(clean_ret_type, clean_ret_type+1, strlen(clean_ret_type));
 Function* f = createFunction($3, clean_ret_type);  // stores "void", "int", "float" etc.
@@ -1118,7 +2455,7 @@ Function* f = createFunction($3, clean_ret_type);  // stores "void", "int", "flo
         sprintf(imcode[code], "%d BeginFunc %s %d\n", code, $3, pcount);
         code++;
 
-        /*"" set current function context for return checking "" */
+        /*  set current function context for return checking */
         char* ret_type_clean = $2->str;
         if(ret_type_clean[0]=='@') ret_type_clean++;
         strcpy(current_function, $3);
@@ -1165,7 +2502,7 @@ Function* f = createFunction($3, clean_ret_type);  // stores "void", "int", "flo
         if(!top) offset = 0;
         else offset = top->prev_offset;
 
-        /*"" reset function context "" */
+        /*  reset function context */
         in_function = 0;
         current_function[0] = '\0';
         current_return_type[0] = '\0';
@@ -1197,7 +2534,21 @@ PARAMLIST: TYPE IDEN ',' PARAMLIST {
 A:  SWITCH '(' EXPR ')' '{' { 
        if(!e) {
            strcpy(current_switch_var, $3->str);
-           saveoffset = offset;
+           //saveoffset = offset;
+                   top = create_env(top, offset);  
+                  offset = 0;
+                         char* base = getBaseType($3->type);
+if(strstr($3->type, "[") != NULL) {
+    // it's an array — always reject
+    e = 1;
+    sprintf(err+strlen(err),
+        "Error: switch expression cannot be an array type '%s'\n", $3->type);
+} else if(!isIntegerType(base)) {
+    e = 1;
+    sprintf(err+strlen(err),
+        "Error: switch expression must be integer type, got '%s'\n", base);
+}
+
            /*"" track switch depth "" */
            switch_depth++;
        }
@@ -1206,7 +2557,9 @@ A:  SWITCH '(' EXPR ')' '{' {
            $$ = createBoolNode();
            backpatch($7->N, code);
            backpatch($7->B, code);
-           offset = saveoffset;
+           //offset = saveoffset;
+                   top = top->prev;            //  restore scope
+        offset = top->prev_offset;  //  restore offset
            /*   restore switch depth  */
            switch_depth--;
        }
@@ -1226,7 +2579,7 @@ A:  SWITCH '(' EXPR ')' '{' {
 }
 | CONTINUE '$' {
     if (!e) {
-        /*  continue must be inside a loop  */
+        /*  continue must be inside a loop */
         if(loop_depth == 0){
             e = 1;
             sprintf(err+strlen(err), "continue statement not within a loop\n");
@@ -1240,6 +2593,7 @@ A:  SWITCH '(' EXPR ')' '{' {
 | RETURN EXPR '$' {
     if(!e){
         has_return_statement = 1;
+        /*  return checks */
         if(!in_function){
             e = 1;
             sprintf(err+strlen(err), "return statement outside function\n");
@@ -1263,7 +2617,7 @@ A:  SWITCH '(' EXPR ')' '{' {
             code++;
             strcpy(ret_val, tmp);
         }
-                sprintf(imcode[code], "%d Return %s\n", code, ret_val);
+                        sprintf(imcode[code], "%d Return %s\n", code, ret_val);
         code++;
         $$ = createBoolNode();
     }
@@ -1271,6 +2625,7 @@ A:  SWITCH '(' EXPR ')' '{' {
 | RETURN '$' {
     if(!e){
         has_return_statement = 1;
+        /*  return checks */
         if(!in_function){
             e = 1;
             sprintf(err+strlen(err), "return statement outside function\n");
@@ -1281,6 +2636,56 @@ A:  SWITCH '(' EXPR ')' '{' {
 
         sprintf(imcode[code], "%d Return\n", code);
         code++;
+        $$ = createBoolNode();
+    }
+}
+
+| CALL IDEN '(' ARGLIST ')' '$' {
+    if(!e){
+        Function* f = findFunction($2);
+        if(f == NULL){
+            e=1;
+            sprintf(err+strlen(err), "Function %s not declared\n", $2);
+        } else {
+            struct Expr* arg = $4;
+            int given = 0;
+            while(arg){ given++; arg = arg->next; }
+            if(given != f->param_count){
+                e=1;
+                sprintf(err+strlen(err),
+                    "Function %s expects %d arguments, got %d\n",
+                    $2, f->param_count, given);
+            } else {
+                arg = $4;
+                while(arg){
+                    sprintf(imcode[code], "%d PushParam %s\n", code, arg->str);
+                    code++;
+                    arg = arg->next;
+                }
+                sprintf(imcode[code], "%d Call %s\n", code, $2);
+                code++;
+            }
+        }
+        $$ = createBoolNode();
+    }
+}
+| CALL IDEN '(' ')' '$' {
+    if(!e){
+        Function* f = findFunction($2);
+        if(f == NULL){
+            e=1;
+            sprintf(err+strlen(err), "Function %s not declared\n", $2);
+        } else {
+            if(f->param_count != 0){
+                e=1;
+                sprintf(err+strlen(err),
+                    "Function %s expects %d arguments, got 0\n",
+                    $2, f->param_count);
+            } else {
+                sprintf(imcode[code], "%d Call %s\n", code, $2);
+                code++;
+            }
+        }
         $$ = createBoolNode();
     }
 }
@@ -1454,8 +2859,11 @@ CASE_LIST: CASE_ITEM M CASE_LIST {
    };
 
 
+
+
+
+
 DECLSTATEMENT: TYPE DECLLIST '$' {
-    if(!e){
         struct Decl* temp = $2;
         while(temp){
             char clean_type[100];
@@ -1504,7 +2912,8 @@ DECLSTATEMENT: TYPE DECLLIST '$' {
                     for(int i = 0; i < s->dim_count; i++){ char dim_part[20]; sprintf(dim_part,"[%d]",dims[i]); strcat(s->type,dim_part); }
                 }
             }
-              if (strcmp(temp->lt,"u")!=0 && strcmp(temp->lt,"array_init")!=0
+
+             if (strcmp(temp->lt,"u")!=0 && strcmp(temp->lt,"array_init")!=0
                     && strcmp(temp->lt,"void")==0) {
                 e = 1;
                 sprintf(err+strlen(err),
@@ -1538,11 +2947,11 @@ DECLSTATEMENT: TYPE DECLLIST '$' {
                             temp->key, temp->size, init_count);
                 }
 
-                /*  Check each array element for range overflow */
+                /* NEW: Check each array element for range overflow */
                 char check_copy[1000]; strcpy(check_copy, temp->op);
                 char* check_token = strtok(check_copy, ",");
                 int check_idx = 0;
- char fixed_op[1000]; fixed_op[0] = '\0';
+             char fixed_op[1000]; fixed_op[0] = '\0';
                 while(check_token != NULL){
                     // Trim whitespace
                     while(*check_token == ' ') check_token++;
@@ -1683,7 +3092,7 @@ DECLSTATEMENT: TYPE DECLLIST '$' {
                     code++;
                 }
                 else {
-                    /*  Enhanced type checking and range validation */
+                    /* NEW: Enhanced type checking and range validation */
                     if(temp->is_literal && isNumericConstant(temp->op)){
                         validateNumericLiteral(temp->op, actual_type, temp->key);
                         double val = atof(temp->op);
@@ -1763,12 +3172,12 @@ else if(strcmp(actual_type,"double")==0){
             }
             temp = temp->next;
         }
-        }
 }
 | TYPE DECLLIST  error MEOF{{strcat(err,"$ missing\n");yyerrok;e=1;}
                                                         printf("%s\nRejected -> %s -> Could not generate Three Address Code / Storage Layout\n",buffer,err);
                                                         YYACCEPT; }
 ;
+
 
 INIT_LIST: EXPR ',' INIT_LIST {
         if(!e){ $$ = $1; $$->next = $3; }
@@ -2066,7 +3475,6 @@ ASNEXPR: BANDASN {strcpy($$, "&=");}
      | BXORASN {strcpy($$, "^=");}
      | LSHIFTASN {strcpy($$, "<<=");}
      | RSHIFTASN {strcpy($$, ">>=");}
-
 |EXPR ASSGN EXPR {
     if (!e && $1->lv){
          if(strcmp($3->type, "void")==0){
@@ -2178,6 +3586,7 @@ ASNEXPR: BANDASN {strcpy($$, "&=");}
     }
     if (!$1->lv){e=1;strcat(err,"L value not assignable\n");}
 }
+
 /* EXPR: division/modulo by zero checks added */
 EXPR: SIZEOF '(' IDEN ')' {
     if(!e){
@@ -2442,7 +3851,7 @@ FUNCALL: CALL IDEN '(' ARGLIST ')' {
                         arg = arg->next;
                     }
 
-                      $$ = createExpr();
+                   $$ = createExpr();
                     strcpy($$->type, f->return_type);
                     $$->lv = 0;
                     if(strcmp(f->return_type, "void") == 0) {
@@ -2475,7 +3884,7 @@ FUNCALL: CALL IDEN '(' ARGLIST ')' {
                                 $2, f->param_count);
                     }
 
-$$ = createExpr();
+                  $$ = createExpr();
                     strcpy($$->type, f->return_type);
                     $$->lv = 0;
                     if(strcmp(f->return_type, "void") == 0) {
@@ -2518,6 +3927,8 @@ SUBSCRIPTS: '[' EXPR ']' {
                         $$->count = $1->count + 1;
                 }
         };
+
+
 TERM: STRING {
     $$ = createExpr();
     strcpy($$->str, $1);
@@ -2604,7 +4015,7 @@ TERM: STRING {
             if (get(temp->table,$2)){
                 found = 1;
                 Symbol* t = get(temp->table,$2);
-                /*  const check on post-inc/dec  */
+                /*  const check on post-inc/dec */
                 if(strstr(t->type,"const")!=NULL){ e=1; sprintf(err+strlen(err),"Cannot modify const variable %s\n",$2); }
                 strcpy($$->type,t->type);
                 break;
@@ -2735,6 +4146,7 @@ C : IDEN {e=1;strcpy(err,"missing operator");}
   |;
 UN : '-' {strcpy($$,"-");}  | '+' {strcpy($$,"+");} | {strcpy($$,"");} ;
 %%
+
 char* genvar(){
     char *re = (char*)malloc(sizeof(char)*100);
     sprintf(re,"t%d",label);
@@ -2744,34 +4156,953 @@ char* genvar(){
 
 int yyerror(char* msg){ return 0; }
 
+
+void generateSymbolTableDOT() {
+    FILE* dot = fopen("symbol_table.dot", "w");
+    fprintf(dot, "digraph SymbolTable {\n");
+        fprintf(dot, "  node [shape=record, style=filled, fillcolor=lightblue];\n");
+    for (int i = 0; i < env_count; i++) {
+        fprintf(dot, "  scope%d [label=\"{Scope %d|", i, i);
+        
+        Table* table = envs[i]->table;
+        int first = 1;
+        for (int j = 0; j < table->size; j++) {
+            TableEntry* entry = table->buckets[j];
+            while (entry) {
+                if (!first) fprintf(dot, "|");
+                fprintf(dot, "%s : %s - %d", 
+                    entry->value->name, 
+                    entry->value->type, 
+                    entry->value->offset);
+                   
+                first = 0;
+                entry = entry->next;
+            }
+        }
+        fprintf(dot, "}\"];\n");
+        
+        // Connect to parent scope
+        if (envs[i]->prev != NULL) {
+            for (int k = 0; k < i; k++) {
+                if (envs[k] == envs[i]->prev) {
+                    fprintf(dot, "  scope%d -> scope%d;\n", i, k);
+                    break;
+                }
+            }
+        }
+    }
+    
+    fprintf(dot, "}\n");
+    fclose(dot);
+}
+
+void generateTACFlowDOT() {
+    FILE* dot = fopen("tac_flow.dot", "w");
+    fprintf(dot, "digraph TAC {\n");
+    //fprintf(dot, "  node [shape=box];\n");
+        fprintf(dot, "  node [shape=box, style=filled, fillcolor=lightblue];\n");
+
+    for (int i = 0; i < code; i++) {
+        //if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        // Escape quotes in labels
+        char label[10000];
+        strcpy(label, imcode[i]);
+        char* newline = strchr(label, '\n');
+        if (newline) *newline = '\0';
+        
+        fprintf(dot, "  n%d [label=\"%s\"];\n",  i, label);
+        
+        //  FIX: Check if this is a conditional jump (has both "if" and "goto")
+        int is_conditional = 0;
+        if (strstr(imcode[i], "if") != NULL && strstr(imcode[i], "goto") != NULL) {
+            char* if_ptr = strstr(imcode[i], "if");
+            char* goto_ptr = strstr(imcode[i], "goto");
+            if (if_ptr < goto_ptr) {
+                is_conditional = 1;
+            }
+        }
+        
+        // Draw edges for control flow
+        if (is_conditional) {
+            //  CONDITIONAL JUMP: Draw both true and false edges
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            
+            if (isdigit(*ptr)) {
+                int target = atoi(ptr);
+                // True branch (goto target)
+                fprintf(dot, "  n%d -> n%d [label=\"true\", color=green];\n", i, target);
+            }
+            
+            //  FIX: False branch (fall-through to next line)
+            if (i + 1 < code) {
+                fprintf(dot, "  n%d -> n%d [label=\"false\", color=red];\n", i, i+1);
+            }
+        }
+        else if (strstr(imcode[i], "goto") != NULL) {
+            //  UNCONDITIONAL JUMP: Only goto edge, no fall-through
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            
+            if (isdigit(*ptr)) {
+                int target = atoi(ptr);
+                fprintf(dot, "  n%d -> n%d [label=\"goto\"];\n", i, target);
+            }
+        }
+        else if (strstr(imcode[i], "Return") == NULL &&
+                 strstr(imcode[i], "BeginFunc") == NULL &&
+                 strstr(imcode[i], "EndFunc") == NULL) {
+            //  SEQUENTIAL FLOW: Normal statement, fall-through to next
+            if (i + 1 < code) {
+                fprintf(dot, "  n%d -> n%d [style=dashed];\n", i, i+1);
+            }
+        }
+    }
+    
+    fprintf(dot, "}\n");
+    fclose(dot);
+}
+
+
+
+// Function to identify basic block leaders
+void identifyBasicBlocks() {
+    int is_leader[10000] = {0};
+    
+    // Rule 1: First instruction is a leader
+    is_leader[0] = 1;
+    
+    // Rule 2: Any target of a jump is a leader
+    // Rule 3: Any instruction immediately following a jump is a leader
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        // Check for goto statements
+        if (strstr(imcode[i], "goto") != NULL) {
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            
+            if (isdigit(*ptr)) {
+                int target = atoi(ptr);
+                if (target >= 0 && target < code) {
+                    is_leader[target] = 1;  // Target is a leader
+                }
+            }
+            
+            // Instruction after goto is a leader
+            if (i + 1 < code) {
+                is_leader[i + 1] = 1;
+            }
+        }
+        
+        // BeginFunc and EndFunc boundaries
+        if (strstr(imcode[i], "BeginFunc") != NULL) {
+            if (i + 1 < code) is_leader[i + 1] = 1;
+        }
+        if (strstr(imcode[i], "EndFunc") != NULL) {
+            if (i + 1 < code) is_leader[i + 1] = 1;
+        }
+    }
+    
+    // Build basic blocks
+    int current_start = -1;
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        if (is_leader[i]) {
+            // End previous block
+            if (current_start != -1) {
+                BasicBlock* bb = (BasicBlock*)malloc(sizeof(BasicBlock));
+                bb->start_line = current_start;
+                bb->end_line = i - 1;
+                bb->block_id = block_count++;
+                bb->next = blocks;
+                blocks = bb;
+            }
+            current_start = i;
+        }
+    }
+    
+    // End last block
+    if (current_start != -1) {
+        BasicBlock* bb = (BasicBlock*)malloc(sizeof(BasicBlock));
+        bb->start_line = current_start;
+        bb->end_line = code - 1;
+        bb->block_id = block_count++;
+        bb->next = blocks;
+        blocks = bb;
+    }
+    
+}
+
+// Function to find which block a line belongs to
+int getBlockForLine(int line) {
+    BasicBlock* bb = blocks;
+    while (bb) {
+        if (line >= bb->start_line && line <= bb->end_line) {
+            return bb->block_id;
+        }
+        bb = bb->next;
+    }
+    return -1;
+}
+
+// Enhanced DOT generation with basic blocks
+void generateTACFlowWithBlocks() {
+    identifyBasicBlocks();
+    
+    FILE* dot = fopen("tac_flow_blocks.dot", "w");
+    fprintf(dot, "digraph TAC_Blocks {\n");
+    fprintf(dot, "  node [shape=record, style=filled, fillcolor=lightblue];\n");
+    fprintf(dot, "  rankdir=TB;\n\n");
+    
+    // Generate one node per basic block
+    BasicBlock* bb = blocks;
+    while (bb) {
+        fprintf(dot, "  bb%d [label=\"{<b>Block %d|", bb->block_id, bb->block_id);
+        
+        // Add all instructions in this block
+        int first = 1;
+        for (int i = bb->start_line; i <= bb->end_line && i < code; i++) {
+            //if (strstr(imcode[i], "// DEAD") != NULL) continue;
+            
+            char label[10000];
+            strcpy(label, imcode[i]);
+            
+            // Escape special characters for DOT
+            char escaped[10000];
+            int j = 0, k = 0;
+            while (label[j] != '\0' && label[j] != '\n') {
+                if (label[j] == '|' || label[j] == '{' || label[j] == '}' || 
+                    label[j] == '<' || label[j] == '>') {
+                    escaped[k++] = '\\';
+                }
+                escaped[k++] = label[j++];
+            }
+            escaped[k] = '\0';
+            
+            if (!first) fprintf(dot, "\\l");  // Left-aligned line break
+            //fprintf(dot, "%d: %s", i, escaped);
+            fprintf(dot, "%s", escaped);
+            first = 0;
+        }
+        
+        fprintf(dot, "\\l}\"];\n");
+        bb = bb->next;
+    }
+    
+    fprintf(dot, "\n  // Control flow edges\n");
+    
+    // Draw edges between basic blocks
+    for (int i = 0; i < code; i++) {
+        //if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        int current_block = getBlockForLine(i);
+        if (current_block == -1) continue;
+        
+        // Check if this is the last instruction in its block
+        bb = blocks;
+        int is_block_end = 0;
+        while (bb) {
+            if (bb->block_id == current_block && i == bb->end_line) {
+                is_block_end = 1;
+                break;
+            }
+            bb = bb->next;
+        }
+        
+        if (!is_block_end) continue;  // Only process block-ending instructions
+        
+        // Check for conditional jump
+        int is_conditional = 0;
+        if (strstr(imcode[i], "if") != NULL && strstr(imcode[i], "goto") != NULL) {
+            char* if_ptr = strstr(imcode[i], "if");
+            char* goto_ptr = strstr(imcode[i], "goto");
+            if (if_ptr < goto_ptr) {
+                is_conditional = 1;
+            }
+        }
+        
+        if (is_conditional) {
+            // True branch (goto target)
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            
+            if (isdigit(*ptr)) {
+                int target = atoi(ptr);
+                int target_block = getBlockForLine(target);
+                if (target_block != -1) {
+                    fprintf(dot, "  bb%d -> bb%d [label=\"T\", color=green, penwidth=2];\n", 
+                            current_block, target_block);
+                }
+            }
+            
+            // False branch (fall-through)
+            if (i + 1 < code) {
+                int next_block = getBlockForLine(i + 1);
+                if (next_block != -1 && next_block != current_block) {
+                    fprintf(dot, "  bb%d -> bb%d [label=\"F\", color=red, penwidth=2];\n", 
+                            current_block, next_block);
+                }
+            }
+        }
+        else if (strstr(imcode[i], "goto") != NULL) {
+            // Unconditional jump
+            char* goto_ptr = strstr(imcode[i], "goto");
+            char* ptr = goto_ptr + 4;
+            while (*ptr == ' ' || *ptr == '\t') ptr++;
+            
+            if (isdigit(*ptr)) {
+                int target = atoi(ptr);
+                int target_block = getBlockForLine(target);
+                if (target_block != -1) {
+                    fprintf(dot, "  bb%d -> bb%d [label=\"goto\", penwidth=2];\n", 
+                            current_block, target_block);
+                }
+            }
+        }
+        else if (strstr(imcode[i], "Return") == NULL &&
+                 strstr(imcode[i], "EndFunc") == NULL) {
+            // Sequential flow
+            if (i + 1 < code) {
+                int next_block = getBlockForLine(i + 1);
+                if (next_block != -1 && next_block != current_block) {
+                    fprintf(dot, "  bb%d -> bb%d [style=dashed, color=gray];\n", 
+                            current_block, next_block);
+                }
+            }
+        }
+    }
+    
+    fprintf(dot, "}\n");
+    fclose(dot);
+}
+
+// Add statistics function
+void printBasicBlockStats() {
+    printf("\n=== Basic Block Statistics ===\n");
+    printf("Total blocks: %d\n", block_count);
+    
+    BasicBlock* bb = blocks;
+    while (bb) {
+        int inst_count = 0;
+        for (int i = bb->start_line; i <= bb->end_line && i < code; i++) {
+            if (strstr(imcode[i], "// DEAD") == NULL) {
+                inst_count++;
+            }
+        }
+        printf("Block %d: Lines %d-%d (%d instructions)\n", 
+               bb->block_id, bb->start_line, bb->end_line, inst_count);
+        bb = bb->next;
+    }
+}
+
+/*
+void generateCallGraphDOT() {
+    FILE* dot = fopen("call_graph.dot", "w");
+    fprintf(dot, "digraph CallGraph {\n");
+    fprintf(dot, "  node [shape=record, style=filled];\n");
+    fprintf(dot, "  rankdir=TB;\n");
+    fprintf(dot, "  concentrate=true;\n\n");
+    
+    // Track edges with call site information
+    typedef struct CallEdge {
+        char caller[100];
+        char callee[100];
+        int line_number;
+        int call_count;
+        struct CallEdge* next;
+    } CallEdge;
+    
+    CallEdge* edges = NULL;
+    char current_func[100] = "";
+    
+    // Calculate function metrics
+    typedef struct FuncMetrics {
+        char name[100];
+        int tac_lines;
+        int start_line;
+        int end_line;
+        int call_count;  // How many times this function is called
+        struct FuncMetrics* next;
+    } FuncMetrics;
+    
+    FuncMetrics* metrics = NULL;
+    
+    // Scan TAC for function boundaries, calls, and metrics
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        // Track current function and calculate lines
+        if (strstr(imcode[i], "BeginFunc") != NULL) {
+            int param_count;
+            sscanf(imcode[i], "%*d BeginFunc %s %d", current_func, &param_count);
+            
+            // Create metrics entry
+            FuncMetrics* m = malloc(sizeof(FuncMetrics));
+            strcpy(m->name, current_func);
+            m->start_line = i;
+            m->tac_lines = 0;
+            m->call_count = 0;
+            m->next = metrics;
+            metrics = m;
+        }
+        
+        if (strstr(imcode[i], "EndFunc") != NULL && strcmp(current_func, "") != 0) {
+            // Update end line and count TAC instructions
+            FuncMetrics* m = metrics;
+            while (m) {
+                if (strcmp(m->name, current_func) == 0) {
+                    m->end_line = i;
+                    // Count non-dead, non-control instructions
+                    for (int j = m->start_line; j <= m->end_line; j++) {
+                        if (strstr(imcode[j], "// DEAD") == NULL &&
+                            strstr(imcode[j], "BeginFunc") == NULL &&
+                            strstr(imcode[j], "EndFunc") == NULL &&
+                            strstr(imcode[j], "PopParam") == NULL) {
+                            m->tac_lines++;
+                        }
+                    }
+                    break;
+                }
+                m = m->next;
+            }
+        }
+        
+        // Track function calls with line numbers
+        if (strstr(imcode[i], "Call") != NULL && strcmp(current_func, "") != 0) {
+            char callee[100];
+            if (sscanf(imcode[i], "%*d %*s = Call %s", callee) == 1 ||
+                sscanf(imcode[i], "%*d Call %s", callee) == 1) {
+                
+                // Increment callee's call count
+                FuncMetrics* m = metrics;
+                while (m) {
+                    if (strcmp(m->name, callee) == 0) {
+                        m->call_count++;
+                        break;
+                    }
+                    m = m->next;
+                }
+                
+                // Check if edge already exists
+                CallEdge* check = edges;
+                int exists = 0;
+                while (check) {
+                    if (strcmp(check->caller, current_func) == 0 &&
+                        strcmp(check->callee, callee) == 0) {
+                        check->call_count++;
+                        exists = 1;
+                        break;
+                    }
+                    check = check->next;
+                }
+                
+                if (!exists) {
+                    CallEdge* edge = malloc(sizeof(CallEdge));
+                    strcpy(edge->caller, current_func);
+                    strcpy(edge->callee, callee);
+                    edge->line_number = i;
+                    edge->call_count = 1;
+                    edge->next = edges;
+                    edges = edge;
+                }
+            }
+        }
+    }
+    
+    // Helper function to get color based on return type
+    const char* getColorForType(const char* type) {
+        if (strcmp(type, "void") == 0) return "lightgray";
+        if (strcmp(type, "int") == 0) return "lightblue";
+        if (strcmp(type, "float") == 0 || strcmp(type, "double") == 0) return "lightyellow";
+        if (strcmp(type, "char") == 0) return "lightgreen";
+        return "white";
+    }
+    
+    // Draw function nodes with detailed information
+    Function* f = func_list;
+    while (f) {
+        // Find metrics for this function
+        FuncMetrics* m = metrics;
+        int tac_lines = 0;
+        int total_calls = 0;
+        while (m) {
+            if (strcmp(m->name, f->name) == 0) {
+                tac_lines = m->tac_lines;
+                total_calls = m->call_count;
+                break;
+            }
+            m = m->next;
+        }
+        
+        // Build parameter string
+        char param_str[500] = "";
+        if (f->param_count > 0) {
+            Param* p = f->params;
+            int first = 1;
+            while (p) {
+                if (!first) strcat(param_str, ", ");
+                char temp[100];
+                sprintf(temp, "%s %s", p->type, p->name);
+                strcat(param_str, temp);
+                first = 0;
+                p = p->next;
+            }
+        } else {
+            strcpy(param_str, "void");
+        }
+        
+        // Determine complexity badge
+        const char* complexity;
+        if (tac_lines < 5) complexity = "Simple";
+        else if (tac_lines < 20) complexity = "Medium";
+        else complexity = "Complex";
+        
+        // Generate node with all information
+        fprintf(dot, "  \"%s\" [fillcolor=\"%s\", label=<\n", 
+                f->name, getColorForType(f->return_type));
+        fprintf(dot, "    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n");
+        fprintf(dot, "      <TR><TD BGCOLOR=\"navy\"><FONT COLOR=\"white\"><B>%s</B></FONT></TD></TR>\n", 
+                f->name);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Returns:</B> %s</TD></TR>\n", 
+                f->return_type);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Params:</B> %s</TD></TR>\n", 
+                param_str);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>TAC Lines:</B> %d (%s)</TD></TR>\n", 
+                tac_lines, complexity);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Called:</B> %d time%s</TD></TR>\n", 
+                total_calls, total_calls == 1 ? "" : "s");
+        fprintf(dot, "    </TABLE>\n");
+        fprintf(dot, "  >];\n\n");
+        
+        f = f->next;
+    }
+    
+    fprintf(dot, "\n  // Call relationships\n");
+    
+    // Draw edges with call information
+    CallEdge* e = edges;
+    while (e) {
+        // Determine edge style based on call frequency
+        const char* color = "black";
+        int penwidth = 1;
+        
+        if (e->call_count > 5) {
+            penwidth = 3;
+            color = "red";
+        } else if (e->call_count > 2) {
+            penwidth = 2;
+            color = "orange";
+        }
+        
+        fprintf(dot, "  \"%s\" -> \"%s\" [label=\"%d call%s\\n@line %d\", "
+                     "color=\"%s\", penwidth=%d];\n",
+                e->caller, e->callee, 
+                e->call_count, e->call_count == 1 ? "" : "s",
+                e->line_number,
+                color, penwidth);
+        e = e->next;
+    }
+    
+    // Add legend (FIXED - removed HR tag)
+    fprintf(dot, "\n  // Legend\n");
+    fprintf(dot, "  legend [shape=none, margin=0, label=<\n");
+    fprintf(dot, "    <TABLE BORDER=\"1\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n");
+    fprintf(dot, "      <TR><TD COLSPAN=\"2\" BGCOLOR=\"black\"><FONT COLOR=\"white\"><B>Legend</B></FONT></TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightblue\">int</TD><TD>Integer return type</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightyellow\">float/double</TD><TD>Floating-point return</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightgreen\">char</TD><TD>Character return type</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightgray\">void</TD><TD>No return value</TD></TR>\n");
+    fprintf(dot, "      <TR><TD COLSPAN=\"2\" BGCOLOR=\"gray\"></TD></TR>\n");  // ← FIXED: Separator row
+    fprintf(dot, "      <TR><TD>Black edge</TD><TD>Called 1-2 times</TD></TR>\n");
+    fprintf(dot, "      <TR><TD><FONT COLOR=\"orange\">Orange edge</FONT></TD><TD>Called 3-5 times</TD></TR>\n");
+    fprintf(dot, "      <TR><TD><FONT COLOR=\"red\">Red edge</FONT></TD><TD>Called 6+ times</TD></TR>\n");
+    fprintf(dot, "    </TABLE>\n");
+    fprintf(dot, "  >];\n");
+    
+    fprintf(dot, "}\n");
+    fclose(dot);
+    
+    
+    // Print statistics
+    printf("\n=== Call Graph Statistics ===\n");
+    printf("Total functions: ");
+    int func_count = 0;
+    f = func_list;
+    while (f) { func_count++; f = f->next; }
+    printf("%d\n", func_count);
+    
+    printf("\nMost called functions:\n");
+    FuncMetrics* m = metrics;
+    while (m) {
+        if (m->call_count > 0) {
+            printf("  %s: called %d time%s\n", 
+                   m->name, m->call_count, m->call_count == 1 ? "" : "s");
+        }
+        m = m->next;
+    }
+    
+    printf("\nFunction complexity:\n");
+    m = metrics;
+    while (m) {
+        const char* complexity;
+        if (m->tac_lines < 5) complexity = "Simple";
+        else if (m->tac_lines < 20) complexity = "Medium";
+        else complexity = "Complex";
+        
+        printf("  %s: %d TAC lines (%s)\n", m->name, m->tac_lines, complexity);
+        m = m->next;
+    }
+    printf("=============================\n");
+}
+
+*/
+
+
+void generateCallGraphDOT() {
+    FILE* dot = fopen("call_graph.dot", "w");
+    fprintf(dot, "digraph CallGraph {\n");
+    fprintf(dot, "  node [shape=record, style=filled, fillcolor=lightblue];\n");
+    fprintf(dot, "  rankdir=TB;\n");
+    fprintf(dot, "  concentrate=true;\n\n");
+    
+    // Track edges with call site information
+    typedef struct CallEdge {
+        char caller[100];
+        char callee[100];
+        int line_number;
+        int call_count;
+        struct CallEdge* next;
+    } CallEdge;
+    
+    CallEdge* edges = NULL;
+    char current_func[100] = "";
+    
+    // Calculate function metrics
+    typedef struct FuncMetrics {
+        char name[100];
+        int tac_lines;
+        int start_line;
+        int end_line;
+        int call_count;  // How many times this function is called
+        struct FuncMetrics* next;
+    } FuncMetrics;
+    
+    FuncMetrics* metrics = NULL;
+    
+    // Scan TAC for function boundaries, calls, and metrics
+    for (int i = 0; i < code; i++) {
+        //if (strstr(imcode[i], "// DEAD") != NULL) continue;
+        
+        // Track current function and calculate lines
+        if (strstr(imcode[i], "BeginFunc") != NULL) {
+            int param_count;
+            sscanf(imcode[i], "%*d BeginFunc %s %d", current_func, &param_count);
+            
+            // Create metrics entry
+            FuncMetrics* m = malloc(sizeof(FuncMetrics));
+            strcpy(m->name, current_func);
+            m->start_line = i;
+            m->tac_lines = 0;
+            m->call_count = 0;
+            m->next = metrics;
+            metrics = m;
+        }
+        
+        if (strstr(imcode[i], "EndFunc") != NULL && strcmp(current_func, "") != 0) {
+            // Update end line and count TAC instructions
+            FuncMetrics* m = metrics;
+            while (m) {
+                if (strcmp(m->name, current_func) == 0) {
+                    m->end_line = i;
+                    // Count non-dead, non-control instructions
+                    for (int j = m->start_line; j <= m->end_line; j++) {
+                        if (strstr(imcode[j], "// DEAD") == NULL &&
+                            strstr(imcode[j], "BeginFunc") == NULL &&
+                            strstr(imcode[j], "EndFunc") == NULL &&
+                            strstr(imcode[j], "PopParam") == NULL) {
+                            m->tac_lines++;
+                        }
+                    }
+                    break;
+                }
+                m = m->next;
+            }
+        }
+        
+        // Track function calls with line numbers
+        if (strstr(imcode[i], "Call") != NULL && strcmp(current_func, "") != 0) {
+            char callee[100];
+            if (sscanf(imcode[i], "%*d %*s = Call %s", callee) == 1 ||
+                sscanf(imcode[i], "%*d Call %s", callee) == 1) {
+                
+                // Increment callee's call count
+                FuncMetrics* m = metrics;
+                while (m) {
+                    if (strcmp(m->name, callee) == 0) {
+                        m->call_count++;
+                        break;
+                    }
+                    m = m->next;
+                }
+                
+                // Check if edge already exists
+                CallEdge* check = edges;
+                int exists = 0;
+                while (check) {
+                    if (strcmp(check->caller, current_func) == 0 &&
+                        strcmp(check->callee, callee) == 0) {
+                        check->call_count++;
+                        exists = 1;
+                        break;
+                    }
+                    check = check->next;
+                }
+                
+                if (!exists) {
+                    CallEdge* edge = malloc(sizeof(CallEdge));
+                    strcpy(edge->caller, current_func);
+                    strcpy(edge->callee, callee);
+                    edge->line_number = i;
+                    edge->call_count = 1;
+                    edge->next = edges;
+                    edges = edge;
+                }
+            }
+        }
+    }
+    
+    //  UPDATED: Helper function to get color based on return type (ALL TYPES)
+    const char* getColorForType(const char* type) {
+        if (strcmp(type, "void") == 0) return "lightgray";
+        if (strcmp(type, "int") == 0) return "lightyellow";
+        if (strcmp(type, "short") == 0) return "lightcyan";
+        if (strcmp(type, "long") == 0) return "lightskyblue";
+        if (strcmp(type, "float") == 0) return "lightyellow";
+        if (strcmp(type, "double") == 0) return "wheat";
+        if (strcmp(type, "char") == 0) return "lightgreen";
+        if (strcmp(type, "bool") == 0) return "lightpink";
+        return "white";
+    }
+    
+    // Draw function nodes with detailed information
+    Function* f = func_list;
+    while (f) {
+        // Find metrics for this function
+        FuncMetrics* m = metrics;
+        int tac_lines = 0;
+        int total_calls = 0;
+        while (m) {
+            if (strcmp(m->name, f->name) == 0) {
+                tac_lines = m->tac_lines;
+                total_calls = m->call_count;
+                break;
+            }
+            m = m->next;
+        }
+        
+        // Build parameter string
+        char param_str[500] = "";
+        if (f->param_count > 0) {
+            Param* p = f->params;
+            int first = 1;
+            while (p) {
+                if (!first) strcat(param_str, ", ");
+                char temp[100];
+                sprintf(temp, "%s %s", p->type, p->name);
+                strcat(param_str, temp);
+                first = 0;
+                p = p->next;
+            }
+        } else {
+            strcpy(param_str, "void");
+        }
+        
+        // Determine complexity badge
+        const char* complexity;
+        if (tac_lines < 5) complexity = "Simple";
+        else if (tac_lines < 20) complexity = "Medium";
+        else complexity = "Complex";
+        
+        // Generate node with all information
+        fprintf(dot, "  \"%s\" [fillcolor=lightblue, label=<\n", 
+                f->name);
+        fprintf(dot, "    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n");
+        fprintf(dot, "      <TR><TD BGCOLOR=\"lightblue\"><FONT COLOR=\"black\"><B>%s</B></FONT></TD></TR>\n", 
+                f->name);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Returns:</B> %s</TD></TR>\n", 
+                f->return_type);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Params:</B> %s</TD></TR>\n", 
+                param_str);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>TAC Lines:</B> %d (%s)</TD></TR>\n", 
+                tac_lines, complexity);
+        fprintf(dot, "      <TR><TD ALIGN=\"LEFT\"><B>Called:</B> %d time%s</TD></TR>\n", 
+                total_calls, total_calls == 1 ? "" : "s");
+        fprintf(dot, "    </TABLE>\n");
+        fprintf(dot, "  >];\n\n");
+        
+        f = f->next;
+    }
+    
+    fprintf(dot, "\n  // Call relationships\n");
+    
+    // Draw edges with call information
+    CallEdge* e = edges;
+    while (e) {
+        // Determine edge style based on call frequency
+        const char* color = "black";
+        int penwidth = 1;
+        
+        if (e->call_count > 5) {
+            penwidth = 3;
+            color = "red";
+        } else if (e->call_count > 2) {
+            penwidth = 2;
+            color = "orange";
+        }
+        
+        fprintf(dot, "  \"%s\" -> \"%s\" [label=\"%d call%s\\n@line %d\", "
+                     "color=\"%s\", penwidth=%d];\n",
+                e->caller, e->callee, 
+                e->call_count, e->call_count == 1 ? "" : "s",
+                e->line_number,
+                color, penwidth);
+        e = e->next;
+    }
+    
+    //  UPDATED: Add complete legend with ALL return types
+    fprintf(dot, "\n  // Legend\n");
+    fprintf(dot, "  legend [shape=none, margin=0, label=<\n");
+    fprintf(dot, "    <TABLE BORDER=\"1\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n");
+   /* fprintf(dot, "      <TR><TD COLSPAN=\"2\" BGCOLOR=\"black\"><FONT COLOR=\"white\"><B>Return Type Legend</B></FONT></TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightblue\">int</TD><TD>Integer (32-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightcyan\">short</TD><TD>Short integer (16-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightskyblue\">long</TD><TD>Long integer (64-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightyellow\">float</TD><TD>Float (32-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"wheat\">double</TD><TD>Double (64-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightgreen\">char</TD><TD>Character (8-bit)</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightpink\">bool</TD><TD>Boolean</TD></TR>\n");
+    fprintf(dot, "      <TR><TD BGCOLOR=\"lightgray\">void</TD><TD>No return value</TD></TR>\n");*/
+    fprintf(dot, "      <TR><TD>Black edge</TD><TD>Called 1-2 times</TD></TR>\n");
+    fprintf(dot, "      <TR><TD><FONT COLOR=\"orange\">Orange edge</FONT></TD><TD>Called 3-5 times</TD></TR>\n");
+    fprintf(dot, "      <TR><TD><FONT COLOR=\"red\">Red edge</FONT></TD><TD>Called 6+ times</TD></TR>\n");
+    fprintf(dot, "    </TABLE>\n");
+    fprintf(dot, "  >];\n");
+    
+    fprintf(dot, "}\n");
+    fclose(dot);
+    
+    
+    // Print statistics
+    printf("\n=== Call Graph Statistics ===\n");
+    printf("Total functions: ");
+    int func_count = 0;
+    f = func_list;
+    while (f) { func_count++; f = f->next; }
+    printf("%d\n", func_count);
+    
+    printf("\nMost called functions:\n");
+    FuncMetrics* m = metrics;
+    while (m) {
+        if (m->call_count > 0) {
+            printf("  %s: called %d time%s\n", 
+                   m->name, m->call_count, m->call_count == 1 ? "" : "s");
+        }
+        m = m->next;
+    }
+    
+    printf("\nFunction complexity:\n");
+    m = metrics;
+    while (m) {
+        const char* complexity;
+        if (m->tac_lines < 5) complexity = "Simple";
+        else if (m->tac_lines < 20) complexity = "Medium";
+        else complexity = "Complex";
+        
+        printf("  %s: %d TAC lines (%s)\n", m->name, m->tac_lines, complexity);
+        m = m->next;
+    }
+    printf("=============================\n");
+}
+
+void generateAllImages() {
+    system("dot -Tpng tac_flow.dot -o tac_flow.png 2>/dev/null");
+    system("dot -Tpng tac_flow_blocks.dot -o tac_flow_blocks.png 2>/dev/null");
+    //system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
+    //system("dot -Tpng symbol_table.dot -o symbol_table.png 2>/dev/null");
+}
+
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         printf("Enter your code \n");
         yyin = stdin;
+        memset(imcode, 0, sizeof(imcode));
+        yyparse();
     } else {
-        yyin = fopen(argv[1], "r");
-        if (!yyin) {
+        FILE* f = fopen(argv[1], "r");
+        if (!f) {
             printf("Error: Cannot open file %s\n", argv[1]);
             return 1;
         }
+
+        fseek(f, 0, SEEK_END);
+        long fsize = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char* raw = (char*)malloc(fsize + 2);
+        if (!raw) { fclose(f); return 1; }
+        fread(raw, 1, fsize, f);
+        raw[fsize] = '\0';
+        fclose(f);
+
+        /* Preprocess:
+           - strip carriage returns (\r) so Windows files work
+           - ensure a space before and after every '$' so "2$" lexes as NUM + '$'
+           - ensure file ends with a newline so flex sees a clean EOF */
+        char* clean = (char*)malloc(fsize * 3 + 4);
+        if (!clean) { free(raw); return 1; }
+        int j = 0;
+        for (int i = 0; i < (int)fsize; i++) {
+            if (raw[i] == '\r') continue;              /* strip \r */
+            if (raw[i] == '$') {
+                if (j > 0 && clean[j-1] != ' ' && clean[j-1] != '\t' && clean[j-1] != '\n')
+                    clean[j++] = ' ';                  /* space before $ */
+                clean[j++] = '$';
+                clean[j++] = ' ';                      /* space after $ */
+            } else {
+                clean[j++] = raw[i];
+            }
+        }
+        if (j == 0 || clean[j-1] != '\n') clean[j++] = '\n'; /* trailing newline */
+        clean[j] = '\0';
+        free(raw);
+
+        memset(imcode, 0, sizeof(imcode));
+        yy_scan_string(clean);  /* feed preprocessed source to lexer */
+        yyparse();
+        free(clean);
     }
-    memset(imcode, 0, sizeof(imcode));  
-    yyin = fopen(argv[1],"r");
-    yyparse();
-    
-    if (!e) {  
-        // Write TAC files
+
+    remove("output.tac");
+    if (!e) {
+        /* Write TAC file */
         FILE* tac_file = fopen("output.tac", "w");
         if (tac_file) {
-            for (int i = 0; i < code; i++) {
+            for (int i = 0; i < code; i++)
                 fprintf(tac_file, "%s", imcode[i]);
-            }
             fclose(tac_file);
         }
-       
-    } 
-    if (argc >= 2 && yyin != stdin) {
-        fclose(yyin);
+       // generateSymbolTableDOT();
+        generateTACFlowDOT();
+        generateTACFlowWithBlocks();
+       // generateCallGraphDOT();
+        generateAllImages();
     }
     return 0;
 }

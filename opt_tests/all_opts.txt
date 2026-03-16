@@ -1,0 +1,320 @@
+# test fall redundant gotos 
+@int x is 150$
+@int y is 100$
+
+if (x < 100 or (x > 200 and x == y)) {
+    x = 0$
+}
+show(x)$
+
+## const fold conditional (needs const fold + cp) follow (dead elm)
+
+ @int x $
+    x = 0 $
+    if (3 + 3 > 5) {
+        x = 42 $
+    }
+    show(x) $
+
+#2.const fold
+func @int main() {
+    @int x, y $
+    x = 2 + 3 * 4 $
+    y = 10 / 2 $
+    show(x) $
+    show(y) $
+    ret 0 $
+}
+
+#3.const prop
+func @int main() {
+    @int a, b, c $
+    a = 10 $
+    b = a $
+    c = b + 5 $
+    show(c) $
+    ret 0 $
+}
+
+
+
+#3.copy propagation 
+func @int main() {
+    @int a, b, c, d $
+    a = 10 $
+    b = a $
+    c = b $
+    d = c $
+    show(d) $
+    show(a+b) $
+    ret 0 $
+}
+
+#4. CSE
+func @int main() {
+    @int a, b, c, d, e,f ,g $
+    a = 5 $
+    b = 10 $
+    c = a + b $
+    d = a + b $
+    e = c + d $
+    f= a +b $
+    g= c + d $
+    show(c) $
+    show(d) $
+    show(e) $
+    show(f) $
+    show(g) $
+    ret 0 $
+}
+
+
+
+# dead variable elimination ( cp + dvel+con fold)
+func @int main() {
+    @int a, b, c $
+    a = 5 $
+    b = 10 $
+    c = a + b $
+    show(c) $
+    ret 0 $
+}
+
+# stren reducn
+
+func @int main() {
+    @int x, a, b, c $
+    input(x) $
+    a = x * 2 $
+    b = x * 4 $
+    c = x / 2 $
+    show(a) $
+    show(b) $
+    show(c) $
+    ret 0 $
+}
+
+# dead code/unreach
+func @int main() {
+    @int x, y $
+    x = 10 $
+    show(x) $
+    ret 0 $
+    x = 20 $
+    y = 30 $
+    show(x) $
+    show(y) $
+}
+
+
+# algbr simp arth
+func @int main() {
+    @int a, b, c, d, e, f, g, h, i, j, k $
+    a = 5 $
+    b = a * 1 $
+    c = 1 * a $
+    d = a * 0 $
+    e = 0 * a $
+    f = a + 0 $
+    g = 0 + a $
+    h = a - 0 $
+    i = a - a $
+    j = a / 1 $
+    k = a / a $
+    show(b) $
+    show(c) $
+    show(d) $
+    show(e) $
+    show(f) $
+    show(g) $
+    show(h) $
+    show(i) $
+    show(j) $
+    show(k) $
+    ret 0 $
+}
+
+
+# algbr modulo
+
+func @int main() {
+    @int a, b, c, d $
+    a = 7 $
+    b = a % 1 $
+    c = 0 % a $
+    d = a % a $
+    show(b) $
+    show(c) $
+    show(d) $
+    ret 0 $
+}
+
+# algbr bitwise 
+
+func @int main() {
+    @int a, b, c, d, e, f, g, h, i, j, k, l,m $
+    a = 5 $
+    b = a bitand 0 $
+    c = a bitand a $
+    d = a bitor 0 $
+    e = 0 bitor a $
+    f = a bitor a $
+    g = a bitxor 0 $
+    h = 0 bitxor a $
+    i = a bitxor a $
+    j = a lshift 0 $
+    k = 0 lshift a $
+    l = a rshift 0 $    
+    m = 0 rshift a $
+
+    show(b) $
+    show(c) $
+    show(d) $
+    show(e) $
+    show(f) $
+    show(g) $
+    show(h) $
+    show(i) $
+    show(j) $
+    show(k) $
+    show(l) $
+    show(m) $
+    ret 0 $
+}
+
+
+
+
+# Boolean simpcn + goto chaining
+
+    @int x=5 $
+    if (true and x gt 2) begin
+        show(1) $
+    end
+
+    if (x lt 10 and true) begin
+        show(2) $
+    end
+
+    if (false and x gt 0) begin
+        show(999) $
+    end
+
+    if (x eq 5 and false) begin
+        show(999) $
+    end
+
+    if (false or x gt 2) begin
+        show(3) $
+    end
+
+    if (x lt 10 or false) begin
+        show(4) $
+    end
+
+    if (true or x gt 100) begin
+        show(5) $
+    end
+
+    if (x eq 0 or true) begin
+        show(6) $
+    end
+
+# redundant store (#add show(x) if uncommented should not opt)
+
+func @int main() {
+    @int x $
+    x = 5 $
+    x = 10 $
+    x=6 $
+    x=9 $
+    show(x) $
+    ret 0 $
+}
+
+
+
+# redundant peephole
+func @int main() {
+    @int a, b, c $
+    input(a) $
+    input(c) $
+    b = a $
+    a = b $
+    b = a $
+    b = c $
+    a = b $
+    b = a $
+    a = b $
+    show(a) $
+    show(b) $
+    ret 0 $
+}
+
+
+#  peephole  dont
+func @int main() begin
+    @int x, a $
+    a=0$
+    x = a $
+    a = 99 $
+    x = a $
+    show(x) $
+    ret 0 $
+end
+
+# identity assignments 
+@int i $
+input(i) $
+i=i $
+i=i $
+i=i $
+show(i) $
+i= 3$
+show(i) $
+
+# cont fold cond + cf + dead code elm
+func @int main() {
+    @int x $
+    x = 0 $
+    if (2 + 3 > 10) {
+        x = 999 $
+    }
+    show(x) $
+    ret 0 $
+}
+
+
+# redundant load
+func @int main() {
+    @int arr[5] = {1, 2, 3, 4, 5} $
+    @int a, b $
+    a = arr[2] $
+    b = arr[2] $ # add arr[2]=4 here to check 
+    b=arr[2] $
+    show(a + b) $
+    ret 0 $
+}
+
+
+# should not change 
+func @int main() begin
+    @int arr[3], a $
+    a = arr[0] $
+    arr[0] = 5 $    
+    a = arr[0] $    
+    show(a) $
+    ret 0 $
+end
+
+
+# simply expressions
+
+func @int main() {
+    @int x, y $
+    x = 5 $
+    y = x / x $
+    show(y) $
+    ret 0 $
+}
+

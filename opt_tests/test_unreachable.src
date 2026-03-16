@@ -1,0 +1,19 @@
+func @int foo(@int x) {
+    if (x > 0) {
+        x = 2 $
+        ret 1 $
+    } else {
+        x = 5 $
+        ret 0 $
+    }
+    @int y = 10 $
+    show(y) $
+    ret y $
+}
+
+func @int main() {
+    @int result $
+    result =call foo(5) $
+    show(result) $
+    ret 0 $
+}

@@ -1,0 +1,13 @@
+func @int main() {
+    @int a, b, c, d, e $
+    a = 5 $
+    b = a * 1 $
+    c = a + 0 $
+    d = a * 0 $
+    e = a / 1 $
+    show(b) $
+    show(c) $
+    show(d) $
+    show(e) $
+    ret 0 $
+}
