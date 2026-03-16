@@ -14,8 +14,6 @@ int label=0;
 char* genvar();
 char imcode[10000][10000];
 int code=0;
-/* FOR-loop increment stash stack: supports nested for-loops.
- * Each nested for pushes onto this stack; post-action pops it.  */
 #define FOR_STASH_DEPTH 16
 #define FOR_STASH_SLOTS 64
 static char for_incr_stash[FOR_STASH_DEPTH][FOR_STASH_SLOTS][10000];
@@ -201,12 +199,7 @@ struct Node* merge(struct Node* a,struct Node* b){
         return a;
 }
 
-/* ── Fall-through sentinel for redundant-goto elimination ─────────────────
-   A Node with addr == FALL_THROUGH means "control reaches the target by
-   falling through the next sequential instruction — no goto needed."
-   backpatch() silently skips such nodes; the IF/WHILE rules that call
-   backpatch($B->T, M) still work correctly because M == code == the very
-   next instruction that will be emitted, which IS the fall-through target. */
+
 #define FALL_THROUGH (-1)
 
 /* Return the negated relational operator string */
@@ -220,15 +213,7 @@ static const char* negateOp(const char* op) {
     return op;
 }
 
-/* flipCondToTrue:  We now emit  "N if op1 neg(rel) op2 goto _"  where
- * T=FALL_THROUGH (true falls through) and F=jump (false jumps).
- *
- * For OR: B1-true must JUMP over B2.  The existing instruction jumps on FALSE.
- * Fix: negate the operator once more (double-negate = original rel) so it
- * now jumps when the ORIGINAL condition is TRUE.  Swap T↔F nodes.
- *
- * For do-while / for-loop back-edge: we want "if orig_rel goto loop_start"
- * i.e. jump when condition is TRUE.  Same operation — negate the neg(rel).  */
+
 static int flipCondToTrue(int line_idx) {
     char* line = imcode[line_idx];
     /* Line format: "N if op1 rel op2 goto " (no ifFalse any more) */
@@ -1424,15 +1409,7 @@ void constantFoldConditionals() {
         if (sscanf(line, "%d if %[^\n]", &line_num, cond) == 2) {
             char op1[100], op[10], op2[100], rest[100];
             if (sscanf(cond, "%s %s %s %[^\n]", op1, op, op2, rest) == 4) {
-                /* ── Loop-header detection ──────────────────────────────────
-                   If any live goto from a line j > i points back to line i
-                   (or to any label <= i that is still live), then line i is
-                   a loop-header conditional.  Variables tested here may be
-                   modified inside the loop body (lines i+1 .. j), so we
-                   must NOT fold them as compile-time constants.
-                   We detect this by scanning for backward gotos whose
-                   target line-number == line_num (the embedded number in the
-                   imcode string, which equals i in unshifted TAC).          */
+           
                 int is_loop_header = 0;
                 for (int j = i + 1; j < code; j++) {
                     if (strstr(imcode[j], "// DEAD") != NULL) continue;
@@ -1462,14 +1439,7 @@ void constantFoldConditionals() {
                 // Look up op1 if it's a variable
                 if (!isNumericConstant(op1)) {
                     int assignment_count = 0;
-                    /* Only count assignments that appear BEFORE line i (strictly
-                       dominate this branch point).  Assignments that appear after
-                       the conditional — e.g. the body that this very branch guards
-                       — must NOT be counted: if the condition is always-false those
-                       lines are dead, and counting them would incorrectly block the
-                       fold.  We scan [0 .. i) only.
-                       Note: loop headers are already excluded above, so any
-                       assignment after i truly belongs to an unreachable branch. */
+                   
                     for (int j = 0; j < i; j++) {
                         if (strstr(imcode[j], "// DEAD") != NULL) continue;
                         char check_line[10000]; strcpy(check_line, imcode[j]);
@@ -1594,11 +1564,7 @@ void constantFoldConditionals() {
 
 void copyPropagation() {
     int is_jump_target[10000] = {0};
-    /* Only count gotos from LIVE lines — dead lines may contain "goto N"
-       in their comment text (e.g. "// DEAD CODE: goto 11 // FOLDED") and
-       must NOT mark their targets as jump targets, otherwise
-       has_use_at_jump_target fires on the target and blocks valid
-       constant/copy propagation into it.                                  */
+  
     for (int i = 0; i < code; i++) {
         if (strstr(imcode[i], "// DEAD") != NULL) continue;
         if (strstr(imcode[i], "goto") != NULL) {
@@ -1626,13 +1592,7 @@ void copyPropagation() {
                 strchr(rhs,'<')!=NULL||strchr(rhs,'>')!=NULL||strchr(rhs,'~')!=NULL||strchr(rhs,'(')!=NULL||
                 strstr(rhs,"Call")!=NULL||strstr(rhs,"PopParam")!=NULL||strstr(rhs,"PushParam")!=NULL) continue;
             if (is_jump_target[i]) {
-                /* i is a goto target — but only skip if it is a TRUE join point,
-                   i.e. it has MULTIPLE live predecessors:
-                     (a) at least one live goto points here, AND
-                     (b) a live sequential predecessor exists — i-1 is live and
-                         not an unconditional jump/return.
-                   If i-1 is itself dead or an unconditional jump, the ONLY path
-                   to i is the goto(s) — no join, safe to propagate through.   */
+              
                 int has_live_seq_pred = 0;
                 if (i > 0) {
                     /* Find the previous live line */
@@ -1857,13 +1817,7 @@ if (isalnum(after) || after == '_' || after == '\'') is_whole = 0;
                     }
                     if (inside_branch) continue;
                 }
-                /* is_user_var: true when lhs is a user-named variable (not a tN temp).
-                   For user variables we must NOT substitute their constant value
-                   into print/input-only lines (lines with no '=').  Doing so would
-                   replace  "printint a"  with  "printint 14"  while keeping the
-                   defining assignment  a = 14  live — an inconsistent and misleading
-                   output.  Instead we leave  printint a  in place (the variable is
-                   live and its name carries semantic value in the optimized TAC). */
+               
                 int is_user_var = !(lhs[0] == 't' && isdigit((unsigned char)lhs[1]));
 
                 for (int j = i + 1; j <= last_use_line && j < code && j < safe_limit; j++) {
@@ -1871,9 +1825,7 @@ if (isalnum(after) || after == '_' || after == '\'') is_whole = 0;
                     char new_line[10000]; strcpy(new_line, imcode[j]);
                     char* equals_sign = strchr(new_line, '=');
                     if (equals_sign == NULL) {
-                        /* This is a use-only line: printint, printfloat, inputint, etc.
-                           Skip constant substitution for user variables — keep the
-                           readable  printint a  form rather than  printint 14. */
+                      
                         if (is_user_var) continue;
                         char* line_num_end = strchr(new_line, ' ');
                         char* search_start = line_num_end ? line_num_end + 1 : new_line;
@@ -1942,19 +1894,12 @@ if (isalnum(after) || after == '_' || after == '\'') is_whole_word = 0;
             */                }
                 // Don't mark as DEAD COPY - keep the source definition
             } else if (!is_used && is_constant) {
-                /* Before marking as DEAD CONST, do a full scan of the entire
-                   function to make sure lhs is truly never READ anywhere after
-                   this point. safe_limit may have cut the search short (stopped
-                   at first_modification), missing a printint/return further down. */
+             
                 int globally_used = 0;
                 for (int j = i + 1; j < func_end; j++) {
                     if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
                     char check_line[10000]; strcpy(check_line, imcode[j]);
-                    /* Only count lhs as "used" when it appears on the READ side.
-                       For an assignment "N lhs = ...", lhs on the LHS is a write,
-                       not a read — skip those. We check reads by looking at:
-                         - print/if/goto lines (no '=' before lhs)
-                         - the RHS of assignment lines (after the '=')           */
+                   
                     char* eq = strchr(check_line, '=');
                     char* search_start;
                     if (eq == NULL) {
@@ -1997,7 +1942,6 @@ void booleanSimplification() {
 
         if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1, op, op2) == 5) {
 
-            /* ── && (logical AND) ─────────────────────────────────────── */
 
             /* true && x  →  x */
             if (strcmp(op,"&&")==0 && strcmp(op1,"1")==0){
@@ -2015,7 +1959,7 @@ void booleanSimplification() {
             if (strcmp(op,"&&")==0 && strcmp(op1,op2)==0){
                 sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
 
-            /* ── || (logical OR) ─────────────────────────────────────── */
+            /*  || (logical OR)  */
 
             /* false || x  →  x */
             if (strcmp(op,"||")==0 && strcmp(op1,"0")==0){
@@ -2033,7 +1977,7 @@ void booleanSimplification() {
             if (strcmp(op,"||")==0 && strcmp(op1,op2)==0){
                 sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
 
-            /* ── == (equality) ───────────────────────────────────────── */
+            /*  == (equality)  */
 
             /* x == x  →  1 */
             if (strcmp(op,"==")==0 && strcmp(op1,op2)==0){
@@ -2043,7 +1987,7 @@ void booleanSimplification() {
                 int r = (atof(op1) == atof(op2));
                 sprintf(imcode[i],"%d %s = %d\n",line_num,result,r); continue; }
 
-            /* ── != (not-equal) ──────────────────────────────────────── */
+            /*  != (not-equal)  */
 
             /* x != x  →  0 */
             if (strcmp(op,"!=")==0 && strcmp(op1,op2)==0){
@@ -2054,490 +1998,6 @@ void booleanSimplification() {
                 sprintf(imcode[i],"%d %s = %d\n",line_num,result,r); continue; }
         }
     }
-}
-
-
-
-static int licm_is_dead(int i) {
-    /* Dead if marked by a prior pass */
-    if (strstr(imcode[i], "// DEAD") != NULL) return 1;
-    /* Dead if an unfilled preheader placeholder */
-    if (strstr(imcode[i], "LICM_PREHEADER_SLOT") != NULL) return 1;
-    /* "// LICM:" appears on two kinds of lines:
-     *   (a) In-loop NOP:  "21 // LICM: found hoisted ..."  — NO '=' before the tag
-     *   (b) Live preheader instruction (legacy, should not occur with clean-write fix,
-     *       but guard anyway): has a real '=' BEFORE the tag.
-     * Only treat as dead when there is no assignment before the tag. */
-    const char *tag = strstr(imcode[i], "// LICM:");
-    if (tag) {
-        const char *eq = strchr(imcode[i], '=');
-        if (!eq || eq > tag) return 1;  /* no real assignment before tag -> NOP */
-    }
-    return 0;
-}
-
-static int licm_uncond_goto(int i, int *tgt) {
-    if (licm_is_dead(i)) return 0;
-    char *gp = strstr(imcode[i], "goto");
-    if (!gp) return 0;
-    char *ifp = strstr(imcode[i], "if");
-    if (ifp && ifp < gp) return 0;
-    char *tp = gp + 4;
-    while (*tp == ' ' || *tp == '\t') tp++;
-    if (!isdigit(*tp)) return 0;
-    *tgt = atoi(tp);
-    return 1;
-}
-
-static int licm_assigns(int i, const char *var) {
-    if (licm_is_dead(i)) return 0;
-    char line[10000]; strcpy(line, imcode[i]);
-    char lhs[200];
-    if (sscanf(line, "%*d %s =", lhs) != 1) return 0;
-    // Strip array subscript for bare name comparison
-    char bare[200]; strcpy(bare, lhs);
-    char *br = strchr(bare, '['); if (br) *br = '\0';
-    return (strcmp(lhs, var) == 0 || strcmp(bare, var) == 0);
-}
-
-static int licm_has_call(int i) {
-    if (licm_is_dead(i)) return 0;
-    return strstr(imcode[i], "Call ") != NULL ||
-           strstr(imcode[i], "PushParam") != NULL;
-}
-
-/* Returns 1 if any line in the loop body (body[]) writes to the array
- * named `arr_base` (e.g. "arr[x] = ..."). */
-static int licm_array_written_in_body(int H, int B, int *body, const char *arr_base) {
-    for (int k = H; k <= B; k++) {
-        if (!body[k] || licm_is_dead(k)) continue;
-        char lhs_buf[200];
-        if (sscanf(imcode[k], "%*d %s =", lhs_buf) != 1) continue;
-        /* lhs_buf like "arr[t1]" -- strip subscript to get base */
-        char base[200]; strcpy(base, lhs_buf);
-        char *br = strchr(base, '['); if (br) *br = '\0';
-        if (strchr(lhs_buf, '[') && strcmp(base, arr_base) == 0)
-            return 1;
-    }
-    return 0;
-}
-
-/* Returns 1 if the operand `op` (which may be "arr[idx]" or a plain var)
- * is NOT loop-invariant in the loop body [H..B].
- * Checks:
- *  - plain var: is it assigned anywhere in body?
- *  - array read "base[idx]": is idx assigned in body? is base array-written in body?
- */
-static int licm_operand_modified(int H, int B, int *body, const char *op) {
-    if (!op || op[0] == '\0') return 0;
-    if (isdigit((unsigned char)op[0]) || op[0] == '-' || op[0] == '+') {
-        /* numeric literal — always invariant */
-        return 0;
-    }
-
-    char op_copy[200]; strncpy(op_copy, op, 199); op_copy[199] = '\0';
-    char *bracket = strchr(op_copy, '[');
-
-    if (bracket) {
-        /* Array read: "base[index]" */
-        *bracket = '\0';
-        const char *arr_base = op_copy;
-        const char *index    = bracket + 1;
-        /* strip trailing ']' from index */
-        char idx[200]; strncpy(idx, index, 199); idx[199] = '\0';
-        char *rb = strchr(idx, ']'); if (rb) *rb = '\0';
-
-        /* 1. Is the array base written (as array) in the loop body? */
-        if (licm_array_written_in_body(H, B, body, arr_base)) return 1;
-
-        /* 2. Is the index variable assigned in the loop body? */
-        if (idx[0] != '\0' && !isdigit((unsigned char)idx[0])) {
-            for (int k = H; k <= B; k++) {
-                if (!body[k]) continue;
-                if (licm_assigns(k, idx)) return 1;
-            }
-        }
-        return 0;
-    } else {
-        /* Plain variable: is it assigned anywhere in body? */
-        for (int k = H; k <= B; k++) {
-            if (!body[k]) continue;
-            if (licm_assigns(k, op_copy)) return 1;
-        }
-        return 0;
-    }
-}
-
-static int licm_has_side_effect(int i) {
-    if (licm_is_dead(i)) return 0;
-    char *ln = imcode[i];
-    if (strstr(ln, "print")     != NULL) return 1;
-    if (strstr(ln, "input")     != NULL) return 1;
-    if (strstr(ln, "Call ")     != NULL) return 1;
-    if (strstr(ln, "PushParam") != NULL) return 1;
-    if (strstr(ln, "Return")    != NULL) return 1;
-    if (strstr(ln, "BeginFunc") != NULL) return 1;
-    if (strstr(ln, "EndFunc")   != NULL) return 1;
-    // Array write: "N var[...] = ..."
-    char lhs_buf[200];
-    if (sscanf(ln, "%*d %s =", lhs_buf) == 1 && strchr(lhs_buf,'[') != NULL)
-        return 1;
-    return 0;
-}
-
-/* ---------------------------------------------------------------
- * Compute the FULL natural loop body for back-edge (B->H).
- * BFS from H following all CFG edges, bounded to lines <= B.
- * body[i] = 1 means line i belongs to this loop.
- * --------------------------------------------------------------- */
-static void licm_compute_body(int H, int B, int *body) {
-    memset(body, 0, sizeof(int) * 10000);
-    int visited[10000] = {0};
-    int queue[10000];
-    int qhead = 0, qtail = 0;
-    queue[qtail++] = H;
-    while (qhead < qtail) {
-        int cur = queue[qhead++];
-        if (cur < 0 || cur > B) continue;
-        if (visited[cur]) continue;
-        visited[cur] = 1;
-        char *ln = imcode[cur];
-        if (licm_is_dead(cur)) {
-            if (cur+1 <= B && !visited[cur+1]) queue[qtail++] = cur+1;
-            continue;
-        }
-        char *gp  = strstr(ln, "goto");
-        char *ifp = strstr(ln, "if ");
-        int is_uncond = (gp && (!ifp || ifp > gp));
-        int is_cond   = (ifp && gp && ifp < gp);
-        if (is_uncond) {
-            char *tp = gp+4; while(*tp==' '||*tp=='\t') tp++;
-            if (isdigit(*tp)) { int t=atoi(tp); if(t<=B && !visited[t]) queue[qtail++]=t; }
-        } else if (is_cond) {
-            char *tp = gp+4; while(*tp==' '||*tp=='\t') tp++;
-            if (isdigit(*tp)) { int t=atoi(tp); if(t<=B && !visited[t]) queue[qtail++]=t; }
-            if (cur+1 <= B && !visited[cur+1]) queue[qtail++] = cur+1;
-        } else {
-            if (cur+1 <= B && !visited[cur+1]) queue[qtail++] = cur+1;
-        }
-    }
-    for (int i = H; i <= B; i++) if (visited[i]) body[i] = 1;
-}
-
-/* ---------------------------------------------------------------
- * Insert a blank preheader slot just before line `before_line`
- * by shifting all imcode[before_line..code-1] down by one.
- * Updates all goto targets in the entire program accordingly.
- * Returns the index of the new blank slot (= before_line).
- * --------------------------------------------------------------- */
-static int licm_insert_preheader(int before_line) {
-    /* shift code down */
-    for (int i = code; i > before_line; i--)
-        strcpy(imcode[i], imcode[i-1]);
-    code++;
-
-    /* blank out the new slot */
-    sprintf(imcode[before_line], "%d // LICM_PREHEADER_SLOT\n", before_line);
-
-    /* fix line-number prefixes in shifted lines */
-    for (int i = before_line + 1; i < code; i++) {
-        char tmp[10000];
-        /* read off old line number, rewrite with new */
-        int old_ln;
-        char rest[10000];
-        if (sscanf(imcode[i], "%d %[^\n]", &old_ln, rest) == 2)
-            sprintf(imcode[i], "%d %s\n", i, rest);
-        else if (sscanf(imcode[i], "%d\n", &old_ln) == 1)
-            sprintf(imcode[i], "%d\n", i);
-        (void)tmp;
-    }
-
-    /* update all goto targets: any target >= before_line gets +1 */
-    for (int i = 0; i < code; i++) {
-        if (licm_is_dead(i)) continue;
-        char *p = imcode[i];
-        /* find all "goto NNN" occurrences and patch */
-        char newline[10000]; newline[0] = '\0';
-        char *cur = p;
-        while (*cur) {
-            char *gp = strstr(cur, "goto ");
-            if (!gp) { strcat(newline, cur); break; }
-            /* copy up to and including "goto " */
-            int pfx = (int)(gp - cur) + 5;
-            strncat(newline, cur, pfx);
-            cur = gp + 5;
-            /* read the number */
-            char *np = cur;
-            while (*np == ' ' || *np == '\t') np++;
-            if (isdigit(*np)) {
-                int tgt = atoi(np);
-                if (tgt >= before_line) tgt++;
-                char num[32]; sprintf(num, "%d", tgt);
-                strcat(newline, num);
-                /* skip past old digits */
-                while (isdigit(*np)) np++;
-                cur = np;
-            }
-        }
-        strcpy(imcode[i], newline);
-    }
-
-    return before_line;
-}
-
-void loopInvariantCodeMotion() {
-    #define MAX_LOOPS 200
-    int loop_H[MAX_LOOPS], loop_B[MAX_LOOPS];
-    int nloops = 0;
-
-    // ---- Detect loops via back edges ----
-    for (int i = 0; i < code && nloops < MAX_LOOPS; i++) {
-        int tgt;
-        if (!licm_uncond_goto(i, &tgt)) continue;
-        if (tgt >= i) continue;
-        if (licm_is_dead(tgt)) continue;
-        int dup = 0;
-        for (int k = 0; k < nloops; k++)
-            if (loop_H[k] == tgt && loop_B[k] == i) { dup = 1; break; }
-        if (!dup) { loop_H[nloops] = tgt; loop_B[nloops] = i; nloops++; }
-    }
-
-    /* ---- Merge compound loops ----
-     * For-loops produce TWO back-edges in our TAC:
-     *   increment->header: e.g. line13 goto9  => H=9,  B=13
-     *   body->increment:   e.g. line18 goto11 => H=11, B=18
-     * The real outer loop is H=9, B=18.
-     * Rule: if Hb is inside (Ha..Ba], extend Ba = max(Ba,Bb). Repeat. */
-    {
-        int changed2 = 1;
-        while (changed2) {
-            changed2 = 0;
-            for (int a = 0; a < nloops; a++)
-                for (int b2 = 0; b2 < nloops; b2++) {
-                    if (a == b2) continue;
-                    if (loop_H[b2] > loop_H[a] && loop_H[b2] <= loop_B[a]
-                        && loop_B[b2] > loop_B[a]) {
-                        loop_B[a] = loop_B[b2]; changed2 = 1;
-                    }
-                }
-        }
-        /* Remove loops fully subsumed: H deeper but same B (original correct rule) */
-        for (int a = 0; a < nloops; ) {
-            int sub = 0;
-            for (int b2 = 0; b2 < nloops; b2++) {
-                if (a == b2) continue;
-                if (loop_H[a] > loop_H[b2] && loop_B[a] == loop_B[b2])
-                    { sub = 1; break; }
-            }
-            if (sub) {
-                for (int k = a; k < nloops-1; k++) {
-                    loop_H[k]=loop_H[k+1]; loop_B[k]=loop_B[k+1]; }
-                nloops--;
-            } else a++;
-        }
-        /* Remove exact duplicates */
-        for (int a = 0; a < nloops; a++)
-            for (int b2 = a+1; b2 < nloops; )
-                if (loop_H[a]==loop_H[b2] && loop_B[a]==loop_B[b2]) {
-                    for(int k=b2;k<nloops-1;k++){loop_H[k]=loop_H[k+1];loop_B[k]=loop_B[k+1];}
-                    nloops--;
-                } else b2++;
-    }
-
-    /* Process largest span first */
-    for (int a = 0; a < nloops-1; a++)
-        for (int b2 = a+1; b2 < nloops; b2++)
-            if ((loop_B[b2]-loop_H[b2]) > (loop_B[a]-loop_H[a])) {
-                int th=loop_H[a]; loop_H[a]=loop_H[b2]; loop_H[b2]=th;
-                int tb=loop_B[a]; loop_B[a]=loop_B[b2]; loop_B[b2]=tb;
-            }
-
-    for (int li = 0; li < nloops; li++) {
-        int H = loop_H[li];
-        int B = loop_B[li];
-
-        /* Compute natural loop body */
-        int body[10000];
-        licm_compute_body(H, B, body);
-
-        /* Skip if no real body beyond the header */
-        int has_body = 0;
-        for (int i = H+1; i <= B; i++) if (body[i]) { has_body=1; break; }
-        if (!has_body) continue;
-
-        /* ---- Valid loop header check ----
-         * H must be the true entry point of the loop. If any line in the body
-         * has a goto to a target BELOW H, then H is not the real entry — it is
-         * an interior block (e.g. the increment of a for-loop) reachable from
-         * the real header which is above H.
-         *
-         * Example: merged for-loop produces back-edges (H=17,B=21) and (H=19,B=27).
-         * After merge we still have (H=19,B=25) as a sub-loop. The body of (19,25)
-         * includes line 21 "goto 17" (17 < H=19), so H=19 is NOT the true entry.
-         * Processing this loop would:
-         *   1. Insert a preheader at line 19 (inside the real loop), making it
-         *      unreachable on the first entry via the condition check at 17.
-         *   2. Miss assignments that occur between B=25 and the real loop tail
-         *      (e.g. min_idx=j at line 26 is outside B=25), allowing invariant
-         *      checks to wrongly pass for variables that ARE modified in the loop.
-         * Both errors corrupt correctness. Skip such loops entirely. */
-        int valid_header = 1;
-        for (int k = H; k <= B; k++) {
-            if (!body[k] || licm_is_dead(k)) continue;
-            char *gp = strstr(imcode[k], "goto");
-            if (!gp) continue;
-            char *tp = gp+4; while(*tp==' '||*tp=='\t') tp++;
-            if (!isdigit(*tp)) continue;
-            int tgt = atoi(tp);
-            if (tgt < H) { valid_header = 0; break; }
-        }
-        if (!valid_header) continue;
-
-        // ---- Check 4: any Call/PushParam in loop? ----
-        int has_call = 0;
-        for (int i = H; i <= B; i++)
-            if (body[i] && licm_has_call(i)) { has_call=1; break; }
-        if (has_call) continue;
-
-        // ---- Collect invariant candidates ----
-        // We'll gather them first, then insert preheader slots as needed.
-        int cands[200]; int ncands = 0;
-
-        for (int I = H+1; I <= B && ncands < 200; I++) {
-            if (!body[I]) continue;
-            if (licm_is_dead(I)) continue;
-            if (licm_has_side_effect(I)) continue;
-
-            char line[10000]; strcpy(line, imcode[I]);
-            int line_num;
-            char lhs[100], op1[100], op[20], op2[100];
-            int nf = sscanf(line, "%d %s = %s %s %s",
-                            &line_num, lhs, op1, op, op2);
-            if (nf < 3) continue;
-            if (strchr(lhs,'[') != NULL) continue;
-            {
-                char *eq  = strchr(line,'='); if (!eq) continue;
-                char *gp2 = strstr(line,"goto");
-                char *ip2 = strstr(line," if ");
-                if (gp2 && gp2 < eq) continue;
-                if (ip2 && ip2 < eq) continue;
-                if (strstr(line,"Call ") != NULL) continue;
-            }
-            int is_binary = (nf==5), is_unary = (nf==3);
-            if (!is_binary && !is_unary) continue;
-
-            // Check 3: lhs defined only here
-            int multidef = 0;
-            for (int k=H; k<=B; k++) {
-                if (!body[k]||k==I) continue;
-                if (licm_assigns(k,lhs)) { multidef=1; break; }
-            }
-            if (multidef) continue;
-
-            // Check 2: operands not modified anywhere in loop body
-            // (handles plain vars AND array reads like arr[t1])
-            if (licm_operand_modified(H, B, body, op1)) continue;
-            if (is_binary && licm_operand_modified(H, B, body, op2)) continue;
-
-            // Check 5: dominance
-            int dominated = 1;
-            for (int k=H; k<I; k++) {
-                if (!body[k]||licm_is_dead(k)) continue;
-                char kl[10000]; strcpy(kl,imcode[k]);
-                char *ifp2=strstr(kl,"if "), *gp2=strstr(kl,"goto");
-                if (!ifp2||!gp2||ifp2>gp2) continue;
-                char *tp=gp2+4; while(*tp==' '||*tp=='\t') tp++;
-                if (!isdigit(*tp)) continue;
-                int bt=atoi(tp);
-                if (body[bt] && bt >= I) { dominated=0; break; }
-            }
-            if (!dominated) continue;
-
-            cands[ncands++] = I;
-        }
-
-        if (ncands == 0) continue;
-
-        /* ---- Insert preheader slots just before H ----
-           Insert all `ncands` slots at position `first_slot` one at a time.
-           Every insertion shifts H, B, and cand indices up by 1. */
-        int first_slot = H;
-        for (int c = 0; c < ncands; c++) {
-            /* Always insert at first_slot — each insertion pushes previous
-               slots and H one further down, so slots accumulate at
-               [first_slot .. first_slot+c] and H ends at first_slot+ncands */
-            licm_insert_preheader(first_slot);
-            H++;  B++;
-            for (int x = 0; x < nloops; x++) {
-                if (loop_H[x] >= first_slot) loop_H[x]++;
-                if (loop_B[x] >= first_slot) loop_B[x]++;
-            }
-            for (int x = 0; x < ncands; x++)
-                if (cands[x] >= first_slot) cands[x]++;
-        }
-
-        /* Now dead slots are at [first_slot .. first_slot+ncands-1]
-           and H = first_slot + ncands, B shifted accordingly.
-           Recompute body after shifts. */
-        licm_compute_body(H, B, body);
-
-        /* ---- Hoist each candidate into its preheader slot ---- */
-        int slot_idx = first_slot;  /* next slot to fill */
-        int first_slot_used = -1;
-
-        for (int c = 0; c < ncands; c++) {
-            int I = cands[c];
-            int D = slot_idx++;
-
-            if (first_slot_used == -1) first_slot_used = D;
-
-            char line[10000]; strcpy(line, imcode[I]);
-            int line_num;
-            char lhs[100], op1[100], op[20], op2[100];
-            int nf = sscanf(line, "%d %s = %s %s %s",
-                            &line_num, lhs, op1, op, op2);
-            int is_binary = (nf==5);
-
-            /* Write CLEAN instruction — no trailing comment.
-             * The TAC-to-assembly generator parses output.tac line by line;
-             * any "// LICM:" comment on the same line as a real instruction
-             * causes it to misparse or silently skip the instruction,
-             * producing wrong or missing assembly output. */
-            if (is_binary)
-                sprintf(imcode[D], "%d %s = %s %s %s\n",
-                        D, lhs, op1, op, op2);
-            else
-                sprintf(imcode[D], "%d %s = %s\n",
-                        D, lhs, op1);
-
-            /* In-loop NOP: pure comment line — assembly gen skips it safely */
-            sprintf(imcode[I], "%d // LICM: %s hoisted to preheader (line %d)\n",
-                    line_num, lhs, D);
-        }
-
-        if (first_slot_used == -1) continue;
-
-        /* ---- Redirect external gotos from H → first_slot_used ---- */
-        /* Re-recompute body after all insertions */
-        licm_compute_body(H, B, body);
-        for (int E = 0; E < code; E++) {
-            if (body[E]) continue;
-            if (licm_is_dead(E)) continue;
-            char *gp2 = strstr(imcode[E], "goto");
-            if (!gp2) continue;
-            char *tp = gp2+4; while(*tp==' '||*tp=='\t') tp++;
-            if (!isdigit(*tp)) continue;
-            if (atoi(tp) != H) continue;
-            char before[10000];
-            int pfxlen = (int)(tp - imcode[E]);
-            strncpy(before, imcode[E], pfxlen); before[pfxlen]='\0';
-            char *num_end = tp; while(isdigit(*num_end)) num_end++;
-            char newline[10000];
-            snprintf(newline, sizeof(newline), "%s%d%s", before, first_slot_used, num_end);
-            strcpy(imcode[E], newline);
-        }
-    }
-    #undef MAX_LOOPS
 }
 
 
@@ -2617,21 +2077,7 @@ void conservativeJumpChaining() {
 
 
 void redundantJumpElimination() {
-    /* ── Redundant-Jump Elimination ──────────────────────────────────────────
-       Case A – CONDITIONAL jump whose target is the next live instruction:
-           N  if X op Y goto T      (T == next live line after N)
-         Always safe: branch taken or not, execution reaches T.
-
-       Case B1 – UNCONDITIONAL goto where ref_count[T] >= 2:
-         Another live goto already reaches T — fall-through here is a
-         duplicate path, safe to drop.
-
-       Case B2 (all-dead-between) is intentionally handled in a SEPARATE
-       function finalRedundantGotoElimination() which runs AFTER all
-       eliminateDeadCode passes finish.  Reason: killing a sole-predecessor
-       goto under B2 while eliminateDeadCode can still run causes
-       has_live_pred to orphan the target.  The final pass runs after DCE
-       is done so no further orphaning can occur.                            */
+   
 
     /* Pass 1: count how many live gotos point to each line number. */
     int ref_count[10000] = {0};
@@ -2710,15 +2156,6 @@ void redundantJumpElimination() {
     }
 }
 
-/* ── Final-stage B2 redundant-goto elimination ────────────────────────────
-   Called ONCE after all eliminateDeadCode passes have converged.
-   At this point no further DCE will run, so killing a goto whose only path
-   to target is sequential-dead-skip cannot orphan the target.
-
-   Rule: unconditional  N goto T  where every TAC slot between N and T
-   already carries a // DEAD marker.  The backend skips dead lines
-   sequentially, so execution reaches T by fall-through — the goto is
-   a no-op that can be marked dead for display clarity.                     */
 void finalRedundantGotoElimination() {
     for (int i = 0; i < code; i++) {
         if (strstr(imcode[i], "// DEAD") != NULL) continue;
@@ -2735,14 +2172,7 @@ void finalRedundantGotoElimination() {
         if (!isdigit(*tp)) continue;
         int target = atoi(tp);
 
-        /* A goto is redundant if every slot between it (exclusive) and the
-           target (exclusive) carries a // DEAD marker.  The backend skips
-           dead lines sequentially, so execution naturally reaches target
-           after this goto — the explicit jump is a no-op.
-           This covers both the adjacent case (nothing between) and the
-           non-adjacent case (several dead slots between).
-           We do NOT require target == i+1; the all_dead_between scan is
-           the complete and sufficient condition.                           */
+        
         if (i + 1 >= code) continue;
 
         /* Verify target slot actually exists and lies ahead */
@@ -2970,15 +2400,7 @@ void deadVariableElimination() {
         if (used[i] == 0 && strstr(imcode[i], "// DEAD") == NULL) {
             char line[10000]; strcpy(line, imcode[i]);
 
-            /* ── Guard 1: must be a genuine assignment line.
-               sscanf("%*d %s =", lhs) returns 1 even for "goto", "printint",
-               "Return" etc. because glibc counts assigned items (%s succeeds)
-               regardless of whether the trailing literal '=' ever matched.
-               We therefore require that the line actually contains ' = '
-               (space-equals-space) OR ends with '= ...' pattern, i.e. the
-               character AFTER the LHS token is ' ' followed by '='.
-               Simplest robust check: find the '=' in the line and confirm
-               the token immediately before it is the LHS, not a keyword.   */
+           
             char* eq = strchr(line, '=');
             if (!eq) continue;                        /* no '=' → not an assignment */
 
@@ -3015,11 +2437,7 @@ void deadVariableElimination() {
 
 
 void eliminateDeadCode() {
-    /* BUILD JUMP TARGET TABLE from LIVE lines only.
-       Dead lines (any // DEAD variant) that happen to contain "goto N"
-       in their comment text must NOT register N as a jump target —
-       otherwise pass 2 stops there and leaves genuinely unreachable code
-       alive.                                                              */
+ 
     int is_jump_target[10000] = {0};
     for (int i = 0; i < code; i++) {
         if (strstr(imcode[i], "// DEAD") != NULL) continue;   /* all variants */
@@ -3030,11 +2448,7 @@ void eliminateDeadCode() {
             if (isdigit(*ptr)) { int target = atoi(ptr); if (target >= 0 && target < code) is_jump_target[target] = 1; }
         }
     }
-    /* ── Pass: mark unreachable code after unconditional jumps ────────────
-       After any live unconditional goto/Return, every following slot is
-       unreachable UNLESS a live goto points to it (is_jump_target[j]==1).
-       We iterate to convergence because killing a slot may expose new dead
-       gotos, which stop protecting their targets.                         */
+   
     int changed = 1;
     while (changed) {
         changed = 0;
@@ -3638,21 +3052,7 @@ if(strstr($3->type, "[") != NULL) {
         | IF '(' BOOLEXPR ')' M  A {if (!e){
             backpatch($3->T, $5);
             $$ = createBoolNode();
-            /* Fall-through optimisation for if(cond){break} / if(cond){continue}.
-             * When the body exits only via break or continue, its sole
-             * instruction is an unpatched  goto _  (the B or C node).
-             * Instead of:
-             *   if neg(cond) goto SKIP   <- skip body on false
-             *   goto _                   <- break / continue
-             * SKIP:
-             * We want ONE instruction:
-             *   if orig(cond) goto _     <- jump on TRUE to break/continue target
-             * false falls through naturally -- no skip, no extra goto.
-             *
-             * The break/continue goto was the LAST instruction emitted
-             * (code-1).  We roll back code-- to un-emit it, then reuse
-             * the condition instruction slot (already emitted earlier)
-             * by flipping it to jump-on-TRUE.                          */
+            
             int bonly = ($6->N == NULL && $6->C == NULL && $6->B != NULL);
             int conly = ($6->N == NULL && $6->B == NULL && $6->C != NULL);
             if ((bonly || conly)
@@ -3709,10 +3109,7 @@ if(strstr($3->type, "[") != NULL) {
         loop_depth--;
         backpatch($4->N, $6);
         backpatch($4->C, $6);
-        /* BOOLEXPR emitted "if neg(rel) goto _" with T=FALL_THROUGH, F=jump.
-           For do-while we want: true → jump back to body start, false → fall through to exit.
-           flipCondToTrue re-negates → "if orig_rel goto _" now jumps on TRUE.
-           Backpatch F (the instruction node) to $2 (body start).             */
+       
         flipCondToTrue($8->F->addr);
         backpatch($8->F, $2);       /* true → loop back to body start */
         backpatch($4->B, code);     /* break → exit (falls through here) */
@@ -3722,20 +3119,11 @@ if(strstr($3->type, "[") != NULL) {
 }
      | FOR '(' ASNEXPR '$' M BOOLEXPR
     {
-        /* New layout:  INIT -> COND -> BODY (fall-through on true) -> INCR -> goto COND
-         * BOOLEXPR already emitted "if neg(cond) goto _" with T=FALL_THROUGH.
-         * True falls straight into BODY -- zero extra goto needed.
-         * We stash the INCREMENT instructions parsed next, splice them
-         * AFTER the body, then emit goto cond_start.
-         *
-         * $<addr>$ holds the code counter BEFORE increment is parsed.   */
+       
         $<addr>$ = code;   /* incr_start_saved = current code position   */
     }
     '$' M ASNEXPR
     {
-        /* INCR has just been emitted into imcode[incr_start_saved .. code-1].
-         * Stash those lines into a side-buffer and roll code back so
-         * BODY will be emitted starting at incr_start_saved.            */
         int incr_start = $<addr>7;   /* saved before ASNEXPR was parsed  */
         int incr_end   = code;       /* one-past the last incr line       */
         int incr_count = incr_end - incr_start;
@@ -3950,7 +3338,7 @@ DECLSTATEMENT: TYPE DECLLIST '$' {
                             temp->key, temp->size, init_count);
                 }
 
-                /* NEW: Check each array element for range overflow */
+                /*  Check each array element for range overflow */
                 char check_copy[1000]; strcpy(check_copy, temp->op);
                 char* check_token = strtok(check_copy, ",");
                 int check_idx = 0;
@@ -4408,12 +3796,7 @@ BOOLEXPR:
          BOOLEXPR OR M BOOLEXPR {
              if (!e){
                  $$ = createBoolNode();
-                 /* OR: B1-true must jump OVER B2; B1-false must fall through INTO B2.
-                  * B1 was emitted as "if neg(rel) goto _" with T=FALL_THROUGH, F=jump.
-                  * That means it currently jumps on FALSE — wrong polarity for OR left.
-                  * Fix: call flipCondToTrue to re-negate → now jumps on TRUE.
-                  * Swap T↔F nodes so T=jump (true exits OR to body) F=FALL_THROUGH
-                  * (false falls into B2 naturally).                              */
+              
                  struct Node* b1_T = $1->T;
                  struct Node* b1_F = $1->F;
 
@@ -4445,9 +3828,7 @@ BOOLEXPR:
                 if (!e){ $$ = createBoolNode(); $$->T = $2->T; $$->F = $2->F; }
         }
         | EXPR LT EXPR  {if(!e) {
-                /* Emit  "if op1 >= op2 goto _"  (negated op, jump on FALSE).
-                   Semantics identical to old ifFalse — only TAC text changes.
-                   T = FALL_THROUGH (true falls through), F = jump node. */
+               
                 $$ = createBoolNode();
                 sprintf(imcode[code],"%d if %s >= %s goto ",code,$1->str,$3->str);
                 $$->F = createNode(code); code++;
@@ -6097,10 +5478,7 @@ int main(int argc, char* argv[]) {
         raw[fsize] = '\0';
         fclose(f);
 
-        /* Preprocess:
-           - strip carriage returns (\r) so Windows files work
-           - ensure a space before and after every '$' so "2$" lexes as NUM + '$'
-           - ensure file ends with a newline so flex sees a clean EOF */
+       
         char* clean = (char*)malloc(fsize * 3 + 4);
         if (!clean) { free(raw); return 1; }
         int j = 0;
@@ -6120,7 +5498,7 @@ int main(int argc, char* argv[]) {
         free(raw);
 
         memset(imcode, 0, sizeof(imcode));
-        yy_scan_string(clean);  /* feed preprocessed source to lexer */
+        yy_scan_string(clean);  
         yyparse();
         free(clean);
     }
