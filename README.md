@@ -7,9 +7,9 @@ make
 
 #### Run the parser
 ./parser
-
 ./parser ../test_cases/test1_basic_decls.txt
 
+# compiler
 sudo apt install graphviz
-
+chmod +x compiler
 ./compiler ../demo/temp
