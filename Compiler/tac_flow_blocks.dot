@@ -1,0 +1,29 @@
+digraph TAC_Blocks {
+  node [shape=record, style=filled, fillcolor=lightblue];
+  rankdir=TB;
+
+  bb9 [label="{<b>Block 9|29 t6 = a + b\l30 x = t6\l31 d = 5\l32 d = 10\l33 printint d\l34 inputint p\l35 t7 = p * 16\l36 p = t7\l37 printint a\l38 printint c\l39 printint p\l40 Return 0\l41 a = 100\l42 printint a\l43 EndFunc main\l}"];
+  bb8 [label="{<b>Block 8|27 p = 0\l28 printint 2\l}"];
+  bb7 [label="{<b>Block 7|26 if 6 \<= 5 goto 29\l}"];
+  bb6 [label="{<b>Block 6|24 z = 0\l25 printint 999\l}"];
+  bb5 [label="{<b>Block 5|23 if a \<= 0 goto 26\l}"];
+  bb4 [label="{<b>Block 4|22 goto 26\l}"];
+  bb3 [label="{<b>Block 3|20 y = 0\l21 printint 1\l}"];
+  bb2 [label="{<b>Block 2|19 if c \<= 10 goto 22\l}"];
+  bb1 [label="{<b>Block 1|1 a = 14\l2 a = a\l3 b = a\l4 t0 = b + 1\l5 c = t0\l6 b = a\l7 a = b\l8 t1 = a + b\l9 d = t1\l10 t2 = a + b\l11 x = t2\l12 t3 = a * 1\l13 a = t3\l14 t4 = b + 0\l15 b = t4\l16 t5 = x * 2\l17 c = t5\l18 goto 19\l}"];
+  bb0 [label="{<b>Block 0|0 BeginFunc main 0\l}"];
+
+  // Control flow edges
+  bb0 -> bb1 [style=dashed, color=gray];
+  bb1 -> bb2 [label="goto", penwidth=2];
+  bb2 -> bb4 [label="T", color=green, penwidth=2];
+  bb2 -> bb3 [label="F", color=red, penwidth=2];
+  bb3 -> bb4 [style=dashed, color=gray];
+  bb4 -> bb7 [label="goto", penwidth=2];
+  bb5 -> bb7 [label="T", color=green, penwidth=2];
+  bb5 -> bb6 [label="F", color=red, penwidth=2];
+  bb6 -> bb7 [style=dashed, color=gray];
+  bb7 -> bb9 [label="T", color=green, penwidth=2];
+  bb7 -> bb8 [label="F", color=red, penwidth=2];
+  bb8 -> bb9 [style=dashed, color=gray];
+}
