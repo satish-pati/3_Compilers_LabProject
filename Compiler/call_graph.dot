@@ -1,0 +1,27 @@
+digraph CallGraph {
+  node [shape=record, style=filled, fillcolor=lightblue];
+  rankdir=TB;
+  concentrate=true;
+
+  "main" [fillcolor=lightblue, label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD BGCOLOR="lightblue"><FONT COLOR="black"><B>main</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>Returns:</B> int</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>Params:</B> void</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>TAC Lines:</B> 42 (Complex)</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>Called:</B> 0 times</TD></TR>
+    </TABLE>
+  >];
+
+
+  // Call relationships
+
+  // Legend
+  legend [shape=none, margin=0, label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+      <TR><TD>Black edge</TD><TD>Called 1-2 times</TD></TR>
+      <TR><TD><FONT COLOR="orange">Orange edge</FONT></TD><TD>Called 3-5 times</TD></TR>
+      <TR><TD><FONT COLOR="red">Red edge</FONT></TD><TD>Called 6+ times</TD></TR>
+    </TABLE>
+  >];
+}
