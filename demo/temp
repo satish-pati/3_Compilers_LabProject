@@ -26,7 +26,7 @@ func @int main() {
 
     # boolean simplification
     if (true and c gt 10) {
-        @int y=0 $
+        @int y=0$
         show(1) $
     }
 

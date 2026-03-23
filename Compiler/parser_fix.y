@@ -2669,7 +2669,7 @@ S:      {top = create_env(top,0);} PROGRAM M MEOF{
                                 generateSymbolTableDOT();
         generateTACFlowDOT();
         generateTACFlowWithBlocks();
-        //generateCallGraphDOT();
+        generateCallGraphDOT();
         generateAllImages();
           printf("\noptmized Three Address :\n\n");
  for (int pass = 0; pass < 15; pass++) {
@@ -5472,7 +5472,7 @@ void generateCallGraphDOT() {
 void generateAllImages() {
     system("dot -Tpng tac_flow.dot -o tac_flow.png 2>/dev/null");
     system("dot -Tpng tac_flow_blocks.dot -o tac_flow_blocks.png 2>/dev/null");
-   // system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
+   system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
    system("dot -Tpng symbol_table.dot -o symbol_table.png 2>/dev/null");
 }
 

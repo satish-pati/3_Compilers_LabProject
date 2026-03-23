@@ -67,7 +67,7 @@
 
 
 /* First part of user prologue.  */
-#line 1 "parser_fix.y"
+#line 2 "parser.y"
 
 #include<stdio.h>
 #include<string.h>
@@ -83,11 +83,6 @@ int label=0;
 char* genvar();
 char imcode[10000][10000];
 int code=0;
-#define FOR_STASH_DEPTH 16
-#define FOR_STASH_SLOTS 64
-static char for_incr_stash[FOR_STASH_DEPTH][FOR_STASH_SLOTS][10000];
-static int  for_incr_count[FOR_STASH_DEPTH];
-static int  for_incr_sp = 0;  /* stack pointer: next free slot */
 int offset=0;
 int saveoffset;
 int string_count = 0;
@@ -268,36 +263,6 @@ struct Node* merge(struct Node* a,struct Node* b){
         return a;
 }
 
-
-#define FALL_THROUGH (-1)
-
-/* Return the negated relational operator string */
-static const char* negateOp(const char* op) {
-    if (strcmp(op,"<")  == 0) return ">=";
-    if (strcmp(op,">")  == 0) return "<=";
-    if (strcmp(op,"<=") == 0) return ">";
-    if (strcmp(op,">=") == 0) return "<";
-    if (strcmp(op,"==") == 0) return "!=";
-    if (strcmp(op,"!=") == 0) return "==";
-    return op;
-}
-
-
-static int flipCondToTrue(int line_idx) {
-    char* line = imcode[line_idx];
-    /* Line format: "N if op1 rel op2 goto " (no ifFalse any more) */
-    char* p = strstr(line, " if ");
-    if (!p) return 0;
-    int   lnum;
-    char  op1[200], rel[10], op2[200];
-    if (sscanf(line, "%d if %s %s %s goto", &lnum, op1, rel, op2) != 4)
-        return 0;
-    /* Double-negate: neg(neg(rel)) == original rel → now jumps when TRUE */
-    const char* orig_rel = negateOp(rel);
-    sprintf(line, "%d if %s %s %s goto ", lnum, op1, orig_rel, op2);
-    return 1;
-}
-
 int checkfloat(char* t){
         while(*t){
                 if (*t=='.') return 1;
@@ -308,10 +273,6 @@ int checkfloat(char* t){
 
 void backpatch(struct Node* a,int addr){
         while(a!=NULL){
-                /* Skip fall-through sentinels — no instruction was emitted,
-                   so there is nothing to patch; the true branch already falls
-                   through to the correct target. */
-                if (a->addr == FALL_THROUGH) { a = a->next; continue; }
                 int len = strlen(imcode[a->addr]);
                 if (imcode[a->addr][len-1] != '\n') {
                     sprintf(imcode[a->addr] + len, "%d\n", addr);
@@ -1186,21 +1147,6 @@ void deadStoreElimination() {
 
 
 void redundantLoadElimination() {
-    /* Build jump-target table: any line that is a goto destination is a
-       join point. Replacing across a join point is unsafe because a path
-       that bypasses the definition may reach the join with a stale value. */
-    int is_jump_target[10000] = {0};
-    for (int ii = 0; ii < code; ii++) {
-        if (strstr(imcode[ii], "// DEAD") != NULL) continue;
-        char *gp = strstr(imcode[ii], "goto");
-        if (!gp) continue;
-        char *tp = gp + 4; while (*tp == ' ' || *tp == '\t') tp++;
-        if (isdigit((unsigned char)*tp)) {
-            int tgt = atoi(tp);
-            if (tgt >= 0 && tgt < code) is_jump_target[tgt] = 1;
-        }
-    }
-
     for (int i = 0; i < code - 1; i++) {
         if (strstr(imcode[i], "// DEAD") != NULL) continue;
         char line[10000]; strcpy(line, imcode[i]);
@@ -1231,11 +1177,6 @@ void redundantLoadElimination() {
                     strstr(imcode[j], "Return")    != NULL ||
                     strstr(imcode[j], "BeginFunc") != NULL ||
                     strstr(imcode[j], "EndFunc")   != NULL) break;
-
-                /* Stop at join points: if j is a goto target, a path that
-                   bypasses line i can arrive here with a different value for
-                   lhs — replacing rhs with lhs is unsafe across this boundary. */
-                if (is_jump_target[j]) break;
 
                 char jline[10000]; strcpy(jline, imcode[j]);
                 int j_line_num; char j_lhs[100], j_rhs[100];
@@ -1279,8 +1220,6 @@ void redundantLoadElimination() {
     }
 }
 
-
-
 void peepholeOptimization() {
     for (int i = 0; i < code - 1; i++) {
         if (strstr(imcode[i], "// DEAD") != NULL) continue;
@@ -1298,7 +1237,7 @@ void peepholeOptimization() {
                 strchr(rhs2,'+') == NULL && strchr(rhs2,'-') == NULL &&
                 strchr(rhs2,'*') == NULL && strchr(rhs2,'/') == NULL) {
                 if (strcmp(lhs1, rhs2) == 0 && strcmp(rhs1, lhs2) == 0)
-                    sprintf(imcode[i+1], "%d // PEEPHOLE: %s = %s (redundant peephole)\n", line_num2, lhs2, rhs2);
+                    sprintf(imcode[i+1], "%d // PEEPHOLE: %s = %s (redundant swap)\n", line_num2, lhs2, rhs2);
             }
         }
     }
@@ -1327,7 +1266,7 @@ void peepholeOptimization() {
                     if (strcmp(check_lhs, lhs) == 0) {
                         if (strcmp(check_rhs, rhs) == 0) {
                             int check_line_num; sscanf(imcode[j], "%d", &check_line_num);
-                            sprintf(imcode[j], "%d // PEEPHOLE: %s = %s (redundant peephole)\n", check_line_num, check_lhs, check_rhs);
+                            sprintf(imcode[j], "%d // PEEPHOLE: %s = %s (redundant reassignment)\n", check_line_num, check_lhs, check_rhs);
                         }
                         break;
                     }
@@ -1478,26 +1417,6 @@ void constantFoldConditionals() {
         if (sscanf(line, "%d if %[^\n]", &line_num, cond) == 2) {
             char op1[100], op[10], op2[100], rest[100];
             if (sscanf(cond, "%s %s %s %[^\n]", op1, op, op2, rest) == 4) {
-           
-                int is_loop_header = 0;
-                for (int j = i + 1; j < code; j++) {
-                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
-                    char* gp = strstr(imcode[j], "goto");
-                    if (!gp) continue;
-                    /* Skip conditional gotos — only unconditional back-edges
-                       reliably mark loop headers.  Conditional back-edges
-                       also form loops; check both.                          */
-                    char* tp = gp + 4;
-                    while (*tp == ' ' || *tp == '\t') tp++;
-                    if (!isdigit(*tp)) continue;
-                    int target = atoi(tp);
-                    if (target <= i) {          /* backward branch → loop */
-                        is_loop_header = 1;
-                        break;
-                    }
-                }
-                if (is_loop_header) continue;  /* never fold loop conditions */
-
                 // Try to resolve operands to their constant values
                 char resolved_op1[100], resolved_op2[100];
                 strcpy(resolved_op1, op1);
@@ -1508,8 +1427,7 @@ void constantFoldConditionals() {
                 // Look up op1 if it's a variable
                 if (!isNumericConstant(op1)) {
                     int assignment_count = 0;
-                   
-                    for (int j = 0; j < i; j++) {
+                    for (int j = 0; j < code; j++) {
                         if (strstr(imcode[j], "// DEAD") != NULL) continue;
                         char check_line[10000]; strcpy(check_line, imcode[j]);
                         char lhs[100];
@@ -1554,9 +1472,7 @@ void constantFoldConditionals() {
                 // Look up op2 if it's a variable
                 if (!isNumericConstant(op2)) {
                     int assignment_count = 0;
-                    /* Same dominance restriction as op1: scan [0..i) only.
-                       Loop headers already excluded above. */
-                    for (int j = 0; j < i; j++) {
+                    for (int j = 0; j < code; j++) {
                         if (strstr(imcode[j], "// DEAD") != NULL) continue;
                         char check_line[10000]; strcpy(check_line, imcode[j]);
                         char lhs[100];
@@ -1628,16 +1544,9 @@ void constantFoldConditionals() {
 
 
 
-
-
-
-
-
 void copyPropagation() {
     int is_jump_target[10000] = {0};
-  
     for (int i = 0; i < code; i++) {
-        if (strstr(imcode[i], "// DEAD") != NULL) continue;
         if (strstr(imcode[i], "goto") != NULL) {
             char* goto_ptr = strstr(imcode[i], "goto");
             char* ptr = goto_ptr + 4;
@@ -1645,11 +1554,6 @@ void copyPropagation() {
             if (isdigit(*ptr)) { int target = atoi(ptr); if (target >= 0 && target < code) is_jump_target[target] = 1; }
         }
     }
-
-
-
-
-
     for (int i = 0; i < code; i++) {
         if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
         char line[10000]; strcpy(line, imcode[i]);
@@ -1662,28 +1566,7 @@ void copyPropagation() {
                 strchr(rhs,'%')!=NULL||strchr(rhs,'&')!=NULL||strchr(rhs,'|')!=NULL||strchr(rhs,'^')!=NULL||
                 strchr(rhs,'<')!=NULL||strchr(rhs,'>')!=NULL||strchr(rhs,'~')!=NULL||strchr(rhs,'(')!=NULL||
                 strstr(rhs,"Call")!=NULL||strstr(rhs,"PopParam")!=NULL||strstr(rhs,"PushParam")!=NULL) continue;
-            if (is_jump_target[i]) {
-              
-                int has_live_seq_pred = 0;
-                if (i > 0) {
-                    /* Find the previous live line */
-                    for (int k = i - 1; k >= 0; k--) {
-                        if (strstr(imcode[k], "// DEAD") != NULL) continue;
-                        /* k is the nearest live predecessor.
-                           If it is an unconditional jump or Return, it cannot
-                           fall through to i — no sequential predecessor.      */
-                        char* gp = strstr(imcode[k], "goto");
-                        char* ip = strstr(imcode[k], " if ");
-                        int is_uncond_jump =
-                            (gp != NULL && (ip == NULL || ip > gp)) ||
-                            strstr(imcode[k], "Return") != NULL;
-                        if (!is_uncond_jump) has_live_seq_pred = 1;
-                        break;
-                    }
-                }
-                if (has_live_seq_pred) continue;   /* true join point — skip */
-                /* else: only gotos reach i, not a join — allow propagation */
-            }
+            if (is_jump_target[i]) continue;
             int func_start = i, func_end = code;
             for (int k = i; k >= 0; k--) { if (strstr(imcode[k], "BeginFunc") != NULL) { func_start = k; break; } }
             for (int k = i; k < code; k++) { if (strstr(imcode[k], "EndFunc") != NULL) { func_end = k; break; } }
@@ -1803,41 +1686,20 @@ if (isalnum(after) || after == '_' || after == '\'') is_whole = 0;
                 int has_use_at_jump_target = 0;
                 for (int j = i + 1; j <= last_use_line && j < code; j++) {
                     if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
-                    if (!is_jump_target[j]) continue;
-                    /* j is a live join point — check if lhs is used here */
-                    char check_line[10000]; strcpy(check_line, imcode[j]);
-                    int lhs_used_here = 0;
-                    if (strstr(check_line, lhs) != NULL) {
-                        char* pos = strstr(check_line, lhs);
-                        while (pos) {
-                            int is_whole = 1;
-                            if (pos > check_line && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole = 0;
-                            char after = *(pos + strlen(lhs));
-                            if (isalnum(after) || after == '_' || after == '\'') is_whole = 0;
-                            if (is_whole) { lhs_used_here = 1; break; }
-                            pos = strstr(pos + 1, lhs);
+                    if (is_jump_target[j]) {
+                        char check_line[10000]; strcpy(check_line, imcode[j]);
+                        if (strstr(check_line, lhs) != NULL) {
+                            char* pos = strstr(check_line, lhs);
+                            while (pos) {
+                                int is_whole = 1;
+                                if (pos > check_line && (isalnum(*(pos-1)) || *(pos-1) == '_' || *(pos-1) == '\'')) is_whole = 0;
+char after = *(pos + strlen(lhs));
+if (isalnum(after) || after == '_' || after == '\'') is_whole = 0;
+
+                                if (is_whole) { has_use_at_jump_target = 1; break; }
+                                pos = strstr(pos + 1, lhs);
+                            }
                         }
-                    }
-                    if (!lhs_used_here) continue;
-                    /* lhs is used at this join point j.  Only unsafe if there
-                       exists a live goto that reaches j from BEFORE the
-                       definition at i — meaning a path that BYPASSED line i
-                       and could carry a different value for lhs.
-                       If every live goto to j comes from AFTER i (i.e.
-                       goto_source > i), every path went through i first and
-                       carries the same value — propagation is safe.         */
-                    for (int k = 0; k < code; k++) {
-                        if (strstr(imcode[k], "// DEAD") != NULL) continue;
-                        char* gp = strstr(imcode[k], "goto");
-                        if (!gp) continue;
-                        char* tp = gp + 4;
-                        while (*tp == ' ' || *tp == '\t') tp++;
-                        if (!isdigit(*tp)) continue;
-                        int gtgt = atoi(tp);
-                        if (gtgt != j) continue;
-                        /* Found a live goto to j from line k.
-                           If k < i, this path bypassed the definition. */
-                        if (k < i) { has_use_at_jump_target = 1; break; }
                     }
                     if (has_use_at_jump_target) break;
                 }
@@ -1888,16 +1750,11 @@ if (isalnum(after) || after == '_' || after == '\'') is_whole = 0;
                     }
                     if (inside_branch) continue;
                 }
-               
-                int is_user_var = !(lhs[0] == 't' && isdigit((unsigned char)lhs[1]));
-
                 for (int j = i + 1; j <= last_use_line && j < code && j < safe_limit; j++) {
                     if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
                     char new_line[10000]; strcpy(new_line, imcode[j]);
                     char* equals_sign = strchr(new_line, '=');
                     if (equals_sign == NULL) {
-                      
-                        if (is_user_var) continue;
                         char* line_num_end = strchr(new_line, ' ');
                         char* search_start = line_num_end ? line_num_end + 1 : new_line;
                         char* pos = strstr(search_start, lhs);
@@ -1965,12 +1822,19 @@ if (isalnum(after) || after == '_' || after == '\'') is_whole_word = 0;
             */                }
                 // Don't mark as DEAD COPY - keep the source definition
             } else if (!is_used && is_constant) {
-             
+                /* Before marking as DEAD CONST, do a full scan of the entire
+                   function to make sure lhs is truly never READ anywhere after
+                   this point. safe_limit may have cut the search short (stopped
+                   at first_modification), missing a printint/return further down. */
                 int globally_used = 0;
                 for (int j = i + 1; j < func_end; j++) {
                     if (strstr(imcode[j], "// DEAD CODE:") != NULL) continue;
                     char check_line[10000]; strcpy(check_line, imcode[j]);
-                   
+                    /* Only count lhs as "used" when it appears on the READ side.
+                       For an assignment "N lhs = ...", lhs on the LHS is a write,
+                       not a read — skip those. We check reads by looking at:
+                         - print/if/goto lines (no '=' before lhs)
+                         - the RHS of assignment lines (after the '=')           */
                     char* eq = strchr(check_line, '=');
                     char* search_start;
                     if (eq == NULL) {
@@ -2013,6 +1877,7 @@ void booleanSimplification() {
 
         if (sscanf(line, "%d %s = %s %s %s", &line_num, result, op1, op, op2) == 5) {
 
+            /* ── && (logical AND) ─────────────────────────────────────── */
 
             /* true && x  →  x */
             if (strcmp(op,"&&")==0 && strcmp(op1,"1")==0){
@@ -2030,7 +1895,7 @@ void booleanSimplification() {
             if (strcmp(op,"&&")==0 && strcmp(op1,op2)==0){
                 sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
 
-            /*  || (logical OR)  */
+            /* ── || (logical OR) ─────────────────────────────────────── */
 
             /* false || x  →  x */
             if (strcmp(op,"||")==0 && strcmp(op1,"0")==0){
@@ -2048,7 +1913,7 @@ void booleanSimplification() {
             if (strcmp(op,"||")==0 && strcmp(op1,op2)==0){
                 sprintf(imcode[i],"%d %s = %s\n",line_num,result,op1); continue; }
 
-            /*  == (equality)  */
+            /* ── == (equality) ───────────────────────────────────────── */
 
             /* x == x  →  1 */
             if (strcmp(op,"==")==0 && strcmp(op1,op2)==0){
@@ -2058,7 +1923,7 @@ void booleanSimplification() {
                 int r = (atof(op1) == atof(op2));
                 sprintf(imcode[i],"%d %s = %d\n",line_num,result,r); continue; }
 
-            /*  != (not-equal)  */
+            /* ── != (not-equal) ──────────────────────────────────────── */
 
             /* x != x  →  0 */
             if (strcmp(op,"!=")==0 && strcmp(op1,op2)==0){
@@ -2070,6 +1935,7 @@ void booleanSimplification() {
         }
     }
 }
+
 
 
 
@@ -2144,135 +2010,6 @@ void conservativeJumpChaining() {
     }
 }
 
-
-
-
-void redundantJumpElimination() {
-   
-
-    /* Pass 1: count how many live gotos point to each line number. */
-    int ref_count[10000] = {0};
-    for (int i = 0; i < code; i++) {
-        if (strstr(imcode[i], "// DEAD") != NULL) continue;
-        char* p = imcode[i];
-        char* gp;
-        while ((gp = strstr(p, "goto")) != NULL) {
-            char* tp = gp + 4;
-            while (*tp == ' ' || *tp == '\t') tp++;
-            if (isdigit(*tp)) {
-                int t = atoi(tp);
-                if (t >= 0 && t < code) ref_count[t]++;
-            }
-            p = gp + 1;
-        }
-    }
-
-    /* Pass 2: eliminate redundant jumps. */
-    for (int i = 0; i < code; i++) {
-        if (strstr(imcode[i], "// DEAD") != NULL) continue;
-
-        char* goto_ptr = strstr(imcode[i], "goto");
-        if (!goto_ptr) continue;
-
-        char* tp = goto_ptr + 4;
-        while (*tp == ' ' || *tp == '\t') tp++;
-        if (!isdigit(*tp)) continue;
-        int target = atoi(tp);
-
-        char* if_ptr = strstr(imcode[i], " if ");
-        int is_conditional = (if_ptr != NULL && if_ptr < goto_ptr);
-
-        /* Find the target slot and verify all slots between here and target
-           are dead.  This handles both adjacent (target == i+1) and
-           non-adjacent (dead slots between) cases.                        */
-        if (i + 1 >= code) continue;
-        int target_idx = -1;
-        for (int j = i + 1; j < code; j++) {
-            int jlnum = -1;
-            sscanf(imcode[j], "%d", &jlnum);
-            if (jlnum == target) { target_idx = j; break; }
-        }
-        if (target_idx == -1) continue;
-
-        int all_dead_between = 1;
-        for (int j = i + 1; j < target_idx; j++) {
-            if (strstr(imcode[j], "// DEAD") == NULL) { all_dead_between = 0; break; }
-        }
-        if (!all_dead_between) continue;
-
-        /* Case A – conditional: always safe to remove (branch taken or not,
-           execution reaches target since all intermediate slots are dead). */
-        if (is_conditional) {
-            int lnum; sscanf(imcode[i], "%d", &lnum);
-            char original[10000]; strcpy(original, imcode[i]);
-            char* space_ptr = strchr(original, ' ');
-            if (space_ptr) {
-                space_ptr++;
-                sprintf(imcode[i], "%d // DEAD CODE: %s", lnum, space_ptr);
-            }
-            continue;
-        }
-
-        /* Case B1 – unconditional, another live jump also reaches target */
-        if (ref_count[target] >= 2) {
-            int lnum; sscanf(imcode[i], "%d", &lnum);
-            char original[10000]; strcpy(original, imcode[i]);
-            char* space_ptr = strchr(original, ' ');
-            if (space_ptr) {
-                space_ptr++;
-                sprintf(imcode[i], "%d // DEAD CODE: %s", lnum, space_ptr);
-            }
-        }
-        /* B2 (sole predecessor, all dead between) handled in finalRedundantGotoElimination() */
-    }
-}
-
-void finalRedundantGotoElimination() {
-    for (int i = 0; i < code; i++) {
-        if (strstr(imcode[i], "// DEAD") != NULL) continue;
-
-        char* goto_ptr = strstr(imcode[i], "goto");
-        if (!goto_ptr) continue;
-
-        /* Unconditional only */
-        char* if_ptr = strstr(imcode[i], " if ");
-        if (if_ptr && if_ptr < goto_ptr) continue;
-
-        char* tp = goto_ptr + 4;
-        while (*tp == ' ' || *tp == '\t') tp++;
-        if (!isdigit(*tp)) continue;
-        int target = atoi(tp);
-
-        
-        if (i + 1 >= code) continue;
-
-        /* Verify target slot actually exists and lies ahead */
-        int target_idx = -1;
-        for (int j = i + 1; j < code; j++) {
-            int jlnum = -1;
-            sscanf(imcode[j], "%d", &jlnum);
-            if (jlnum == target) { target_idx = j; break; }
-        }
-        if (target_idx == -1) continue;   /* target not found ahead — skip */
-
-        /* Check every slot between goto and target is dead */
-        int all_dead_between = 1;
-        for (int j = i + 1; j < target_idx; j++) {
-            if (strstr(imcode[j], "// DEAD") == NULL) { all_dead_between = 0; break; }
-        }
-        if (!all_dead_between) continue;
-
-        /* Safe to remove */
-        int lnum; sscanf(imcode[i], "%d", &lnum);
-        char original[10000]; strcpy(original, imcode[i]);
-        char* space_ptr = strchr(original, ' ');
-        if (space_ptr) {
-            space_ptr++;
-            sprintf(imcode[i], "%d // DEAD CODE: %s", lnum, space_ptr);
-        }
-    }
-}
-    
 
 void constantFolding() {
     for (int i = 0; i < code; i++) {
@@ -2374,8 +2111,7 @@ void deadVariableElimination() {
         if (strstr(imcode[i], "// DEAD") != NULL) continue;
         char line[10000]; strcpy(line, imcode[i]);
         if (strstr(line,"print")!=NULL||strstr(line,"Return")!=NULL||strstr(line,"PushParam")!=NULL||
-            strstr(line,"Call")!=NULL||strstr(line,"if")!=NULL||
-            strstr(line,"inputint")!=NULL||strstr(line,"inputfloat")!=NULL||strstr(line,"inputchar")!=NULL) {
+            strstr(line,"Call")!=NULL||strstr(line,"if")!=NULL) {
             char* ptr = line;
             while (*ptr) {
                 if (isalpha(*ptr) || *ptr == '_') {
@@ -2386,8 +2122,7 @@ void deadVariableElimination() {
                         strcmp(var,"printint")==0||strcmp(var,"printfloat")==0||strcmp(var,"printchar")==0||
                         strcmp(var,"printstring")==0||strcmp(var,"Return")==0||strcmp(var,"Call")==0||
                         strcmp(var,"PushParam")==0||strcmp(var,"PopParam")==0||strcmp(var,"BeginFunc")==0||
-                        strcmp(var,"EndFunc")==0||strcmp(var,"inputint")==0||strcmp(var,"inputfloat")==0||
-                        strcmp(var,"inputchar")==0) continue;
+                        strcmp(var,"EndFunc")==0) continue;
                     for (int j = 0; j < code; j++) {
                         if (strstr(imcode[j], "// DEAD") != NULL) continue;
                         char check_line[10000]; strcpy(check_line, imcode[j]);
@@ -2445,62 +2180,18 @@ void deadVariableElimination() {
             }
         }
     }
-    /* Build a set of variables fed by inputint/inputfloat/inputchar.
-       Those assignment lines have I/O side-effects and must never be
-       eliminated even when the value is never read.                   */
-    int inputio_line[10000] = {0};
-    for (int i = 0; i < code; i++) {
-        if (strstr(imcode[i], "// DEAD") != NULL) continue;
-        if (strstr(imcode[i], "inputint")   != NULL ||
-            strstr(imcode[i], "inputfloat") != NULL ||
-            strstr(imcode[i], "inputchar")  != NULL) {
-            char iline[10000]; strcpy(iline, imcode[i]);
-            char keyword[50], varname[100];
-            if (sscanf(iline, "%*d %s %s", keyword, varname) == 2) {
-                for (int j = 0; j < code; j++) {
-                    if (strstr(imcode[j], "// DEAD") != NULL) continue;
-                    char clhs[100];
-                    if (sscanf(imcode[j], "%*d %s =", clhs) == 1)
-                        if (strcmp(clhs, varname) == 0) inputio_line[j] = 1;
-                }
-            }
-        }
-    }
-
     for (int i = 0; i < code; i++) {
         if (used[i] == 0 && strstr(imcode[i], "// DEAD") == NULL) {
             char line[10000]; strcpy(line, imcode[i]);
-
-           
-            char* eq = strchr(line, '=');
-            if (!eq) continue;                        /* no '=' → not an assignment */
-
-            /* ── Guard 2: skip all non-assignment instruction types */
-            if (strstr(line,"BeginFunc") != NULL || strstr(line,"EndFunc")   != NULL ||
-                strstr(line,"PopParam")  != NULL || strstr(line,"Call")      != NULL ||
-                strstr(line,"printint")  != NULL || strstr(line,"printfloat")!= NULL ||
-                strstr(line,"printchar") != NULL || strstr(line,"printstring")!=NULL ||
-                strstr(line,"inputint")  != NULL || strstr(line,"inputfloat")!= NULL ||
-                strstr(line,"inputchar") != NULL || strstr(line,"Return")    != NULL ||
-                strstr(line,"goto")      != NULL || strstr(line," if ")      != NULL ||
-                strstr(line,"PushParam") != NULL) continue;
-
-            /* ── Guard 3: extract LHS and confirm it is a plain identifier    */
             char lhs[100];
-            if (sscanf(line, "%*d %s", lhs) != 1) continue;
-            /* Strip array subscript for bare-name check */
-            char* br = strchr(lhs, '['); if (br) *br = '\0';
-            /* LHS must be followed by ' =' in the original line */
-            char expected[200];
-            snprintf(expected, sizeof(expected), "%s =", lhs);
-            if (strstr(line, expected) == NULL) continue;
-
-            /* ── Guard 4: never eliminate I/O-fed assignments */
-            if (inputio_line[i]) continue;
-
-            /* All guards passed — this is a dead assignment */
-            char* content = strchr(line, ' ');
-            if (content) { content++; sprintf(imcode[i], "%d // DEAD VAR: %s", i, content); }
+            if (sscanf(line, "%*d %s =", lhs) == 1) {
+                if (strstr(line,"BeginFunc")!=NULL||strstr(line,"EndFunc")!=NULL||
+                    strstr(line,"PopParam")!=NULL||strstr(line,"Call")!=NULL) continue;
+                if (lhs[0] == 't' && isdigit(lhs[1])) {
+                    char* content = strchr(line, ' ');
+                    if (content) { content++; sprintf(imcode[i], "%d // DEAD VAR: %s", i, content); }
+                }
+            }
         }
     }
 }
@@ -2508,10 +2199,10 @@ void deadVariableElimination() {
 
 
 void eliminateDeadCode() {
- 
+    // BUILD JUMP TARGET TABLE FIRST (moved to top) 
     int is_jump_target[10000] = {0};
     for (int i = 0; i < code; i++) {
-        if (strstr(imcode[i], "// DEAD") != NULL) continue;   /* all variants */
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
         if (strstr(imcode[i], "goto") != NULL) {
             char* goto_ptr = strstr(imcode[i], "goto");
             char* ptr = goto_ptr + 4;
@@ -2519,44 +2210,47 @@ void eliminateDeadCode() {
             if (isdigit(*ptr)) { int target = atoi(ptr); if (target >= 0 && target < code) is_jump_target[target] = 1; }
         }
     }
-   
-    int changed = 1;
-    while (changed) {
-        changed = 0;
-        /* Rebuild is_jump_target each iteration so newly-killed gotos no
-           longer protect their targets.                                  */
-        memset(is_jump_target, 0, sizeof(is_jump_target));
-        for (int i = 0; i < code; i++) {
-            if (strstr(imcode[i], "// DEAD") != NULL) continue;
-            if (strstr(imcode[i], "goto") != NULL) {
-                char* goto_ptr = strstr(imcode[i], "goto");
-                char* ptr = goto_ptr + 4;
-                while (*ptr == ' ' || *ptr == '\t') ptr++;
-                if (isdigit(*ptr)) { int t = atoi(ptr); if (t >= 0 && t < code) is_jump_target[t] = 1; }
+    for (int i = 0; i < code; i++) {
+        if (strstr(imcode[i], "// DEAD CODE:") != NULL) continue;
+        int is_unconditional = 0;
+        if (strstr(imcode[i], "Return") != NULL) is_unconditional = 1;
+        else if (strstr(imcode[i], "goto") != NULL) {
+            char* if_ptr = strstr(imcode[i], "if");
+            char* goto_ptr = strstr(imcode[i], "goto");
+            if (goto_ptr && (!if_ptr || if_ptr > goto_ptr)) is_unconditional = 1;
+        }
+        if (is_unconditional) {
+            int j = i + 1;
+            if (j < code && strstr(imcode[j],"BeginFunc")==NULL && strstr(imcode[j],"EndFunc")==NULL &&
+                strstr(imcode[j],"// DEAD CODE:")==NULL) {
+                int is_live_target = is_jump_target[j];  // USE PREBUILT TABLE 
+                if (!is_live_target) {
+                    char original[10000]; strcpy(original, imcode[j]);
+                    char* space_ptr = strchr(original, ' ');
+                    if (space_ptr != NULL) { space_ptr++; sprintf(imcode[j], "%d // DEAD CODE: %s", j, space_ptr); }
+                }
             }
         }
-        for (int i = 0; i < code; i++) {
-            if (strstr(imcode[i], "// DEAD") != NULL) continue;
-            /* Detect unconditional jump or Return */
-            int is_uncond = 0;
-            if (strstr(imcode[i], "Return") != NULL) is_uncond = 1;
-            else if (strstr(imcode[i], "goto") != NULL) {
-                char* if_ptr  = strstr(imcode[i], "if");
-                char* goto_ptr = strstr(imcode[i], "goto");
-                if (goto_ptr && (!if_ptr || if_ptr > goto_ptr)) is_uncond = 1;
-            }
-            if (!is_uncond) continue;
-            /* Walk forward killing unreachable slots */
-            for (int j = i + 1; j < code; j++) {
-                if (strstr(imcode[j], "BeginFunc") != NULL) break;
-                if (strstr(imcode[j], "EndFunc")   != NULL) break;
-                if (is_jump_target[j]) break;           /* live goto reaches j */
-                if (strstr(imcode[j], "// DEAD") != NULL) continue; /* already dead */
-                /* Kill this unreachable slot */
+    }
+    for (int i = 0; i < code; i++) {
+        char* line = imcode[i];
+        if (strstr(line, "// DEAD CODE:") != NULL) continue;
+        int is_unconditional_jump = 0;
+        if (strstr(line, "goto") != NULL) {
+            char* if_ptr = strstr(line, "if");
+            char* goto_ptr = strstr(line, "goto");
+            if (goto_ptr && (!if_ptr || if_ptr > goto_ptr)) is_unconditional_jump = 1;
+        } else if (strstr(line, "Return") != NULL) is_unconditional_jump = 1;
+        if (is_unconditional_jump) {
+            int j = i + 1;
+            while (j < code) {
+                if (strstr(imcode[j],"BeginFunc")!=NULL||strstr(imcode[j],"EndFunc")!=NULL) break;
+                if (is_jump_target[j]) break;
+                if (strstr(imcode[j],"// DEAD CODE:")!=NULL) { j++; continue; }
                 char original[10000]; strcpy(original, imcode[j]);
-                char* sp = strchr(original, ' ');
-                if (sp != NULL) { sp++; sprintf(imcode[j], "%d // DEAD CODE: %s", j, sp); }
-                changed = 1;
+                char* space_ptr = strchr(original, ' ');
+                if (space_ptr != NULL) { space_ptr++; sprintf(imcode[j], "%d // DEAD CODE: %s", j, space_ptr); }
+                j++;
             }
         }
     }
@@ -2669,7 +2363,7 @@ void commonSubexpressionElimination() {
 }
 
 
-#line 2673 "y.tab.c"
+#line 2367 "y.tab.c"
 
 # ifndef YY_CAST
 #  ifdef __cplusplus
@@ -2844,7 +2538,7 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 2603 "parser_fix.y"
+#line 2298 "parser.y"
 
         char str[1000];
         struct BoolNode* b;
@@ -2854,7 +2548,7 @@ union YYSTYPE
         struct Decl* decl;
         struct Subscript* sub;
 
-#line 2858 "y.tab.c"
+#line 2552 "y.tab.c"
 
 };
 typedef union YYSTYPE YYSTYPE;
@@ -2964,36 +2658,34 @@ enum yysymbol_kind_t
   YYSYMBOL_87_3 = 87,                      /* $@3  */
   YYSYMBOL_88_4 = 88,                      /* $@4  */
   YYSYMBOL_89_5 = 89,                      /* $@5  */
-  YYSYMBOL_90_6 = 90,                      /* @6  */
-  YYSYMBOL_91_7 = 91,                      /* @7  */
+  YYSYMBOL_90_6 = 90,                      /* $@6  */
+  YYSYMBOL_91_7 = 91,                      /* $@7  */
   YYSYMBOL_92_8 = 92,                      /* $@8  */
-  YYSYMBOL_93_9 = 93,                      /* $@9  */
-  YYSYMBOL_CASE_LIST = 94,                 /* CASE_LIST  */
-  YYSYMBOL_CASE_ITEM = 95,                 /* CASE_ITEM  */
-  YYSYMBOL_96_10 = 96,                     /* @10  */
-  YYSYMBOL_CASE_EXPR = 97,                 /* CASE_EXPR  */
-  YYSYMBOL_DECLSTATEMENT = 98,             /* DECLSTATEMENT  */
-  YYSYMBOL_INIT_LIST = 99,                 /* INIT_LIST  */
-  YYSYMBOL_DECLLIST = 100,                 /* DECLLIST  */
-  YYSYMBOL_INDEX = 101,                    /* INDEX  */
-  YYSYMBOL_TYPE = 102,                     /* TYPE  */
-  YYSYMBOL_STMNTS = 103,                   /* STMNTS  */
-  YYSYMBOL_ASSGN = 104,                    /* ASSGN  */
-  YYSYMBOL_BOOLEXPR = 105,                 /* BOOLEXPR  */
-  YYSYMBOL_M = 106,                        /* M  */
-  YYSYMBOL_NN = 107,                       /* NN  */
-  YYSYMBOL_ASNEXPR = 108,                  /* ASNEXPR  */
-  YYSYMBOL_FORINCR = 109,                  /* FORINCR  */
-  YYSYMBOL_EXPR = 110,                     /* EXPR  */
-  YYSYMBOL_FUNCALL = 111,                  /* FUNCALL  */
-  YYSYMBOL_ARGLIST = 112,                  /* ARGLIST  */
-  YYSYMBOL_OP = 113,                       /* OP  */
-  YYSYMBOL_SUBSCRIPTS = 114,               /* SUBSCRIPTS  */
-  YYSYMBOL_TERM = 115,                     /* TERM  */
-  YYSYMBOL_OPR = 116,                      /* OPR  */
-  YYSYMBOL_B = 117,                        /* B  */
-  YYSYMBOL_C = 118,                        /* C  */
-  YYSYMBOL_UN = 119                        /* UN  */
+  YYSYMBOL_CASE_LIST = 93,                 /* CASE_LIST  */
+  YYSYMBOL_CASE_ITEM = 94,                 /* CASE_ITEM  */
+  YYSYMBOL_95_9 = 95,                      /* @9  */
+  YYSYMBOL_CASE_EXPR = 96,                 /* CASE_EXPR  */
+  YYSYMBOL_DECLSTATEMENT = 97,             /* DECLSTATEMENT  */
+  YYSYMBOL_INIT_LIST = 98,                 /* INIT_LIST  */
+  YYSYMBOL_DECLLIST = 99,                  /* DECLLIST  */
+  YYSYMBOL_INDEX = 100,                    /* INDEX  */
+  YYSYMBOL_TYPE = 101,                     /* TYPE  */
+  YYSYMBOL_STMNTS = 102,                   /* STMNTS  */
+  YYSYMBOL_ASSGN = 103,                    /* ASSGN  */
+  YYSYMBOL_BOOLEXPR = 104,                 /* BOOLEXPR  */
+  YYSYMBOL_M = 105,                        /* M  */
+  YYSYMBOL_NN = 106,                       /* NN  */
+  YYSYMBOL_ASNEXPR = 107,                  /* ASNEXPR  */
+  YYSYMBOL_EXPR = 108,                     /* EXPR  */
+  YYSYMBOL_FUNCALL = 109,                  /* FUNCALL  */
+  YYSYMBOL_ARGLIST = 110,                  /* ARGLIST  */
+  YYSYMBOL_OP = 111,                       /* OP  */
+  YYSYMBOL_SUBSCRIPTS = 112,               /* SUBSCRIPTS  */
+  YYSYMBOL_TERM = 113,                     /* TERM  */
+  YYSYMBOL_OPR = 114,                      /* OPR  */
+  YYSYMBOL_B = 115,                        /* B  */
+  YYSYMBOL_C = 116,                        /* C  */
+  YYSYMBOL_UN = 117                        /* UN  */
 };
 typedef enum yysymbol_kind_t yysymbol_kind_t;
 
@@ -3321,16 +3013,16 @@ union yyalloc
 /* YYFINAL -- State number of the termination state.  */
 #define YYFINAL  6
 /* YYLAST -- Last index in YYTABLE.  */
-#define YYLAST   1152
+#define YYLAST   1145
 
 /* YYNTOKENS -- Number of terminals.  */
 #define YYNTOKENS  79
 /* YYNNTS -- Number of nonterminals.  */
-#define YYNNTS  41
+#define YYNNTS  39
 /* YYNRULES -- Number of rules.  */
-#define YYNRULES  165
+#define YYNRULES  162
 /* YYNSTATES -- Number of states.  */
-#define YYNSTATES  317
+#define YYNSTATES  314
 
 /* YYMAXUTOK -- Last valid token kind.  */
 #define YYMAXUTOK   316
@@ -3385,23 +3077,23 @@ static const yytype_int8 yytranslate[] =
 /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_int16 yyrline[] =
 {
-       0,  2659,  2659,  2659,  2716,  2717,  2722,  2728,  2729,  2741,
-    2741,  2832,  2842,  2851,  2854,  2854,  2887,  2900,  2913,  2945,
-    2963,  2992,  3012,  3027,  3048,  3049,  3052,  3081,  3089,  3092,
-    3094,  3094,  3105,  3107,  3107,  3121,  3126,  3139,  3120,  3185,
-    3185,  3195,  3196,  3197,  3202,  3210,  3214,  3214,  3228,  3236,
-    3244,  3257,  3567,  3573,  3576,  3578,  3590,  3605,  3615,  3632,
-    3651,  3663,  3679,  3696,  3711,  3729,  3741,  3754,  3755,  3756,
-    3757,  3758,  3759,  3760,  3761,  3762,  3771,  3777,  3784,  3785,
-    3786,  3787,  3788,  3789,  3790,  3791,  3792,  3793,  3796,  3814,
-    3824,  3827,  3830,  3837,  3843,  3849,  3855,  3861,  3867,  3873,
-    3881,  3882,  3889,  3890,  3891,  3892,  3893,  3894,  4007,  4012,
-    4021,  4049,  4065,  4081,  4097,  4117,  4141,  4142,  4143,  4159,
-    4175,  4191,  4203,  4215,  4231,  4232,  4235,  4303,  4337,  4340,
-    4344,  4344,  4344,  4344,  4344,  4344,  4344,  4344,  4344,  4344,
-    4346,  4353,  4362,  4369,  4391,  4438,  4487,  4499,  4537,  4559,
-    4571,  4572,  4573,  4574,  4577,  4577,  4579,  4580,  4581,  4582,
-    4583,  4584,  4585,  4586,  4586,  4586
+       0,  2354,  2354,  2354,  2396,  2397,  2402,  2408,  2409,  2421,
+    2421,  2512,  2522,  2531,  2534,  2534,  2567,  2580,  2593,  2625,
+    2643,  2672,  2692,  2707,  2728,  2729,  2732,  2738,  2746,  2749,
+    2751,  2751,  2762,  2764,  2764,  2777,  2781,  2776,  2795,  2795,
+    2804,  2805,  2806,  2811,  2819,  2823,  2823,  2837,  2845,  2853,
+    2866,  3176,  3182,  3185,  3187,  3199,  3214,  3224,  3241,  3260,
+    3272,  3288,  3305,  3320,  3338,  3350,  3363,  3364,  3365,  3366,
+    3367,  3368,  3369,  3370,  3371,  3380,  3386,  3393,  3394,  3395,
+    3396,  3397,  3398,  3399,  3400,  3401,  3402,  3405,  3410,  3415,
+    3418,  3421,  3426,  3431,  3436,  3441,  3446,  3451,  3457,  3465,
+    3466,  3473,  3474,  3475,  3476,  3477,  3478,  3591,  3619,  3635,
+    3651,  3667,  3687,  3711,  3712,  3713,  3729,  3745,  3761,  3773,
+    3785,  3801,  3802,  3805,  3873,  3907,  3910,  3914,  3914,  3914,
+    3914,  3914,  3914,  3914,  3914,  3914,  3914,  3916,  3923,  3932,
+    3939,  3961,  4005,  4048,  4060,  4098,  4120,  4132,  4133,  4134,
+    4135,  4138,  4138,  4140,  4141,  4142,  4143,  4144,  4145,  4146,
+    4147,  4147,  4147
 };
 #endif
 
@@ -3427,11 +3119,11 @@ static const char *const yytname[] =
   "RSHIFTASN", "SHORT", "LONG", "DOUBLE", "VOID", "BAND", "BOR", "BXOR",
   "BNOT", "LSHIFT", "RSHIFT", "FUNCTION", "RETURN", "CALL", "'{'", "'}'",
   "','", "'='", "'['", "']'", "$accept", "S", "$@1", "PROGRAM", "FUNDECL",
-  "$@2", "PARAMLIST", "A", "$@3", "$@4", "$@5", "@6", "@7", "$@8", "$@9",
-  "CASE_LIST", "CASE_ITEM", "@10", "CASE_EXPR", "DECLSTATEMENT",
+  "$@2", "PARAMLIST", "A", "$@3", "$@4", "$@5", "$@6", "$@7", "$@8",
+  "CASE_LIST", "CASE_ITEM", "@9", "CASE_EXPR", "DECLSTATEMENT",
   "INIT_LIST", "DECLLIST", "INDEX", "TYPE", "STMNTS", "ASSGN", "BOOLEXPR",
-  "M", "NN", "ASNEXPR", "FORINCR", "EXPR", "FUNCALL", "ARGLIST", "OP",
-  "SUBSCRIPTS", "TERM", "OPR", "B", "C", "UN", YY_NULLPTR
+  "M", "NN", "ASNEXPR", "EXPR", "FUNCALL", "ARGLIST", "OP", "SUBSCRIPTS",
+  "TERM", "OPR", "B", "C", "UN", YY_NULLPTR
 };
 
 static const char *
@@ -3446,7 +3138,7 @@ yysymbol_name (yysymbol_kind_t yysymbol)
 #define yypact_value_is_default(Yyn) \
   ((Yyn) == YYPACT_NINF)
 
-#define YYTABLE_NINF (-140)
+#define YYTABLE_NINF (-137)
 
 #define yytable_value_is_error(Yyn) \
   0
@@ -3455,38 +3147,38 @@ yysymbol_name (yysymbol_kind_t yysymbol)
    STATE-NUM.  */
 static const yytype_int16 yypact[] =
 {
-     345,   -35,  -174,    21,   565,  -174,  -174,  -174,  -174,   716,
-      23,    25,    32,  -174,   455,  -174,  -174,  -174,  -174,  1081,
-      50,  -174,  -174,    73,    82,    86,  -174,  -174,  -174,  -174,
-    -174,  -174,  -174,  -174,  -174,   899,  1081,   775,    67,    33,
-    -174,   497,  -174,  -174,    97,    77,    44,   279,  -174,  -174,
-      75,   104,   130,   980,  -174,  -174,   659,  -174,   524,   692,
-    -174,  -174,     0,   974,   592,  -174,   899,   899,   899,   132,
-    -174,   139,  -174,  1003,   150,  -174,   633,   102,  -174,  -174,
-      -4,    69,   633,   125,  -174,   128,   784,   786,   795,   805,
-     807,  -174,  -174,  -174,  -174,  -174,  -174,  -174,  -174,  -174,
-    -174,   816,   857,   878,   880,   889,  -174,   899,   160,    15,
-     168,   161,   163,    36,   166,   169,   899,  -174,   177,   413,
-     633,   692,  -174,    30,   966,  -174,  -174,  -174,   899,   899,
-     899,   899,   899,   899,   692,    42,  1012,  1044,  1051,   183,
-     188,  -174,   452,   126,  -174,    97,   899,   181,    51,   158,
-    -174,  -174,  -174,  -174,     8,     8,    88,    88,    88,    41,
-    1083,   304,  -174,  -174,  1019,  -174,  -174,  -174,  -174,  -174,
-     899,   129,   178,  -174,  -174,  -174,  -174,  -174,  -174,  -174,
-     178,   869,  -174,  -174,   172,    87,   112,   633,   524,   524,
-    1019,  1019,  1019,  1019,  1019,  1019,   127,  -174,   134,   200,
-     203,  -174,  1081,   212,   240,   216,  -174,  -174,   254,   152,
-      97,   202,  -174,    72,   899,  -174,  -174,  -174,  -174,  -174,
-    -174,   219,   524,  -174,  -174,   633,   196,   204,  -174,   112,
-     633,  -174,  -174,  -174,   221,   217,  -174,   899,   228,    97,
-     167,  -174,   899,   419,  -174,   156,  -174,   135,   224,   209,
-    -174,  -174,  -174,   131,  -174,   176,  -174,  -174,  -174,  -174,
-     179,   432,    97,  -174,   241,   524,  -174,  -174,   633,   -19,
-     253,   184,   197,   199,  1081,   195,   899,  -174,  -174,   143,
-    -174,   633,  -174,  -174,  -174,   272,  -174,  -174,   131,   633,
-    -174,    97,  -174,   659,   264,   633,  -174,  -174,   633,  -174,
-     205,  -174,  -174,  -174,   413,  -174,  -174,  -174,   -28,  -174,
-     269,   633,  -174,   -22,  -174,   633,  -174
+     345,   -35,  -174,    11,   573,  -174,  -174,  -174,  -174,   759,
+      17,    23,    36,  -174,   155,  -174,  -174,  -174,  -174,   114,
+      45,  -174,  -174,    62,    75,    82,  -174,  -174,  -174,  -174,
+    -174,  -174,  -174,  -174,  -174,   919,   114,    44,    76,    25,
+    -174,   505,  -174,  -174,    88,    77,     0,   279,  -174,  -174,
+     256,   100,   111,   310,  -174,  -174,   721,  -174,   532,   700,
+    -174,  -174,    16,   997,   600,  -174,   919,   919,   919,   108,
+    -174,   117,  -174,  1003,   133,  -174,   641,    81,  -174,  -174,
+     -14,    71,   641,   123,  -174,   128,    70,   778,   784,   829,
+     835,  -174,  -174,  -174,  -174,  -174,  -174,  -174,  -174,  -174,
+    -174,   841,   855,   861,   867,   886,  -174,   919,   165,   126,
+     194,   160,   161,    26,   164,   176,   919,  -174,   171,   413,
+     641,   700,  -174,    42,   968,  -174,  -174,  -174,   919,   919,
+     919,   919,   919,   919,   700,   106,  1032,  1039,  1046,   182,
+     177,  -174,   892,   121,  -174,    88,   919,   188,    -5,   167,
+    -174,  -174,  -174,  -174,    32,    32,    72,    72,    72,   223,
+    1076,   304,  -174,  -174,  1012,  -174,  -174,  -174,  -174,  -174,
+     919,   148,   305,  -174,  -174,  -174,  -174,  -174,  -174,  -174,
+     305,   912,  -174,  -174,   195,   174,   209,   641,   532,   532,
+    1012,  1012,  1012,  1012,  1012,  1012,   212,  -174,   163,   225,
+     238,  -174,   114,   239,   240,   243,  -174,  -174,   419,   184,
+      88,   714,  -174,    14,   919,  -174,  -174,  -174,  -174,  -174,
+    -174,   251,   532,  -174,  -174,   641,   228,   232,  -174,   209,
+     641,  -174,  -174,  -174,   257,   252,  -174,   919,   258,    88,
+     197,  -174,   919,   432,  -174,   192,  -174,   136,   267,   247,
+    -174,  -174,  -174,   110,  -174,   215,  -174,  -174,  -174,  -174,
+     220,   440,    88,  -174,  -174,   532,  -174,  -174,   641,    -8,
+     292,   224,   249,   248,   114,   222,   919,  -174,   721,   295,
+    -174,   641,  -174,  -174,  -174,   322,  -174,  -174,   110,   641,
+    -174,    88,  -174,  -174,   315,   641,  -174,  -174,   641,  -174,
+     259,  -174,   320,  -174,  -174,  -174,   -30,  -174,  -174,   641,
+    -174,   -22,   641,  -174
 };
 
 /* YYDEFACT[STATE-NUM] -- Default reduction number in state STATE-NUM.
@@ -3494,58 +3186,56 @@ static const yytype_int16 yypact[] =
    means the default is an error.  */
 static const yytype_uint8 yydefact[] =
 {
-       0,     0,     4,     0,   165,     5,     1,   164,   163,   165,
-       0,     0,     0,   100,   165,   100,    67,    68,    70,     0,
-       0,   142,    69,     0,     0,     0,   102,   103,   104,   105,
-     106,    71,    72,    73,    74,   165,     0,   165,     0,    39,
-     100,   165,   100,    43,     0,   100,     0,     0,   124,   125,
-       0,     0,     0,     0,    16,    17,   165,    33,   165,   165,
-      98,    99,     0,     0,   165,    75,   165,   165,   165,     0,
-     123,     0,    19,     0,     0,    41,   165,     0,     6,    77,
-      57,     0,   165,     0,    24,     0,   165,   165,   165,   165,
-     165,    42,    79,    80,    81,    82,    83,    84,    85,    86,
-      87,   165,   165,   165,   165,   165,    78,   165,     0,   162,
-     162,   154,   155,   162,     0,     0,   165,   116,     0,     0,
-     165,   165,    90,     0,     0,   100,   100,   100,   165,   165,
-     165,   165,   165,   165,   165,     0,     0,     0,     0,     0,
-       0,    18,   165,   100,     3,     0,   165,     0,    60,     0,
-      51,    76,    25,    28,   111,   112,   114,   113,   115,   118,
-     119,   120,   121,   122,   107,   117,   160,   161,   154,   155,
-     165,   147,   159,   148,   152,   153,   146,   150,   151,   149,
-     159,   165,   143,   100,     0,     0,   100,   165,   165,   165,
-      92,    93,    96,    97,    95,    94,     0,   100,     0,     0,
-       0,   110,    13,   127,   129,     0,    40,    55,    58,     0,
-       0,   165,    52,     0,   165,   157,   158,   156,   145,   144,
-     127,     0,   165,   100,    91,   165,     0,    88,    89,   100,
-     165,    14,    22,    23,     0,     0,    21,   165,   126,     0,
-      65,    56,   165,    63,   140,     0,   126,    35,     0,    26,
-     101,    30,    32,     0,     9,    12,   128,    20,    59,    66,
-       0,    54,     0,   141,     0,   165,   101,   100,   165,     0,
-       0,     0,   100,     0,    13,    61,   165,    64,   100,     0,
-     100,   165,    31,    49,    50,     0,   100,    15,     0,   165,
-      11,     0,    53,   165,     0,   165,    29,   100,   165,    44,
-     100,    62,   108,    36,   109,    34,    27,    46,   100,    10,
-       0,   165,   100,   100,    37,   165,    38
+       0,     0,     4,     0,   162,     5,     1,   161,   160,   162,
+       0,     0,     0,    99,   162,    99,    66,    67,    69,     0,
+       0,   139,    68,     0,     0,     0,   101,   102,   103,   104,
+     105,    70,    71,    72,    73,   162,     0,   162,     0,    38,
+      99,   162,    99,    42,     0,    99,     0,     0,   121,   122,
+       0,     0,     0,     0,    16,    17,   162,    33,   162,   162,
+      97,    98,     0,     0,   162,    74,   162,   162,   162,     0,
+     120,     0,    19,     0,     0,    40,   162,     0,     6,    76,
+      56,     0,   162,     0,    24,     0,   162,   162,   162,   162,
+     162,    41,    78,    79,    80,    81,    82,    83,    84,    85,
+      86,   162,   162,   162,   162,   162,    77,   162,     0,   159,
+     159,   151,   152,   159,     0,     0,   162,   113,     0,     0,
+     162,   162,    89,     0,     0,    99,    99,    99,   162,   162,
+     162,   162,   162,   162,   162,     0,     0,     0,     0,     0,
+       0,    18,   162,    99,     3,     0,   162,     0,    59,     0,
+      50,    75,    25,    28,   108,   109,   111,   110,   112,   115,
+     116,   117,   118,   119,   106,   114,   157,   158,   151,   152,
+     162,   144,   156,   145,   149,   150,   143,   147,   148,   146,
+     156,   162,   140,    99,     0,     0,    99,   162,   162,   162,
+      91,    92,    95,    96,    94,    93,     0,    99,     0,     0,
+       0,   107,    13,   124,   126,     0,    39,    54,    57,     0,
+       0,   162,    51,     0,   162,   154,   155,   153,   142,   141,
+     124,     0,   162,    99,    90,   162,     0,    87,    88,    99,
+     162,    14,    22,    23,     0,     0,    21,   162,   123,     0,
+      64,    55,   162,    62,   137,     0,   123,     0,     0,    26,
+     100,    30,    32,     0,     9,    12,   125,    20,    58,    65,
+       0,    53,     0,   138,    99,   162,   100,    99,   162,     0,
+       0,     0,    99,     0,    13,    60,   162,    63,   162,     0,
+      99,   162,    31,    48,    49,     0,    99,    15,     0,   162,
+      11,     0,    52,    35,     0,   162,    29,    99,   162,    43,
+      99,    61,     0,    34,    27,    45,    99,    10,    99,   162,
+      36,    99,   162,    37
 };
 
 /* YYPGOTO[NTERM-NUM].  */
 static const yytype_int16 yypgoto[] =
 {
-    -174,  -174,  -174,   242,  -174,  -174,    16,   -76,  -174,  -174,
-    -174,  -174,  -174,  -174,  -174,     3,  -174,  -174,  -174,  -174,
-       6,  -114,    52,    -6,   -71,  -174,   -36,   -13,    29,   -52,
-    -174,     1,  -174,  -173,  -174,  -174,  -174,   -43,   116,   -99,
-    -174
+    -174,  -174,  -174,   298,  -174,  -174,    66,   -77,  -174,  -174,
+    -174,  -174,  -174,  -174,    53,  -174,  -174,  -174,  -174,    73,
+    -113,   102,    -6,   -72,  -174,   -25,   -13,    84,   -50,     1,
+    -174,  -173,  -174,  -174,  -174,   -43,   173,   -94,  -174
 };
 
 /* YYDEFGOTO[NTERM-NUM].  */
 static const yytype_int16 yydefgoto[] =
 {
        0,     3,     4,    40,    41,   273,   234,    42,   253,   268,
-     120,   264,   310,   315,    76,   271,   272,   311,   285,    43,
-     260,    81,   148,    44,    45,   107,    62,    82,   267,    46,
-     303,    47,    48,   205,   108,   171,    49,   217,   218,   173,
-      50
+     120,   302,   312,    76,   271,   272,   309,   285,    43,   260,
+      81,   148,    44,    45,   107,    62,    82,   267,    46,    47,
+      48,   205,   108,   171,    49,   217,   218,   173,    50
 };
 
 /* YYTABLE[YYPACT[STATE-NUM]] -- What to do in state STATE-NUM.  If
@@ -3553,242 +3243,240 @@ static const yytype_int16 yydefgoto[] =
    number is the opposite.  If YYTABLE_NINF, syntax error.  */
 static const yytype_int16 yytable[] =
 {
-      57,   283,    64,    52,   118,   143,   151,   114,   221,     5,
-      53,   176,   125,    65,   179,    63,    88,    89,    90,   -48,
-     -48,     6,   122,   123,   284,   -47,   -47,    77,   135,    79,
-      71,   207,   126,   127,   166,   167,    70,    54,    73,    55,
-     168,   169,   186,    56,   184,    83,   -48,    86,    87,    88,
-      89,    90,   -47,    52,   197,   166,   167,   119,    84,    63,
-     124,    66,   126,   127,   256,    63,   172,   136,   137,   138,
-     149,   145,   146,   147,   126,   127,   104,   105,    86,    87,
-      88,    89,    90,   150,    67,   185,    74,   154,   155,   156,
-     157,   158,   170,    68,   109,   110,   241,    69,   196,   224,
-     111,   112,   159,   160,   161,   162,   163,    75,   164,   104,
-     105,   226,   187,   188,   189,    52,    80,   182,   113,   126,
-     127,    -7,   124,   115,   -91,   258,   210,   211,    52,   190,
-     191,   192,   193,   194,   195,   124,   101,   102,   103,   229,
-     104,   105,   116,   204,   -91,   -91,   144,   208,   277,   249,
-     244,   139,   227,   228,   252,   294,   104,   105,   140,   126,
-     127,   142,    86,    87,    88,    89,    90,   126,   127,   152,
-     222,   213,   153,   225,   165,   126,   127,   301,   269,   270,
-     181,   177,   204,   178,   230,   180,   247,   166,   167,    63,
-      63,   183,   282,   174,   175,   201,   235,   215,   216,   202,
-     206,   209,   212,   168,   169,   296,   214,   231,     7,     8,
-     248,   223,   243,     9,   232,   245,   251,   233,   300,   306,
-     101,   102,   103,    63,   104,   105,   236,   308,   238,   279,
-     240,   246,   250,   254,   263,   265,   255,   127,   204,   316,
-     313,   302,   257,   261,   147,   266,    86,    87,    88,    89,
-      90,   274,    21,   275,   281,   278,    25,   286,   287,   288,
-      86,    87,    88,    89,    90,   293,    63,   295,   235,    35,
-     291,   -45,   289,   298,    51,   242,   297,   261,   305,   309,
-      85,   312,   292,    78,   307,    86,    87,    88,    89,    90,
-     290,   299,   259,    91,   304,   280,   219,     0,     0,   314,
-      92,    93,    94,    95,   101,   102,   103,     0,   104,   105,
-      86,    87,    88,    89,    90,   237,     0,     0,   101,   102,
-     103,     0,   104,   105,     0,     0,     0,     0,     0,   239,
-       0,     0,     0,     0,    96,    97,    98,    99,   100,     0,
-       0,     0,     0,   101,   102,   103,     1,   104,   105,     0,
-       0,    -2,    -2,     0,     0,   106,    -2,     0,     0,     0,
+      57,    83,    64,    52,   143,   151,   118,   114,   221,     5,
+      53,     6,   283,    65,    84,    63,   176,   -47,   -47,   179,
+      86,    87,    88,    89,    90,   -46,   -46,    77,   125,    79,
+      71,    54,   207,   122,   123,   284,    70,    55,    73,   135,
+      88,    89,    90,   184,   -47,   166,   167,    56,   126,   127,
+       7,     8,   -46,    52,   186,     9,    66,   119,    72,    63,
+     124,   145,   146,   147,   256,    63,   172,   136,   137,   138,
+     210,   211,   149,    67,   126,   127,     7,     8,   101,   102,
+     103,     9,   104,   105,  -127,   150,    68,   154,   155,   156,
+     157,   158,   244,    69,    21,    74,   185,   241,    25,    75,
+     104,   105,   159,   160,   161,   162,   163,    80,   164,   196,
+     226,    35,   187,   188,   189,    52,    51,   182,   197,   115,
+      21,    -7,   124,   116,    25,   144,   258,   139,    52,   190,
+     191,   192,   193,   194,   195,   124,   140,    35,   126,   127,
+     104,   105,    51,   204,   142,   166,   167,   208,   249,   277,
+     264,   168,   169,   252,    16,    17,    18,   269,   270,    19,
+      58,     7,     8,   227,   228,    22,    59,   152,   126,   127,
+     222,   213,   153,   225,    31,    32,    33,    34,   301,   165,
+     177,   178,   204,   180,   230,   183,   224,   181,   202,    63,
+      63,   282,    60,    61,   201,   206,   235,   247,    86,    87,
+      88,    89,    90,   170,   296,    21,   126,   127,   209,    25,
+     248,   212,   243,   166,   167,   245,   251,   300,   304,   174,
+     175,   -90,    35,    63,   229,   214,   306,    51,   293,    86,
+      87,    88,    89,    90,   223,   313,   231,   311,   204,   232,
+     279,   -90,   -90,   261,   126,   127,    86,    87,    88,    89,
+      90,   278,   233,   236,   281,   238,   101,   102,   103,   288,
+     104,   105,   240,   246,   250,   127,    63,   295,   235,   254,
+     263,   255,   257,   298,   147,   109,   110,   261,   265,   119,
+      85,   111,   112,   266,   305,    86,    87,    88,    89,    90,
+     274,   104,   105,    91,   275,   310,   286,   291,   287,   113,
+      92,    93,    94,    95,   101,   102,   103,   294,   104,   105,
+      86,    87,    88,    89,    90,   237,    86,    87,    88,    89,
+      90,   289,   117,   -44,   215,   216,   297,   126,   127,   303,
+     168,   169,   308,   307,    96,    97,    98,    99,   100,    78,
+     290,   299,   259,   101,   102,   103,     1,   104,   105,   292,
+     280,    -2,    -2,   219,     0,   106,    -2,     0,     0,     0,
       -2,    -2,    -2,    -2,    -2,    -2,     0,     0,   101,     0,
-      -2,    -2,   104,   105,     0,     0,     0,     0,     0,     0,
+      -2,    -2,   104,   105,   101,   102,   103,     0,   104,   105,
       -2,     0,     0,     0,    -2,    -2,    -2,    -2,    -2,     2,
       -2,    -2,     0,     0,     0,    -2,    -2,    -2,    -2,    -2,
       -2,    -2,    -2,    -2,    -2,    -2,    -2,    -2,    -2,     0,
        0,     0,    -2,     0,     0,    -2,    -2,    -2,    -2,    86,
       87,    88,    89,    90,     0,    86,    87,    88,    89,    90,
        0,     0,     0,     0,    92,    93,    94,    95,    86,    87,
-      88,    89,    90,     0,     0,     0,     0,     0,     0,     0,
-       0,     0,     0,     0,     0,     0,     0,     0,     7,     8,
-      58,     7,     8,     9,   203,     0,    59,     0,    96,    97,
+      88,    89,    90,     0,     0,     0,    86,    87,    88,    89,
+      90,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+       0,     0,     0,     0,     0,     0,     0,     0,    96,    97,
       98,    99,   100,     0,     0,     0,     0,   101,   102,   103,
        0,   104,   105,   101,   102,   103,     0,   104,   105,   106,
-       0,     0,    60,    61,   262,     0,   101,   102,   103,     0,
-     104,   105,    21,     7,     8,    21,    25,   276,     9,    25,
-       0,     0,    10,    11,    12,    13,     0,     0,     0,    35,
-       0,     0,    35,     0,    51,     0,     0,    51,     0,    58,
-       7,     8,    14,     0,     0,   121,    15,    16,    17,    18,
-       0,    -8,    19,    20,     0,     0,     0,    21,    22,    23,
-      24,    25,    26,    27,    28,    29,    30,    31,    32,    33,
-      34,    60,    61,     0,    35,     0,     0,    36,    37,    38,
-      39,     7,     8,     0,    21,     0,     9,     0,    25,     0,
+       0,     0,     0,     0,   239,     0,   101,   102,   103,     0,
+     104,   105,     0,     0,   101,   102,   103,   262,   104,   105,
+       0,     7,     8,     0,     0,   276,     9,     0,     0,     0,
       10,    11,    12,    13,     0,     0,     0,     0,     0,     0,
-       0,    35,     0,     0,     0,     0,    51,    58,     7,     8,
-      14,     0,     0,   134,    15,    16,    17,    18,     0,     0,
+       0,     0,     0,     0,     0,     0,     0,    58,     7,     8,
+      14,     0,     0,   121,    15,    16,    17,    18,     0,    -8,
       19,    20,     0,     0,     0,    21,    22,    23,    24,    25,
       26,    27,    28,    29,    30,    31,    32,    33,    34,    60,
       61,     0,    35,     0,     0,    36,    37,    38,    39,     7,
        8,     0,    21,     0,     9,     0,    25,     0,    10,    11,
       12,    13,     0,     0,     0,     0,     0,     0,     0,    35,
-       0,     0,     0,     0,    51,     7,     8,     0,    14,     0,
-       9,     0,    15,    16,    17,    18,     0,     0,    19,    20,
+       0,     0,     0,     0,    51,    58,     7,     8,    14,     0,
+       0,   134,    15,    16,    17,    18,     0,     0,    19,    20,
        0,     0,     0,    21,    22,    23,    24,    25,    26,    27,
-      28,    29,    30,    31,    32,    33,    34,    58,     7,     8,
-      35,     0,     0,   121,    37,    38,    39,     0,     0,    21,
-       0,     0,     0,    25,    26,    27,    28,    29,    30,     0,
-       0,     0,     7,     8,     0,     0,    35,     9,     0,    60,
-      61,    51,    16,    17,    18,     0,     0,    19,     0,     0,
-       0,     0,    21,    22,     0,     0,    25,     0,     0,     0,
-       0,     0,    31,    32,    33,    34,    16,    17,    18,    35,
-       0,    19,     0,     0,    51,     0,    21,    22,     0,     0,
-      25,     0,     0,     0,     0,     0,    31,    32,    33,    34,
-       0,     7,     8,    35,     0,     0,     9,     0,    51,    72,
-       7,     8,     7,     8,     0,     9,     0,     9,  -130,     0,
-    -131,     7,     8,     0,     0,     0,     9,     0,     0,  -133,
-       0,     7,     8,     7,     8,     0,     9,     0,     9,  -132,
-       0,  -134,     7,     8,     0,    21,     0,     9,     0,    25,
-    -135,     0,     0,     0,    21,     0,    21,     0,    25,     0,
-      25,     0,    35,     0,     0,    21,     0,    51,     0,    25,
-       0,    35,     0,    35,     0,    21,    51,    21,    51,    25,
-       0,    25,    35,     7,     8,     0,    21,    51,     9,     0,
-      25,  -136,    35,     0,    35,     7,     8,    51,     0,    51,
-       9,   220,     0,    35,     7,     8,     7,     8,    51,     9,
-       0,     9,  -137,     0,  -138,     7,     8,     0,     0,     0,
-       9,     0,     0,  -139,     0,     7,     8,    21,     0,     0,
-       9,    25,     0,     0,     0,     0,     0,     0,     0,    21,
-       0,     0,     0,    25,    35,     0,     0,     0,    21,    51,
-      21,     0,    25,     0,    25,     0,    35,     0,     0,    21,
-       0,    51,     0,    25,     0,    35,     0,    35,     0,    21,
-      51,     0,    51,    25,     0,     0,    35,     0,     0,     0,
-       0,    51,     0,     0,     0,     0,    35,     0,     0,     0,
-       0,    51,    86,    87,    88,    89,    90,     0,   117,     0,
-      86,    87,    88,    89,    90,     0,    86,    87,    88,    89,
-      90,     0,   117,   128,   129,   130,   131,   132,     0,     0,
-     133,   128,   129,   130,   131,   132,     0,     0,   133,    86,
+      28,    29,    30,    31,    32,    33,    34,    60,    61,     0,
+      35,     0,     0,    36,    37,    38,    39,     7,     8,     0,
+      21,     0,     9,     0,    25,     0,    10,    11,    12,    13,
+       0,     0,     0,     0,     0,     0,     0,    35,     0,     0,
+       0,     0,    51,     0,     0,     0,    14,     0,     0,     0,
+      15,    16,    17,    18,     0,     0,    19,    20,     0,     0,
+       0,    21,    22,    23,    24,    25,    26,    27,    28,    29,
+      30,    31,    32,    33,    34,    58,     7,     8,    35,     0,
+       0,   121,    37,    38,    39,     0,     0,     0,     0,     0,
+       7,     8,     0,     0,     0,     9,     0,     7,     8,     0,
+       0,     0,     9,     0,     0,     0,     0,    60,    61,     0,
+      16,    17,    18,     0,     0,    19,     0,     0,     0,     0,
+      21,    22,     0,     0,    25,     0,     0,     0,     0,     0,
+      31,    32,    33,    34,    21,     7,     8,    35,    25,     0,
+       9,    21,    51,     0,     0,    25,    26,    27,    28,    29,
+      30,    35,     0,     0,     7,     8,    51,   242,    35,     9,
+       7,     8,  -128,    51,     0,     9,     0,     0,  -130,    16,
+      17,    18,     0,     0,    19,     0,     0,     0,     0,    21,
+      22,     0,     0,    25,     0,     0,     0,     0,     0,    31,
+      32,    33,    34,     0,     0,     0,    35,     0,    21,     0,
+       0,    51,    25,     0,    21,     7,     8,     0,    25,     0,
+       9,     7,     8,  -129,     0,    35,     9,     7,     8,  -131,
+      51,    35,     9,     0,     0,  -132,    51,     0,     0,     0,
+       0,     7,     8,     0,     0,     0,     9,     7,     8,  -133,
+       0,     0,     9,     7,     8,  -134,     0,     0,     9,    21,
+       0,  -135,     0,    25,     0,    21,     0,     0,     0,    25,
+       0,    21,     7,     8,     0,    25,    35,     9,     7,     8,
+    -136,    51,    35,     9,   203,    21,     0,    51,    35,    25,
+       0,    21,     0,    51,     0,    25,     0,    21,     7,     8,
+       0,    25,    35,     9,   220,     7,     8,    51,    35,     0,
+       9,     0,     0,    51,    35,     0,    21,     0,     0,    51,
+      25,     0,    21,     0,     0,     0,    25,     0,     0,     0,
+       0,     0,     0,    35,     0,     0,     0,     0,    51,    35,
+       0,     0,    21,     0,    51,     0,    25,     0,     0,    21,
+       0,     0,     0,    25,    86,    87,    88,    89,    90,    35,
+     117,     0,     0,     0,    51,     0,    35,     0,     0,     0,
+       0,    51,     0,     0,     0,   128,   129,   130,   131,   132,
+       0,     0,   133,    86,    87,    88,    89,    90,     0,    86,
       87,    88,    89,    90,     0,     0,     0,   141,    86,    87,
+      88,    89,    90,     0,   128,   129,   130,   131,   132,     0,
+       0,   133,   101,   102,   103,     0,   104,   105,    86,    87,
       88,    89,    90,     0,   198,    86,    87,    88,    89,    90,
-     101,   102,   103,     0,   104,   105,     0,     0,   101,   102,
-     103,     0,   104,   105,   101,   102,   103,     0,   104,   105,
-      86,    87,    88,    89,    90,     0,   199,    86,    87,    88,
-      89,    90,     0,   200,     0,     0,     0,   101,   102,   103,
+       0,   199,    86,    87,    88,    89,    90,     0,   200,     0,
+       0,   101,   102,   103,     0,   104,   105,   101,   102,   103,
        0,   104,   105,     0,     0,     0,   101,   102,   103,     0,
-     104,   105,     0,   101,   102,   103,     0,   104,   105,    86,
-      87,    88,    89,    90,     0,     0,     0,     0,     0,     0,
-       0,     0,     0,     0,     0,     0,     0,     0,   101,   102,
-     103,     0,   104,   105,     0,   101,   102,   103,     0,   104,
-     105,    16,    17,    18,     0,     0,    19,     0,     0,     0,
-       0,     0,    22,     0,     0,     0,     0,     0,     0,     0,
-       0,    31,    32,    33,    34,     0,     0,   101,     0,   103,
-       0,   104,   105
+     104,   105,    86,    87,    88,    89,    90,     0,     0,     0,
+       0,     0,     0,     0,     0,     0,   101,   102,   103,     0,
+     104,   105,     0,   101,   102,   103,     0,   104,   105,     0,
+     101,   102,   103,     0,   104,   105,     0,     0,     0,     0,
+       0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+       0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+     101,     0,   103,     0,   104,   105
 };
 
 static const yytype_int16 yycheck[] =
 {
-      13,    20,    15,     9,    56,    76,    82,    50,   181,    44,
-       9,   110,    12,    19,   113,    14,     8,     9,    10,    47,
-      48,     0,    58,    59,    43,    47,    48,    40,    64,    42,
-      36,   145,    32,    33,    19,    20,    35,    14,    37,    14,
-      25,    26,    12,    11,   120,     1,    74,     6,     7,     8,
-       9,    10,    74,    59,    12,    19,    20,    56,    14,    58,
-      59,    11,    32,    33,   237,    64,   109,    66,    67,    68,
-       1,    75,    76,    77,    32,    33,    68,    69,     6,     7,
-       8,     9,    10,    14,    11,   121,    19,    86,    87,    88,
-      89,    90,    77,    11,    19,    20,   210,    11,   134,    12,
-      25,    26,   101,   102,   103,   104,   105,    74,   107,    68,
-      69,   187,   125,   126,   127,   121,    19,   116,    43,    32,
-      33,    44,   121,    19,    12,   239,    75,    76,   134,   128,
-     129,   130,   131,   132,   133,   134,    64,    65,    66,    12,
-      68,    69,    12,   142,    32,    33,    44,   146,   262,   225,
-      78,    19,   188,   189,   230,    12,    68,    69,    19,    32,
-      33,    11,     6,     7,     8,     9,    10,    32,    33,    44,
-     183,   170,    44,   186,    14,    32,    33,   291,    47,    48,
-      11,    20,   181,    20,   197,    19,   222,    19,    20,   188,
-     189,    14,   268,    25,    26,    12,   202,    19,    20,    11,
-      74,    20,    44,    25,    26,   281,    77,    73,     6,     7,
-     223,    39,   211,    11,    14,   214,   229,    14,   289,   295,
-      64,    65,    66,   222,    68,    69,    14,   298,    12,   265,
-      78,    12,    36,    12,    78,    11,    19,    33,   237,   315,
-     311,   293,    14,   242,    77,    36,     6,     7,     8,     9,
-      10,    75,    50,    74,   267,    14,    54,     4,    74,   272,
-       6,     7,     8,     9,    10,   278,   265,   280,   274,    67,
-      75,    74,    73,   286,    72,    73,     4,   276,    14,    74,
-       1,    12,   276,    41,   297,     6,     7,     8,     9,    10,
-     274,   288,   240,    14,   293,   266,   180,    -1,    -1,   312,
-      21,    22,    23,    24,    64,    65,    66,    -1,    68,    69,
-       6,     7,     8,     9,    10,    75,    -1,    -1,    64,    65,
-      66,    -1,    68,    69,    -1,    -1,    -1,    -1,    -1,    75,
-      -1,    -1,    -1,    -1,    55,    56,    57,    58,    59,    -1,
-      -1,    -1,    -1,    64,    65,    66,     1,    68,    69,    -1,
-      -1,     6,     7,    -1,    -1,    76,    11,    -1,    -1,    -1,
+      13,     1,    15,     9,    76,    82,    56,    50,   181,    44,
+       9,     0,    20,    19,    14,    14,   110,    47,    48,   113,
+       6,     7,     8,     9,    10,    47,    48,    40,    12,    42,
+      36,    14,   145,    58,    59,    43,    35,    14,    37,    64,
+       8,     9,    10,   120,    74,    19,    20,    11,    32,    33,
+       6,     7,    74,    59,    12,    11,    11,    56,    14,    58,
+      59,    75,    76,    77,   237,    64,   109,    66,    67,    68,
+      75,    76,     1,    11,    32,    33,     6,     7,    64,    65,
+      66,    11,    68,    69,    14,    14,    11,    86,    87,    88,
+      89,    90,    78,    11,    50,    19,   121,   210,    54,    74,
+      68,    69,   101,   102,   103,   104,   105,    19,   107,   134,
+     187,    67,   125,   126,   127,   121,    72,   116,    12,    19,
+      50,    44,   121,    12,    54,    44,   239,    19,   134,   128,
+     129,   130,   131,   132,   133,   134,    19,    67,    32,    33,
+      68,    69,    72,   142,    11,    19,    20,   146,   225,   262,
+      14,    25,    26,   230,    40,    41,    42,    47,    48,    45,
+       5,     6,     7,   188,   189,    51,    11,    44,    32,    33,
+     183,   170,    44,   186,    60,    61,    62,    63,   291,    14,
+      20,    20,   181,    19,   197,    14,    12,    11,    11,   188,
+     189,   268,    37,    38,    12,    74,   202,   222,     6,     7,
+       8,     9,    10,    77,   281,    50,    32,    33,    20,    54,
+     223,    44,   211,    19,    20,   214,   229,   289,   295,    25,
+      26,    12,    67,   222,    12,    77,   298,    72,   278,     6,
+       7,     8,     9,    10,    39,   312,    73,   309,   237,    14,
+     265,    32,    33,   242,    32,    33,     6,     7,     8,     9,
+      10,   264,    14,    14,   267,    12,    64,    65,    66,   272,
+      68,    69,    78,    12,    36,    33,   265,   280,   274,    12,
+      78,    19,    14,   286,    77,    19,    20,   276,    11,   278,
+       1,    25,    26,    36,   297,     6,     7,     8,     9,    10,
+      75,    68,    69,    14,    74,   308,     4,    75,    74,    43,
+      21,    22,    23,    24,    64,    65,    66,    12,    68,    69,
+       6,     7,     8,     9,    10,    75,     6,     7,     8,     9,
+      10,    73,    12,    74,    19,    20,     4,    32,    33,    14,
+      25,    26,    12,    74,    55,    56,    57,    58,    59,    41,
+     274,   288,   240,    64,    65,    66,     1,    68,    69,   276,
+     266,     6,     7,   180,    -1,    76,    11,    -1,    -1,    -1,
       15,    16,    17,    18,    19,    20,    -1,    -1,    64,    -1,
-      25,    26,    68,    69,    -1,    -1,    -1,    -1,    -1,    -1,
+      25,    26,    68,    69,    64,    65,    66,    -1,    68,    69,
       35,    -1,    -1,    -1,    39,    40,    41,    42,    43,    44,
       45,    46,    -1,    -1,    -1,    50,    51,    52,    53,    54,
       55,    56,    57,    58,    59,    60,    61,    62,    63,    -1,
       -1,    -1,    67,    -1,    -1,    70,    71,    72,    73,     6,
        7,     8,     9,    10,    -1,     6,     7,     8,     9,    10,
       -1,    -1,    -1,    -1,    21,    22,    23,    24,     6,     7,
-       8,     9,    10,    -1,    -1,    -1,    -1,    -1,    -1,    -1,
-      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,     6,     7,
-       5,     6,     7,    11,    12,    -1,    11,    -1,    55,    56,
+       8,     9,    10,    -1,    -1,    -1,     6,     7,     8,     9,
+      10,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    55,    56,
       57,    58,    59,    -1,    -1,    -1,    -1,    64,    65,    66,
       -1,    68,    69,    64,    65,    66,    -1,    68,    69,    76,
-      -1,    -1,    37,    38,    75,    -1,    64,    65,    66,    -1,
-      68,    69,    50,     6,     7,    50,    54,    75,    11,    54,
-      -1,    -1,    15,    16,    17,    18,    -1,    -1,    -1,    67,
-      -1,    -1,    67,    -1,    72,    -1,    -1,    72,    -1,     5,
-       6,     7,    35,    -1,    -1,    11,    39,    40,    41,    42,
-      -1,    44,    45,    46,    -1,    -1,    -1,    50,    51,    52,
-      53,    54,    55,    56,    57,    58,    59,    60,    61,    62,
-      63,    37,    38,    -1,    67,    -1,    -1,    70,    71,    72,
-      73,     6,     7,    -1,    50,    -1,    11,    -1,    54,    -1,
+      -1,    -1,    -1,    -1,    75,    -1,    64,    65,    66,    -1,
+      68,    69,    -1,    -1,    64,    65,    66,    75,    68,    69,
+      -1,     6,     7,    -1,    -1,    75,    11,    -1,    -1,    -1,
       15,    16,    17,    18,    -1,    -1,    -1,    -1,    -1,    -1,
-      -1,    67,    -1,    -1,    -1,    -1,    72,     5,     6,     7,
-      35,    -1,    -1,    11,    39,    40,    41,    42,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    -1,    -1,     5,     6,     7,
+      35,    -1,    -1,    11,    39,    40,    41,    42,    -1,    44,
       45,    46,    -1,    -1,    -1,    50,    51,    52,    53,    54,
       55,    56,    57,    58,    59,    60,    61,    62,    63,    37,
       38,    -1,    67,    -1,    -1,    70,    71,    72,    73,     6,
        7,    -1,    50,    -1,    11,    -1,    54,    -1,    15,    16,
       17,    18,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    67,
-      -1,    -1,    -1,    -1,    72,     6,     7,    -1,    35,    -1,
-      11,    -1,    39,    40,    41,    42,    -1,    -1,    45,    46,
+      -1,    -1,    -1,    -1,    72,     5,     6,     7,    35,    -1,
+      -1,    11,    39,    40,    41,    42,    -1,    -1,    45,    46,
       -1,    -1,    -1,    50,    51,    52,    53,    54,    55,    56,
-      57,    58,    59,    60,    61,    62,    63,     5,     6,     7,
-      67,    -1,    -1,    11,    71,    72,    73,    -1,    -1,    50,
-      -1,    -1,    -1,    54,    55,    56,    57,    58,    59,    -1,
-      -1,    -1,     6,     7,    -1,    -1,    67,    11,    -1,    37,
-      38,    72,    40,    41,    42,    -1,    -1,    45,    -1,    -1,
-      -1,    -1,    50,    51,    -1,    -1,    54,    -1,    -1,    -1,
-      -1,    -1,    60,    61,    62,    63,    40,    41,    42,    67,
-      -1,    45,    -1,    -1,    72,    -1,    50,    51,    -1,    -1,
-      54,    -1,    -1,    -1,    -1,    -1,    60,    61,    62,    63,
-      -1,     6,     7,    67,    -1,    -1,    11,    -1,    72,    14,
-       6,     7,     6,     7,    -1,    11,    -1,    11,    14,    -1,
-      14,     6,     7,    -1,    -1,    -1,    11,    -1,    -1,    14,
-      -1,     6,     7,     6,     7,    -1,    11,    -1,    11,    14,
-      -1,    14,     6,     7,    -1,    50,    -1,    11,    -1,    54,
-      14,    -1,    -1,    -1,    50,    -1,    50,    -1,    54,    -1,
-      54,    -1,    67,    -1,    -1,    50,    -1,    72,    -1,    54,
-      -1,    67,    -1,    67,    -1,    50,    72,    50,    72,    54,
-      -1,    54,    67,     6,     7,    -1,    50,    72,    11,    -1,
-      54,    14,    67,    -1,    67,     6,     7,    72,    -1,    72,
-      11,    12,    -1,    67,     6,     7,     6,     7,    72,    11,
-      -1,    11,    14,    -1,    14,     6,     7,    -1,    -1,    -1,
-      11,    -1,    -1,    14,    -1,     6,     7,    50,    -1,    -1,
-      11,    54,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    50,
-      -1,    -1,    -1,    54,    67,    -1,    -1,    -1,    50,    72,
-      50,    -1,    54,    -1,    54,    -1,    67,    -1,    -1,    50,
-      -1,    72,    -1,    54,    -1,    67,    -1,    67,    -1,    50,
-      72,    -1,    72,    54,    -1,    -1,    67,    -1,    -1,    -1,
-      -1,    72,    -1,    -1,    -1,    -1,    67,    -1,    -1,    -1,
-      -1,    72,     6,     7,     8,     9,    10,    -1,    12,    -1,
-       6,     7,     8,     9,    10,    -1,     6,     7,     8,     9,
-      10,    -1,    12,    27,    28,    29,    30,    31,    -1,    -1,
-      34,    27,    28,    29,    30,    31,    -1,    -1,    34,     6,
+      57,    58,    59,    60,    61,    62,    63,    37,    38,    -1,
+      67,    -1,    -1,    70,    71,    72,    73,     6,     7,    -1,
+      50,    -1,    11,    -1,    54,    -1,    15,    16,    17,    18,
+      -1,    -1,    -1,    -1,    -1,    -1,    -1,    67,    -1,    -1,
+      -1,    -1,    72,    -1,    -1,    -1,    35,    -1,    -1,    -1,
+      39,    40,    41,    42,    -1,    -1,    45,    46,    -1,    -1,
+      -1,    50,    51,    52,    53,    54,    55,    56,    57,    58,
+      59,    60,    61,    62,    63,     5,     6,     7,    67,    -1,
+      -1,    11,    71,    72,    73,    -1,    -1,    -1,    -1,    -1,
+       6,     7,    -1,    -1,    -1,    11,    -1,     6,     7,    -1,
+      -1,    -1,    11,    -1,    -1,    -1,    -1,    37,    38,    -1,
+      40,    41,    42,    -1,    -1,    45,    -1,    -1,    -1,    -1,
+      50,    51,    -1,    -1,    54,    -1,    -1,    -1,    -1,    -1,
+      60,    61,    62,    63,    50,     6,     7,    67,    54,    -1,
+      11,    50,    72,    -1,    -1,    54,    55,    56,    57,    58,
+      59,    67,    -1,    -1,     6,     7,    72,    73,    67,    11,
+       6,     7,    14,    72,    -1,    11,    -1,    -1,    14,    40,
+      41,    42,    -1,    -1,    45,    -1,    -1,    -1,    -1,    50,
+      51,    -1,    -1,    54,    -1,    -1,    -1,    -1,    -1,    60,
+      61,    62,    63,    -1,    -1,    -1,    67,    -1,    50,    -1,
+      -1,    72,    54,    -1,    50,     6,     7,    -1,    54,    -1,
+      11,     6,     7,    14,    -1,    67,    11,     6,     7,    14,
+      72,    67,    11,    -1,    -1,    14,    72,    -1,    -1,    -1,
+      -1,     6,     7,    -1,    -1,    -1,    11,     6,     7,    14,
+      -1,    -1,    11,     6,     7,    14,    -1,    -1,    11,    50,
+      -1,    14,    -1,    54,    -1,    50,    -1,    -1,    -1,    54,
+      -1,    50,     6,     7,    -1,    54,    67,    11,     6,     7,
+      14,    72,    67,    11,    12,    50,    -1,    72,    67,    54,
+      -1,    50,    -1,    72,    -1,    54,    -1,    50,     6,     7,
+      -1,    54,    67,    11,    12,     6,     7,    72,    67,    -1,
+      11,    -1,    -1,    72,    67,    -1,    50,    -1,    -1,    72,
+      54,    -1,    50,    -1,    -1,    -1,    54,    -1,    -1,    -1,
+      -1,    -1,    -1,    67,    -1,    -1,    -1,    -1,    72,    67,
+      -1,    -1,    50,    -1,    72,    -1,    54,    -1,    -1,    50,
+      -1,    -1,    -1,    54,     6,     7,     8,     9,    10,    67,
+      12,    -1,    -1,    -1,    72,    -1,    67,    -1,    -1,    -1,
+      -1,    72,    -1,    -1,    -1,    27,    28,    29,    30,    31,
+      -1,    -1,    34,     6,     7,     8,     9,    10,    -1,     6,
        7,     8,     9,    10,    -1,    -1,    -1,    14,     6,     7,
+       8,     9,    10,    -1,    27,    28,    29,    30,    31,    -1,
+      -1,    34,    64,    65,    66,    -1,    68,    69,     6,     7,
        8,     9,    10,    -1,    12,     6,     7,     8,     9,    10,
-      64,    65,    66,    -1,    68,    69,    -1,    -1,    64,    65,
-      66,    -1,    68,    69,    64,    65,    66,    -1,    68,    69,
-       6,     7,     8,     9,    10,    -1,    12,     6,     7,     8,
-       9,    10,    -1,    12,    -1,    -1,    -1,    64,    65,    66,
+      -1,    12,     6,     7,     8,     9,    10,    -1,    12,    -1,
+      -1,    64,    65,    66,    -1,    68,    69,    64,    65,    66,
       -1,    68,    69,    -1,    -1,    -1,    64,    65,    66,    -1,
-      68,    69,    -1,    64,    65,    66,    -1,    68,    69,     6,
-       7,     8,     9,    10,    -1,    -1,    -1,    -1,    -1,    -1,
-      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    64,    65,
-      66,    -1,    68,    69,    -1,    64,    65,    66,    -1,    68,
-      69,    40,    41,    42,    -1,    -1,    45,    -1,    -1,    -1,
-      -1,    -1,    51,    -1,    -1,    -1,    -1,    -1,    -1,    -1,
-      -1,    60,    61,    62,    63,    -1,    -1,    64,    -1,    66,
-      -1,    68,    69
+      68,    69,     6,     7,     8,     9,    10,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    -1,    64,    65,    66,    -1,
+      68,    69,    -1,    64,    65,    66,    -1,    68,    69,    -1,
+      64,    65,    66,    -1,    68,    69,    -1,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,
+      -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,
+      64,    -1,    66,    -1,    68,    69
 };
 
 /* YYSTOS[STATE-NUM] -- The symbol kind of the accessing symbol of
@@ -3799,34 +3487,34 @@ static const yytype_int8 yystos[] =
       15,    16,    17,    18,    35,    39,    40,    41,    42,    45,
       46,    50,    51,    52,    53,    54,    55,    56,    57,    58,
       59,    60,    61,    62,    63,    67,    70,    71,    72,    73,
-      82,    83,    86,    98,   102,   103,   108,   110,   111,   115,
-     119,    72,   102,   110,    14,    14,    11,   106,     5,    11,
-      37,    38,   105,   110,   106,   102,    11,    11,    11,    11,
-     110,   102,    14,   110,    19,    74,    93,   106,    82,   106,
-      19,   100,   106,     1,    14,     1,     6,     7,     8,     9,
+      82,    83,    86,    97,   101,   102,   107,   108,   109,   113,
+     117,    72,   101,   108,    14,    14,    11,   105,     5,    11,
+      37,    38,   104,   108,   105,   101,    11,    11,    11,    11,
+     108,   101,    14,   108,    19,    74,    92,   105,    82,   105,
+      19,    99,   105,     1,    14,     1,     6,     7,     8,     9,
       10,    14,    21,    22,    23,    24,    55,    56,    57,    58,
-      59,    64,    65,    66,    68,    69,    76,   104,   113,    19,
-      20,    25,    26,    43,   116,    19,    12,    12,   108,   110,
-      89,    11,   105,   105,   110,    12,    32,    33,    27,    28,
-      29,    30,    31,    34,    11,   105,   110,   110,   110,    19,
-      19,    14,    11,   103,    44,    75,    76,    77,   101,     1,
-      14,    86,    44,    44,   110,   110,   110,   110,   110,   110,
-     110,   110,   110,   110,   110,    14,    19,    20,    25,    26,
-      77,   114,   116,   118,    25,    26,   118,    20,    20,   118,
-      19,    11,   110,    14,    86,   105,    12,   106,   106,   106,
-     110,   110,   110,   110,   110,   110,   105,    12,    12,    12,
-      12,    12,    11,    12,   110,   112,    74,   100,   110,    20,
-      75,    76,    44,   110,    77,    19,    20,   116,   117,   117,
-      12,   112,   106,    39,    12,   106,    86,   105,   105,    12,
-     106,    73,    14,    14,    85,   102,    14,    75,    12,    75,
-      78,   100,    73,   110,    78,   110,    12,   105,   106,    86,
-      36,   106,    86,    87,    12,    19,   112,    14,   100,   101,
-      99,   110,    75,    78,    90,    11,    36,   107,    88,    47,
-      48,    94,    95,    84,    75,    74,    75,   100,    14,   105,
-     107,   106,    86,    20,    43,    97,     4,    74,   106,    73,
-      85,    75,    99,   106,    12,   106,    86,     4,   106,    94,
-     103,   100,   108,   109,   110,    14,    86,   106,   103,    74,
-      91,    96,    12,   103,   106,    92,    86
+      59,    64,    65,    66,    68,    69,    76,   103,   111,    19,
+      20,    25,    26,    43,   114,    19,    12,    12,   107,   108,
+      89,    11,   104,   104,   108,    12,    32,    33,    27,    28,
+      29,    30,    31,    34,    11,   104,   108,   108,   108,    19,
+      19,    14,    11,   102,    44,    75,    76,    77,   100,     1,
+      14,    86,    44,    44,   108,   108,   108,   108,   108,   108,
+     108,   108,   108,   108,   108,    14,    19,    20,    25,    26,
+      77,   112,   114,   116,    25,    26,   116,    20,    20,   116,
+      19,    11,   108,    14,    86,   104,    12,   105,   105,   105,
+     108,   108,   108,   108,   108,   108,   104,    12,    12,    12,
+      12,    12,    11,    12,   108,   110,    74,    99,   108,    20,
+      75,    76,    44,   108,    77,    19,    20,   114,   115,   115,
+      12,   110,   105,    39,    12,   105,    86,   104,   104,    12,
+     105,    73,    14,    14,    85,   101,    14,    75,    12,    75,
+      78,    99,    73,   108,    78,   108,    12,   104,   105,    86,
+      36,   105,    86,    87,    12,    19,   110,    14,    99,   100,
+      98,   108,    75,    78,    14,    11,    36,   106,    88,    47,
+      48,    93,    94,    84,    75,    74,    75,    99,   105,   104,
+     106,   105,    86,    20,    43,    96,     4,    74,   105,    73,
+      85,    75,    98,   107,    12,   105,    86,     4,   105,    93,
+     102,    99,    90,    14,    86,   105,   102,    74,    12,    95,
+     105,   102,    91,    86
 };
 
 /* YYR1[RULE-NUM] -- Symbol kind of the left-hand side of rule RULE-NUM.  */
@@ -3835,20 +3523,20 @@ static const yytype_int8 yyr1[] =
        0,    79,    81,    80,    80,    80,    82,    82,    82,    84,
       83,    85,    85,    85,    87,    86,    86,    86,    86,    86,
       86,    86,    86,    86,    86,    86,    86,    86,    86,    86,
-      88,    86,    86,    89,    86,    90,    91,    92,    86,    93,
-      86,    86,    86,    86,    94,    94,    96,    95,    95,    97,
-      97,    98,    98,    99,    99,   100,   100,   100,   100,   100,
-     100,   100,   100,   100,   100,   101,   101,   102,   102,   102,
-     102,   102,   102,   102,   102,   102,   103,   103,   104,   104,
-     104,   104,   104,   104,   104,   104,   104,   104,   105,   105,
-     105,   105,   105,   105,   105,   105,   105,   105,   105,   105,
-     106,   107,   108,   108,   108,   108,   108,   108,   109,   109,
-     110,   110,   110,   110,   110,   110,   110,   110,   110,   110,
-     110,   110,   110,   110,   110,   110,   111,   111,   112,   112,
+      88,    86,    86,    89,    86,    90,    91,    86,    92,    86,
+      86,    86,    86,    93,    93,    95,    94,    94,    96,    96,
+      97,    97,    98,    98,    99,    99,    99,    99,    99,    99,
+      99,    99,    99,    99,   100,   100,   101,   101,   101,   101,
+     101,   101,   101,   101,   101,   102,   102,   103,   103,   103,
+     103,   103,   103,   103,   103,   103,   103,   104,   104,   104,
+     104,   104,   104,   104,   104,   104,   104,   104,   104,   105,
+     106,   107,   107,   107,   107,   107,   107,   108,   108,   108,
+     108,   108,   108,   108,   108,   108,   108,   108,   108,   108,
+     108,   108,   108,   109,   109,   110,   110,   111,   111,   111,
+     111,   111,   111,   111,   111,   111,   111,   112,   112,   113,
      113,   113,   113,   113,   113,   113,   113,   113,   113,   113,
-     114,   114,   115,   115,   115,   115,   115,   115,   115,   115,
-     115,   115,   115,   115,   116,   116,   117,   117,   117,   117,
-     118,   118,   118,   119,   119,   119
+     113,   114,   114,   115,   115,   115,   115,   116,   116,   116,
+     117,   117,   117
 };
 
 /* YYR2[RULE-NUM] -- Number of symbols on the right-hand side of rule RULE-NUM.  */
@@ -3857,20 +3545,20 @@ static const yytype_int8 yyr2[] =
        0,     2,     0,     4,     1,     2,     2,     1,     1,     0,
       10,     4,     2,     0,     0,     8,     2,     2,     3,     2,
        6,     5,     5,     5,     2,     3,     6,    10,     3,     9,
-       0,     8,     6,     0,    10,     0,     0,     0,    15,     0,
-       4,     2,     2,     1,     3,     1,     0,     6,     4,     1,
-       1,     3,     4,     3,     1,     3,     4,     1,     3,     5,
-       2,     6,     8,     4,     6,     3,     4,     1,     1,     1,
-       1,     1,     1,     1,     1,     2,     3,     2,     1,     1,
-       1,     1,     1,     1,     1,     1,     1,     1,     4,     4,
-       2,     3,     3,     3,     3,     3,     3,     3,     1,     1,
-       0,     0,     1,     1,     1,     1,     1,     3,     1,     1,
-       4,     3,     3,     3,     3,     3,     3,     3,     3,     3,
-       3,     3,     3,     2,     1,     1,     5,     4,     3,     1,
-       1,     1,     1,     1,     1,     1,     1,     1,     1,     1,
-       3,     4,     1,     4,     4,     4,     3,     3,     3,     3,
-       3,     3,     3,     3,     1,     1,     1,     1,     1,     0,
-       1,     1,     0,     1,     1,     0
+       0,     8,     6,     0,    10,     0,     0,    14,     0,     4,
+       2,     2,     1,     3,     1,     0,     6,     4,     1,     1,
+       3,     4,     3,     1,     3,     4,     1,     3,     5,     2,
+       6,     8,     4,     6,     3,     4,     1,     1,     1,     1,
+       1,     1,     1,     1,     2,     3,     2,     1,     1,     1,
+       1,     1,     1,     1,     1,     1,     1,     4,     4,     2,
+       3,     3,     3,     3,     3,     3,     3,     1,     1,     0,
+       0,     1,     1,     1,     1,     1,     3,     4,     3,     3,
+       3,     3,     3,     3,     3,     3,     3,     3,     3,     3,
+       2,     1,     1,     5,     4,     3,     1,     1,     1,     1,
+       1,     1,     1,     1,     1,     1,     1,     3,     4,     1,
+       4,     4,     4,     3,     3,     3,     3,     3,     3,     3,
+       3,     1,     1,     1,     1,     1,     0,     1,     1,     0,
+       1,     1,     0
 };
 
 
@@ -4334,117 +4022,102 @@ yyreduce:
   switch (yyn)
     {
   case 2: /* $@1: %empty  */
-#line 2659 "parser_fix.y"
+#line 2354 "parser.y"
         {top = create_env(top,0);}
-#line 4340 "y.tab.c"
+#line 4028 "y.tab.c"
     break;
 
   case 3: /* S: $@1 PROGRAM M MEOF  */
-#line 2659 "parser_fix.y"
+#line 2354 "parser.y"
                                                  {
         if (e){
                         printf("%s\nRejected \n%s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
                         e=0;err[0]="\0";buffer[0]='\0';}
                 else {
                         backpatch((yyvsp[-2].b)->N,(yyvsp[-1].addr));
-                        /*printf("%s\nAccepted -> Unoptmized Three Address :\n \n",buffer);
-                       for (int i=0;i<code;i++){
-                                printf("%s",imcode[i]);
-                        }*/
-                                generateSymbolTableDOT();
-        generateTACFlowDOT();
-        generateTACFlowWithBlocks();
-        //generateCallGraphDOT();
-        generateAllImages();
-
-          printf("\noptmized Three Address :\n\n");
- for (int pass = 0; pass < 15; pass++) {
+                        printf("%s\nAccepted -Unoptimized > Three Address :\n",buffer);
+                     /*for (int pass = 0; pass < 12; pass++) {
     constantFolding();
-    constantFoldConditionals();
-    copyPropagation();
+     constantFoldConditionals();      
+    copyPropagation();             
     algebraicSimplification();
-    booleanSimplification();
-    strengthReduction();
+        booleanSimplification();   
+    strengthReduction();            
     commonSubexpressionElimination();
     peepholeOptimization();
     identityAssignmentElimination();
-    deadStoreElimination();
-    redundantLoadElimination();
-   eliminateDeadCode();
-    eliminateDeadCode();
-    redundantJumpElimination();
+    deadStoreElimination();         
+    redundantLoadElimination(); 
+        eliminateDeadCode();
     conservativeJumpChaining();
-    eliminateDeadCode();
+        eliminateDeadCode();
 }
 deadVariableElimination();
 int prev_dead_count = -1;
-for (int dce_pass = 0; dce_pass < 15; dce_pass++) {
-   eliminateDeadCode();
-   redundantJumpElimination();
+for (int dce_pass = 0; dce_pass < 10; dce_pass++) {
+    eliminateDeadCode();
     int dead_count = 0;
     for (int i = 0; i < code; i++) {
         if (strstr(imcode[i], "// DEAD CODE:") != NULL) dead_count++;
     }
     if (dead_count == prev_dead_count) break;
     prev_dead_count = dead_count;
-}
-finalRedundantGotoElimination();
-
+}*/
                         for (int i=0;i<code;i++){
                                 printf("%s",imcode[i]);
                         }
-                          if (strlen(err) > 0) {
+                          /*if (strlen(err) > 0) {
         printf("\n=== Warnings ===\n%s", err);
     }
-                        print_all_envs(top);
+                        print_all_envs(top);*/
                 }YYACCEPT;}
-#line 4402 "y.tab.c"
+#line 4075 "y.tab.c"
     break;
 
   case 4: /* S: MEOF  */
-#line 2716 "parser_fix.y"
+#line 2396 "parser.y"
               {YYACCEPT;}
-#line 4408 "y.tab.c"
+#line 4081 "y.tab.c"
     break;
 
   case 5: /* S: error MEOF  */
-#line 2717 "parser_fix.y"
+#line 2397 "parser.y"
                     {e=1;strcpy(err,"Invalid Statements");
-                printf("%s \nRejected -> %s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
+                //printf("%s \nRejected -> %s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
                 YYACCEPT;}
-#line 4416 "y.tab.c"
+#line 4089 "y.tab.c"
     break;
 
   case 6: /* PROGRAM: FUNDECL PROGRAM  */
-#line 2722 "parser_fix.y"
+#line 2402 "parser.y"
                          {
             if(!e){
                 (yyval.b) = createBoolNode();
                 (yyval.b)->N = merge((yyvsp[-1].b)->N, (yyvsp[0].b)->N);
             }
         }
-#line 4427 "y.tab.c"
+#line 4100 "y.tab.c"
     break;
 
   case 7: /* PROGRAM: STMNTS  */
-#line 2728 "parser_fix.y"
+#line 2408 "parser.y"
                  {(yyval.b) = (yyvsp[0].b);}
-#line 4433 "y.tab.c"
+#line 4106 "y.tab.c"
     break;
 
   case 8: /* PROGRAM: FUNDECL  */
-#line 2729 "parser_fix.y"
+#line 2409 "parser.y"
                   {
             if(!e){
                 (yyval.b) = createBoolNode();
                 (yyval.b)->N = (yyvsp[0].b)->N;
             }
         }
-#line 4444 "y.tab.c"
+#line 4117 "y.tab.c"
     break;
 
   case 9: /* $@2: %empty  */
-#line 2741 "parser_fix.y"
+#line 2421 "parser.y"
                                               {
     if(!e){
         /*  duplicate parameter check */
@@ -4512,11 +4185,11 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
         }
     }
 }
-#line 4516 "y.tab.c"
+#line 4189 "y.tab.c"
     break;
 
   case 10: /* FUNDECL: FUNCTION TYPE IDEN '(' PARAMLIST ')' $@2 '{' STMNTS '}'  */
-#line 2807 "parser_fix.y"
+#line 2487 "parser.y"
                  {
     if(!e){
     if(strcmp(current_return_type, "void") != 0 && !has_return_statement) {
@@ -4541,11 +4214,11 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
         current_return_type[0] = '\0';
     }
 }
-#line 4545 "y.tab.c"
+#line 4218 "y.tab.c"
     break;
 
   case 11: /* PARAMLIST: TYPE IDEN ',' PARAMLIST  */
-#line 2832 "parser_fix.y"
+#line 2512 "parser.y"
                                    {
             if(!e){
                 (yyval.decl) = createDecl((yyvsp[-2].str));
@@ -4556,11 +4229,11 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
                 (yyval.decl)->next = (yyvsp[0].decl);
             }
         }
-#line 4560 "y.tab.c"
+#line 4233 "y.tab.c"
     break;
 
   case 12: /* PARAMLIST: TYPE IDEN  */
-#line 2842 "parser_fix.y"
+#line 2522 "parser.y"
                     {
             if(!e){
                 (yyval.decl) = createDecl((yyvsp[0].str));
@@ -4570,17 +4243,17 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
                 strcpy((yyval.decl)->type, clean_type);
             }
         }
-#line 4574 "y.tab.c"
+#line 4247 "y.tab.c"
     break;
 
   case 13: /* PARAMLIST: %empty  */
-#line 2851 "parser_fix.y"
+#line 2531 "parser.y"
           {(yyval.decl) = NULL;}
-#line 4580 "y.tab.c"
+#line 4253 "y.tab.c"
     break;
 
   case 14: /* $@3: %empty  */
-#line 2854 "parser_fix.y"
+#line 2534 "parser.y"
                             { 
        if(!e) {
            strcpy(current_switch_var, (yyvsp[-2].expr)->str);
@@ -4603,11 +4276,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
            switch_depth++;
        }
    }
-#line 4607 "y.tab.c"
+#line 4280 "y.tab.c"
     break;
 
   case 15: /* A: SWITCH '(' EXPR ')' '{' $@3 CASE_LIST '}'  */
-#line 2875 "parser_fix.y"
+#line 2555 "parser.y"
                    {
        if(!e) {
            (yyval.b) = createBoolNode();
@@ -4620,11 +4293,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
            switch_depth--;
        }
    }
-#line 4624 "y.tab.c"
+#line 4297 "y.tab.c"
     break;
 
   case 16: /* A: BREAK '$'  */
-#line 2887 "parser_fix.y"
+#line 2567 "parser.y"
             {
     if (!e) {
         /*  break must be inside loop or switch */
@@ -4638,11 +4311,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
         code++;
     }
 }
-#line 4642 "y.tab.c"
+#line 4315 "y.tab.c"
     break;
 
   case 17: /* A: CONTINUE '$'  */
-#line 2900 "parser_fix.y"
+#line 2580 "parser.y"
                {
     if (!e) {
         /*  continue must be inside a loop */
@@ -4656,11 +4329,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
         code++;
     }
 }
-#line 4660 "y.tab.c"
+#line 4333 "y.tab.c"
     break;
 
   case 18: /* A: RETURN EXPR '$'  */
-#line 2913 "parser_fix.y"
+#line 2593 "parser.y"
                   {
     if(!e){
         has_return_statement = 1;
@@ -4693,11 +4366,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
         (yyval.b) = createBoolNode();
     }
 }
-#line 4697 "y.tab.c"
+#line 4370 "y.tab.c"
     break;
 
   case 19: /* A: RETURN '$'  */
-#line 2945 "parser_fix.y"
+#line 2625 "parser.y"
              {
     if(!e){
         has_return_statement = 1;
@@ -4715,11 +4388,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
         (yyval.b) = createBoolNode();
     }
 }
-#line 4719 "y.tab.c"
+#line 4392 "y.tab.c"
     break;
 
   case 20: /* A: CALL IDEN '(' ARGLIST ')' '$'  */
-#line 2963 "parser_fix.y"
+#line 2643 "parser.y"
                                 {
     if(!e){
         Function* f = findFunction((yyvsp[-4].str));
@@ -4749,11 +4422,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
         (yyval.b) = createBoolNode();
     }
 }
-#line 4753 "y.tab.c"
+#line 4426 "y.tab.c"
     break;
 
   case 21: /* A: CALL IDEN '(' ')' '$'  */
-#line 2992 "parser_fix.y"
+#line 2672 "parser.y"
                         {
     if(!e){
         Function* f = findFunction((yyvsp[-3].str));
@@ -4774,11 +4447,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
         (yyval.b) = createBoolNode();
     }
 }
-#line 4778 "y.tab.c"
+#line 4451 "y.tab.c"
     break;
 
   case 22: /* A: PRINT '(' EXPR ')' '$'  */
-#line 3012 "parser_fix.y"
+#line 2692 "parser.y"
                         {
     if (!e) {
         char* base_type = getBaseType((yyvsp[-2].expr)->type);
@@ -4794,11 +4467,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
         (yyval.b) = createBoolNode();
     }
 }
-#line 4798 "y.tab.c"
+#line 4471 "y.tab.c"
     break;
 
   case 23: /* A: INPUT '(' EXPR ')' '$'  */
-#line 3027 "parser_fix.y"
+#line 2707 "parser.y"
                         {
     if (!e) {
         if(!(yyvsp[-2].expr)->lv) {
@@ -4820,59 +4493,36 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     }
 }
 }
-#line 4824 "y.tab.c"
+#line 4497 "y.tab.c"
     break;
 
   case 24: /* A: ASNEXPR '$'  */
-#line 3048 "parser_fix.y"
+#line 2728 "parser.y"
               {if (!e){(yyval.b) = (yyvsp[-1].b);}}
-#line 4830 "y.tab.c"
+#line 4503 "y.tab.c"
     break;
 
   case 25: /* A: ASNEXPR error MEOF  */
-#line 3049 "parser_fix.y"
+#line 2729 "parser.y"
                             {strcat(err,"$ missing\n");yyerrok;e=1;
                                                         printf("%s\nRejected -> %s -> Could not generate Three Address Code / Storage Layout\n",buffer,err);
                                                         YYACCEPT;}
-#line 4838 "y.tab.c"
+#line 4511 "y.tab.c"
     break;
 
   case 26: /* A: IF '(' BOOLEXPR ')' M A  */
-#line 3052 "parser_fix.y"
-                                   {if (!e){
-            backpatch((yyvsp[-3].b)->T, (yyvsp[-1].addr));
-            (yyval.b) = createBoolNode();
-            
-            int bonly = ((yyvsp[0].b)->N == NULL && (yyvsp[0].b)->C == NULL && (yyvsp[0].b)->B != NULL);
-            int conly = ((yyvsp[0].b)->N == NULL && (yyvsp[0].b)->B == NULL && (yyvsp[0].b)->C != NULL);
-            if ((bonly || conly)
-                && (yyvsp[-3].b)->F != NULL && (yyvsp[-3].b)->F->addr != FALL_THROUGH
-                && (yyvsp[-3].b)->T != NULL && (yyvsp[-3].b)->T->addr == FALL_THROUGH) {
-                /* Roll back the break/continue goto -- un-emit it. */
-                struct Node* exit_node = bonly ? (yyvsp[0].b)->B : (yyvsp[0].b)->C;
-                if (exit_node != NULL && exit_node->addr == code - 1) {
-                    imcode[code - 1][0] = 0;  /* clear the slot */
-                    code--;                    /* retract counter */
-                    exit_node->addr = FALL_THROUGH; /* node is now a sentinel */
-                }
-                /* Flip condition: neg(neg(op)) = orig op, fires on TRUE. */
-                flipCondToTrue((yyvsp[-3].b)->F->addr);
-                /* The condition node now jumps on TRUE toward the
-                   break/continue target -- give it to the right list. */
-                if (bonly) (yyval.b)->B = (yyvsp[-3].b)->F;
-                else       (yyval.b)->C = (yyvsp[-3].b)->F;
-                (yyval.b)->N = NULL;
-            } else {
-                (yyval.b)->N = merge((yyvsp[-3].b)->F, (yyvsp[0].b)->N);
-                (yyval.b)->B = (yyvsp[0].b)->B;
-                (yyval.b)->C = (yyvsp[0].b)->C;
-            }
-        }}
-#line 4872 "y.tab.c"
+#line 2732 "parser.y"
+                                   {if (!e){backpatch((yyvsp[-3].b)->T,(yyvsp[-1].addr));
+                                                                                (yyval.b) = createBoolNode();
+                                                                                (yyval.b)->N = merge((yyvsp[-3].b)->F,(yyvsp[0].b)->N);
+                                                                                (yyval.b)->B = (yyvsp[0].b)->B;
+                                                                                (yyval.b)->C = (yyvsp[0].b)->C;
+                                                                                }}
+#line 4522 "y.tab.c"
     break;
 
   case 27: /* A: IF '(' BOOLEXPR ')' M A ELSE NN M A  */
-#line 3081 "parser_fix.y"
+#line 2738 "parser.y"
                                               {if (!e){
                 backpatch((yyvsp[-7].b)->T,(yyvsp[-5].addr));
                 backpatch((yyvsp[-7].b)->F,(yyvsp[-1].addr));
@@ -4881,167 +4531,116 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
                 (yyval.b)->B = merge((yyvsp[-4].b)->B, (yyvsp[0].b)->B);
                 (yyval.b)->C = merge((yyvsp[-4].b)->C, (yyvsp[0].b)->C);
         }}
-#line 4885 "y.tab.c"
+#line 4535 "y.tab.c"
     break;
 
   case 28: /* A: EXPR error MEOF  */
-#line 3089 "parser_fix.y"
+#line 2746 "parser.y"
                          {{strcat(err,"$ missing");yyerrok;e=1;}
                                                         printf("%s\nRejected -> %s -> Could not generate Three Address Code / Storage Layout\n",buffer,err);
                                                         YYACCEPT;}
-#line 4893 "y.tab.c"
+#line 4543 "y.tab.c"
     break;
 
   case 29: /* A: IF BOOLEXPR ')' M A ELSE NN M A  */
-#line 3092 "parser_fix.y"
+#line 2749 "parser.y"
                                          {{strcat(err,"missing (\n");e=1;}}
-#line 4899 "y.tab.c"
+#line 4549 "y.tab.c"
     break;
 
   case 30: /* $@4: %empty  */
-#line 3094 "parser_fix.y"
+#line 2751 "parser.y"
                                      {loop_depth++;}
-#line 4905 "y.tab.c"
+#line 4555 "y.tab.c"
     break;
 
   case 31: /* A: WHILE M '(' BOOLEXPR ')' M $@4 A  */
-#line 3094 "parser_fix.y"
+#line 2751 "parser.y"
                                                        {if (!e){
     loop_depth--;
     backpatch((yyvsp[0].b)->N,(yyvsp[-6].addr));
     backpatch((yyvsp[0].b)->C, (yyvsp[-6].addr));
     backpatch((yyvsp[-4].b)->T,(yyvsp[-2].addr));
-    (yyval.b) = createBoolNode();
-    (yyval.b)->N = (yyvsp[-4].b)->F;
     sprintf(imcode[code],"%d goto %d\n",code,(yyvsp[-6].addr));
     code++;
     backpatch((yyvsp[0].b)->B, code);
+    (yyval.b) = createBoolNode();
+    (yyval.b)->N = (yyvsp[-4].b)->F;
 }}
-#line 4921 "y.tab.c"
+#line 4571 "y.tab.c"
     break;
 
   case 32: /* A: WHILE M BOOLEXPR ')' M A  */
-#line 3105 "parser_fix.y"
+#line 2762 "parser.y"
                                    {{strcat(err,"missing (\n");e=1;}}
-#line 4927 "y.tab.c"
+#line 4577 "y.tab.c"
     break;
 
   case 33: /* $@5: %empty  */
-#line 3107 "parser_fix.y"
+#line 2764 "parser.y"
                {loop_depth++;}
-#line 4933 "y.tab.c"
+#line 4583 "y.tab.c"
     break;
 
   case 34: /* A: DO M $@5 A WHILE M '(' BOOLEXPR ')' '$'  */
-#line 3107 "parser_fix.y"
+#line 2764 "parser.y"
                                                               {
     if (!e) {
         loop_depth--;
-        backpatch((yyvsp[-6].b)->N, (yyvsp[-4].addr));
-        backpatch((yyvsp[-6].b)->C, (yyvsp[-4].addr));
-       
-        flipCondToTrue((yyvsp[-2].b)->F->addr);
-        backpatch((yyvsp[-2].b)->F, (yyvsp[-8].addr));       /* true → loop back to body start */
-        backpatch((yyvsp[-6].b)->B, code);     /* break → exit (falls through here) */
+        backpatch((yyvsp[-6].b)->N, (yyvsp[-4].addr)); 
+        backpatch((yyvsp[-6].b)->C, (yyvsp[-4].addr)); 
+        backpatch((yyvsp[-2].b)->T, (yyvsp[-8].addr));
+        backpatch((yyvsp[-6].b)->B, code);
+        backpatch((yyvsp[-2].b)->F, code);
         (yyval.b) = createBoolNode();
         (yyval.b)->N = NULL;
     }
 }
-#line 4951 "y.tab.c"
+#line 4600 "y.tab.c"
     break;
 
-  case 35: /* @6: %empty  */
-#line 3121 "parser_fix.y"
-    {
-       
-        (yyval.addr) = code;   /* incr_start_saved = current code position   */
+  case 35: /* $@6: %empty  */
+#line 2777 "parser.y"
+    { 
+        sprintf(imcode[code], "%d goto %d\n", code, (yyvsp[-4].addr)); 
+        code++; 
     }
-#line 4960 "y.tab.c"
+#line 4609 "y.tab.c"
     break;
 
-  case 36: /* @7: %empty  */
-#line 3126 "parser_fix.y"
-    {
-        int incr_start = (yyvsp[-3].addr);   /* saved before ASNEXPR was parsed  */
-        int incr_end   = code;       /* one-past the last incr line       */
-        int incr_count = incr_end - incr_start;
-        /* Push INCR onto stash stack (supports nesting) */
-        int sp = for_incr_sp++;
-        for_incr_count[sp] = incr_count;
-        for (int _i = 0; _i < incr_count; _i++)
-            strcpy(for_incr_stash[sp][_i], imcode[incr_start + _i]);
-        /* Roll code back: body will emit starting at incr_start */
-        code = incr_start;
-        (yyval.addr) = incr_start;  /* pass incr_start forward as $11       */
-    }
-#line 4978 "y.tab.c"
-    break;
-
-  case 37: /* $@8: %empty  */
-#line 3139 "parser_fix.y"
+  case 36: /* $@7: %empty  */
+#line 2781 "parser.y"
         {loop_depth++;}
-#line 4984 "y.tab.c"
+#line 4615 "y.tab.c"
     break;
 
-  case 38: /* A: FOR '(' ASNEXPR '$' M BOOLEXPR @6 '$' M FORINCR @7 ')' M $@8 A  */
-#line 3140 "parser_fix.y"
+  case 37: /* A: FOR '(' ASNEXPR '$' M BOOLEXPR '$' M ASNEXPR $@6 ')' M $@7 A  */
+#line 2782 "parser.y"
     {
         if (!e) {
             loop_depth--;
-            /* $5  = cond_start (M before BOOLEXPR)
-               $6  = BOOLEXPR node  (T=FALL_THROUGH, F=exit-node)
-               $11 = incr_start (body was emitted from here)
-               $13 = body_start = M after ')' = incr_start (same value)
-               $15 = body A node                                         */
-            int cond_start  = (yyvsp[-10].addr);
-            int incr_start  = (yyvsp[-4].addr);
-
-            /* body N/C exits fall into INCREMENT -- which now immediately
-               follows the body.  Patch them to current code position.   */
-            backpatch((yyvsp[0].b)->N, code);
-            backpatch((yyvsp[0].b)->C, code);
-
-            /* Pop INCR from stash stack and restore after body */
-            int stk = --for_incr_sp;
-            int icnt = for_incr_count[stk];
-            for (int _i = 0; _i < icnt; _i++) {
-                /* Renumber: update the leading line number to match new position */
-                int new_lnum = code + _i;
-                char* src = for_incr_stash[stk][_i];
-                /* Skip old line number prefix, keep the rest */
-                char* spc = strchr(src, ' ');
-                if (spc)
-                    sprintf(imcode[code + _i], "%d%s", new_lnum, spc);
-                else
-                    strcpy(imcode[code + _i], src);
-            }
-            code += icnt;
-
-            /* INCR -> condition back-edge */
-            sprintf(imcode[code], "%d goto %d\n", code, cond_start);
+            backpatch((yyvsp[-8].b)->T, (yyvsp[-2].addr));
+            backpatch((yyvsp[0].b)->N, (yyvsp[-6].addr));
+            backpatch((yyvsp[0].b)->C, (yyvsp[-6].addr));
+            sprintf(imcode[code], "%d goto %d\n", code, (yyvsp[-6].addr));
             code++;
-
-            /* break -> exit (right here) */
             backpatch((yyvsp[0].b)->B, code);
-            /* condition false -> exit */
-            backpatch((yyvsp[-9].b)->F, code);
-
             (yyval.b) = createBoolNode();
-            (yyval.b)->N = NULL;
+            (yyval.b)->N = (yyvsp[-8].b)->F;
         }
     }
-#line 5034 "y.tab.c"
+#line 4633 "y.tab.c"
     break;
 
-  case 39: /* $@9: %empty  */
-#line 3185 "parser_fix.y"
-         {top = create_env(top,offset);offset=0;}
-#line 5040 "y.tab.c"
+  case 38: /* $@8: %empty  */
+#line 2795 "parser.y"
+     {top = create_env(top,offset);offset=0;}
+#line 4639 "y.tab.c"
     break;
 
-  case 40: /* A: '{' $@9 STMNTS '}'  */
-#line 3185 "parser_fix.y"
-                                                             {if (!e) {
+  case 39: /* A: '{' $@8 STMNTS '}'  */
+#line 2795 "parser.y"
+                                                         {if (!e) {
                                                 (yyval.b) = createBoolNode();
                                                 (yyval.b)->N = (yyvsp[-1].b)->N;
                                                 (yyval.b)->B = (yyvsp[-1].b)->B;
@@ -5050,31 +4649,31 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
                                                 if (!top) offset =0;
                                                 else offset = top->prev_offset;
                                                 }}
-#line 5054 "y.tab.c"
+#line 4653 "y.tab.c"
     break;
 
-  case 41: /* A: '{' '}'  */
-#line 3195 "parser_fix.y"
+  case 40: /* A: '{' '}'  */
+#line 2804 "parser.y"
                   {if (!e){(yyval.b)=createBoolNode();}}
-#line 5060 "y.tab.c"
+#line 4659 "y.tab.c"
     break;
 
-  case 42: /* A: EXPR '$'  */
-#line 3196 "parser_fix.y"
+  case 41: /* A: EXPR '$'  */
+#line 2805 "parser.y"
                   {if (!e) {(yyval.b)=createBoolNode();}}
-#line 5066 "y.tab.c"
+#line 4665 "y.tab.c"
     break;
 
-  case 43: /* A: DECLSTATEMENT  */
-#line 3197 "parser_fix.y"
+  case 42: /* A: DECLSTATEMENT  */
+#line 2806 "parser.y"
                         {
             if (!e){(yyval.b)=createBoolNode();}
             }
-#line 5074 "y.tab.c"
+#line 4673 "y.tab.c"
     break;
 
-  case 44: /* CASE_LIST: CASE_ITEM M CASE_LIST  */
-#line 3202 "parser_fix.y"
+  case 43: /* CASE_LIST: CASE_ITEM M CASE_LIST  */
+#line 2811 "parser.y"
                                  {
        if(!e) {
            backpatch((yyvsp[-2].b)->N, (yyvsp[-1].addr));
@@ -5083,19 +4682,19 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
            (yyval.b)->B = merge((yyvsp[-2].b)->B, (yyvsp[0].b)->B);
        }
    }
-#line 5087 "y.tab.c"
+#line 4686 "y.tab.c"
     break;
 
-  case 45: /* CASE_LIST: CASE_ITEM  */
-#line 3210 "parser_fix.y"
+  case 44: /* CASE_LIST: CASE_ITEM  */
+#line 2819 "parser.y"
                {
        if(!e) { (yyval.b) = (yyvsp[0].b); }
    }
-#line 5095 "y.tab.c"
+#line 4694 "y.tab.c"
     break;
 
-  case 46: /* @10: %empty  */
-#line 3214 "parser_fix.y"
+  case 45: /* @9: %empty  */
+#line 2823 "parser.y"
                                    {
        if(!e) {
            sprintf(imcode[code], "%d if %s != %s goto ", code, 
@@ -5104,11 +4703,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
            code++;
        }
    }
-#line 5108 "y.tab.c"
+#line 4707 "y.tab.c"
     break;
 
-  case 47: /* CASE_ITEM: CASE CASE_EXPR ':' M @10 STMNTS  */
-#line 3221 "parser_fix.y"
+  case 46: /* CASE_ITEM: CASE CASE_EXPR ':' M @9 STMNTS  */
+#line 2830 "parser.y"
             {
        if(!e) {
            (yyval.b) = createBoolNode();
@@ -5116,11 +4715,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
            (yyval.b)->B = (yyvsp[0].b)->B;
        }
    }
-#line 5120 "y.tab.c"
+#line 4719 "y.tab.c"
     break;
 
-  case 48: /* CASE_ITEM: DEFAULT ':' M STMNTS  */
-#line 3228 "parser_fix.y"
+  case 47: /* CASE_ITEM: DEFAULT ':' M STMNTS  */
+#line 2837 "parser.y"
                           {
        if(!e) {
            (yyval.b) = createBoolNode();
@@ -5128,11 +4727,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
            (yyval.b)->B = (yyvsp[0].b)->B;
        }
    }
-#line 5132 "y.tab.c"
+#line 4731 "y.tab.c"
     break;
 
-  case 49: /* CASE_EXPR: NUM  */
-#line 3236 "parser_fix.y"
+  case 48: /* CASE_EXPR: NUM  */
+#line 2845 "parser.y"
                   {
        if(!e) {
            (yyval.expr) = createExpr();
@@ -5141,11 +4740,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
            else strcpy((yyval.expr)->type, "int");
        }
    }
-#line 5145 "y.tab.c"
+#line 4744 "y.tab.c"
     break;
 
-  case 50: /* CASE_EXPR: CHARR  */
-#line 3244 "parser_fix.y"
+  case 49: /* CASE_EXPR: CHARR  */
+#line 2853 "parser.y"
            {
        if(!e) {
            (yyval.expr) = createExpr();
@@ -5153,11 +4752,11 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
            strcpy((yyval.expr)->type, "char");
        }
    }
-#line 5157 "y.tab.c"
+#line 4756 "y.tab.c"
     break;
 
-  case 51: /* DECLSTATEMENT: TYPE DECLLIST '$'  */
-#line 3257 "parser_fix.y"
+  case 50: /* DECLSTATEMENT: TYPE DECLLIST '$'  */
+#line 2866 "parser.y"
                                  {
         struct Decl* temp = (yyvsp[-1].decl);
         while(temp){
@@ -5242,7 +4841,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
                             temp->key, temp->size, init_count);
                 }
 
-                /*  Check each array element for range overflow */
+                /* NEW: Check each array element for range overflow */
                 char check_copy[1000]; strcpy(check_copy, temp->op);
                 char* check_token = strtok(check_copy, ",");
                 int check_idx = 0;
@@ -5468,33 +5067,33 @@ else if(strcmp(actual_type,"double")==0){
             temp = temp->next;
         }
 }
-#line 5472 "y.tab.c"
+#line 5071 "y.tab.c"
     break;
 
-  case 52: /* DECLSTATEMENT: TYPE DECLLIST error MEOF  */
-#line 3567 "parser_fix.y"
+  case 51: /* DECLSTATEMENT: TYPE DECLLIST error MEOF  */
+#line 3176 "parser.y"
                            {{strcat(err,"$ missing\n");yyerrok;e=1;}
                                                         printf("%s\nRejected -> %s -> Could not generate Three Address Code / Storage Layout\n",buffer,err);
                                                         YYACCEPT; }
-#line 5480 "y.tab.c"
+#line 5079 "y.tab.c"
     break;
 
-  case 53: /* INIT_LIST: EXPR ',' INIT_LIST  */
-#line 3573 "parser_fix.y"
+  case 52: /* INIT_LIST: EXPR ',' INIT_LIST  */
+#line 3182 "parser.y"
                               {
         if(!e){ (yyval.expr) = (yyvsp[-2].expr); (yyval.expr)->next = (yyvsp[0].expr); }
     }
-#line 5488 "y.tab.c"
+#line 5087 "y.tab.c"
     break;
 
-  case 54: /* INIT_LIST: EXPR  */
-#line 3576 "parser_fix.y"
+  case 53: /* INIT_LIST: EXPR  */
+#line 3185 "parser.y"
            { if(!e){ (yyval.expr) = (yyvsp[0].expr); (yyval.expr)->next = NULL; } }
-#line 5494 "y.tab.c"
+#line 5093 "y.tab.c"
     break;
 
-  case 55: /* DECLLIST: IDEN ',' DECLLIST  */
-#line 3578 "parser_fix.y"
+  case 54: /* DECLLIST: IDEN ',' DECLLIST  */
+#line 3187 "parser.y"
                             {if (get(top->table,(yyvsp[-2].str))==NULL){
                                                                 Symbol* s = createSymbol((yyvsp[-2].str));
                                                                 put(top->table,(yyvsp[-2].str),s);
@@ -5507,11 +5106,11 @@ else if(strcmp(actual_type,"double")==0){
                                                                 (yyval.decl)->re =1;
                                                                 }strcpy((yyval.decl)->lt,"u");
                                                 }
-#line 5511 "y.tab.c"
+#line 5110 "y.tab.c"
     break;
 
-  case 56: /* DECLLIST: IDEN INDEX ',' DECLLIST  */
-#line 3590 "parser_fix.y"
+  case 55: /* DECLLIST: IDEN INDEX ',' DECLLIST  */
+#line 3199 "parser.y"
                                   {
                                 if (get(top->table,(yyvsp[-3].str))==NULL){
                                         Symbol* s = createSymbol((yyvsp[-3].str));
@@ -5527,11 +5126,11 @@ else if(strcmp(actual_type,"double")==0){
                                         (yyval.decl)->re =1;
                                 }strcpy((yyval.decl)->lt,"u");
         }
-#line 5531 "y.tab.c"
+#line 5130 "y.tab.c"
     break;
 
-  case 57: /* DECLLIST: IDEN  */
-#line 3605 "parser_fix.y"
+  case 56: /* DECLLIST: IDEN  */
+#line 3214 "parser.y"
                {if (get(top->table,(yyvsp[0].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[0].str));
                                                 put(top->table,(yyvsp[0].str),s);
@@ -5542,11 +5141,11 @@ else if(strcmp(actual_type,"double")==0){
                                                 strcpy((yyval.decl)->type,"");
                                                 (yyval.decl)->re = 1;
                                                 }strcpy((yyval.decl)->lt,"u");}
-#line 5546 "y.tab.c"
+#line 5145 "y.tab.c"
     break;
 
-  case 58: /* DECLLIST: IDEN '=' EXPR  */
-#line 3615 "parser_fix.y"
+  case 57: /* DECLLIST: IDEN '=' EXPR  */
+#line 3224 "parser.y"
                         {
                                         if (get(top->table,(yyvsp[-2].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[-2].str));
@@ -5564,11 +5163,11 @@ else if(strcmp(actual_type,"double")==0){
                                                 (yyval.decl)->is_literal = isLiteral((yyvsp[0].expr)->str);
                                                 (yyval.decl)->re=1;
                                         }}
-#line 5568 "y.tab.c"
+#line 5167 "y.tab.c"
     break;
 
-  case 59: /* DECLLIST: IDEN '=' EXPR ',' DECLLIST  */
-#line 3632 "parser_fix.y"
+  case 58: /* DECLLIST: IDEN '=' EXPR ',' DECLLIST  */
+#line 3241 "parser.y"
                               {
                                         if (get(top->table,(yyvsp[-4].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[-4].str));
@@ -5588,11 +5187,11 @@ else if(strcmp(actual_type,"double")==0){
                                                 (yyval.decl)->re=1;
                                                 (yyval.decl)->next = (yyvsp[0].decl);
                                         }}
-#line 5592 "y.tab.c"
+#line 5191 "y.tab.c"
     break;
 
-  case 60: /* DECLLIST: IDEN INDEX  */
-#line 3651 "parser_fix.y"
+  case 59: /* DECLLIST: IDEN INDEX  */
+#line 3260 "parser.y"
                      {if (get(top->table,(yyvsp[-1].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[-1].str));
                                                 put(top->table,(yyvsp[-1].str),s);
@@ -5605,11 +5204,11 @@ else if(strcmp(actual_type,"double")==0){
                                                 strcpy((yyval.decl)->type,"");
                                                 (yyval.decl)->re=1;
                                         }strcpy((yyval.decl)->lt,"u");}
-#line 5609 "y.tab.c"
+#line 5208 "y.tab.c"
     break;
 
-  case 61: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}'  */
-#line 3663 "parser_fix.y"
+  case 60: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}'  */
+#line 3272 "parser.y"
                                            {
         if (get(top->table,(yyvsp[-5].str))==NULL){
             Symbol* s = createSymbol((yyvsp[-5].str));
@@ -5626,11 +5225,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.decl) = createDecl((yyvsp[-5].str)); strcpy((yyval.decl)->type,""); (yyval.decl)->re=1;
         }
     }
-#line 5630 "y.tab.c"
+#line 5229 "y.tab.c"
     break;
 
-  case 62: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}' ',' DECLLIST  */
-#line 3679 "parser_fix.y"
+  case 61: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}' ',' DECLLIST  */
+#line 3288 "parser.y"
                                                     {
         if (get(top->table,(yyvsp[-7].str))==NULL){
             Symbol* s = createSymbol((yyvsp[-7].str));
@@ -5648,11 +5247,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.decl) = createDecl((yyvsp[-7].str)); strcpy((yyval.decl)->type,""); (yyval.decl)->re=1; (yyval.decl)->next = (yyvsp[0].decl);
         }
     }
-#line 5652 "y.tab.c"
+#line 5251 "y.tab.c"
     break;
 
-  case 63: /* DECLLIST: IDEN INDEX '=' EXPR  */
-#line 3696 "parser_fix.y"
+  case 62: /* DECLLIST: IDEN INDEX '=' EXPR  */
+#line 3305 "parser.y"
                               {
                 if (get(top->table,(yyvsp[-3].str))==NULL){
                     Symbol* s = createSymbol((yyvsp[-3].str));
@@ -5668,11 +5267,11 @@ else if(strcmp(actual_type,"double")==0){
                     (yyval.decl) = createDecl((yyvsp[-3].str)); strcpy((yyval.decl)->type,""); (yyval.decl)->re=1;
                 }
         }
-#line 5672 "y.tab.c"
+#line 5271 "y.tab.c"
     break;
 
-  case 64: /* DECLLIST: IDEN INDEX '=' EXPR ',' DECLLIST  */
-#line 3711 "parser_fix.y"
+  case 63: /* DECLLIST: IDEN INDEX '=' EXPR ',' DECLLIST  */
+#line 3320 "parser.y"
                                            {
                 if (get(top->table,(yyvsp[-5].str))==NULL){
                     Symbol* s = createSymbol((yyvsp[-5].str));
@@ -5689,11 +5288,11 @@ else if(strcmp(actual_type,"double")==0){
                     (yyval.decl) = createDecl((yyvsp[-5].str)); strcpy((yyval.decl)->type,""); (yyval.decl)->re=1; (yyval.decl)->next = (yyvsp[0].decl);
                 }
         }
-#line 5693 "y.tab.c"
+#line 5292 "y.tab.c"
     break;
 
-  case 65: /* INDEX: '[' NUM ']'  */
-#line 3729 "parser_fix.y"
+  case 64: /* INDEX: '[' NUM ']'  */
+#line 3338 "parser.y"
                    {(yyval.type) = createType();
                     int arr_size = atoi((yyvsp[-1].str));
                     /* positive size check*/
@@ -5706,11 +5305,11 @@ else if(strcmp(actual_type,"double")==0){
                     if (checkfloat((yyvsp[-1].str))){
                             e=1;sprintf(err+strlen(err),"Array index cannot be float\n");
                     }}
-#line 5710 "y.tab.c"
+#line 5309 "y.tab.c"
     break;
 
-  case 66: /* INDEX: '[' NUM ']' INDEX  */
-#line 3741 "parser_fix.y"
+  case 65: /* INDEX: '[' NUM ']' INDEX  */
+#line 3350 "parser.y"
                             {(yyval.type) = createType();
                              int arr_size = atoi((yyvsp[-2].str));
                              /* positive size check  */
@@ -5723,59 +5322,59 @@ else if(strcmp(actual_type,"double")==0){
                              if (checkfloat((yyvsp[-2].str))){
                                      e=1;sprintf(err+strlen(err),"Array index cannot be float\n");
                              }}
-#line 5727 "y.tab.c"
+#line 5326 "y.tab.c"
     break;
 
-  case 67: /* TYPE: INT  */
-#line 3754 "parser_fix.y"
+  case 66: /* TYPE: INT  */
+#line 3363 "parser.y"
           {(yyval.type) = createType(); strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=4;}
-#line 5733 "y.tab.c"
+#line 5332 "y.tab.c"
     break;
 
-  case 68: /* TYPE: FLOAT  */
-#line 3755 "parser_fix.y"
+  case 67: /* TYPE: FLOAT  */
+#line 3364 "parser.y"
                  {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=4;}
-#line 5739 "y.tab.c"
+#line 5338 "y.tab.c"
     break;
 
-  case 69: /* TYPE: BOOL  */
-#line 3756 "parser_fix.y"
+  case 68: /* TYPE: BOOL  */
+#line 3365 "parser.y"
            {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=1;}
-#line 5745 "y.tab.c"
+#line 5344 "y.tab.c"
     break;
 
-  case 70: /* TYPE: CHAR  */
-#line 3757 "parser_fix.y"
+  case 69: /* TYPE: CHAR  */
+#line 3366 "parser.y"
                {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=1;}
-#line 5751 "y.tab.c"
+#line 5350 "y.tab.c"
     break;
 
-  case 71: /* TYPE: SHORT  */
-#line 3758 "parser_fix.y"
+  case 70: /* TYPE: SHORT  */
+#line 3367 "parser.y"
             {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=2;}
-#line 5757 "y.tab.c"
+#line 5356 "y.tab.c"
     break;
 
-  case 72: /* TYPE: LONG  */
-#line 3759 "parser_fix.y"
+  case 71: /* TYPE: LONG  */
+#line 3368 "parser.y"
            {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=8;}
-#line 5763 "y.tab.c"
+#line 5362 "y.tab.c"
     break;
 
-  case 73: /* TYPE: DOUBLE  */
-#line 3760 "parser_fix.y"
+  case 72: /* TYPE: DOUBLE  */
+#line 3369 "parser.y"
              {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=8;}
-#line 5769 "y.tab.c"
+#line 5368 "y.tab.c"
     break;
 
-  case 74: /* TYPE: VOID  */
-#line 3761 "parser_fix.y"
+  case 73: /* TYPE: VOID  */
+#line 3370 "parser.y"
            {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=0;}
-#line 5775 "y.tab.c"
+#line 5374 "y.tab.c"
     break;
 
-  case 75: /* TYPE: CONST TYPE  */
-#line 3762 "parser_fix.y"
+  case 74: /* TYPE: CONST TYPE  */
+#line 3371 "parser.y"
                  {
     (yyval.type) = (yyvsp[0].type);
     char base[100];
@@ -5783,281 +5382,256 @@ else if(strcmp(actual_type,"double")==0){
     if (base[0] == '@') memmove(base, base+1, strlen(base));
     sprintf((yyval.type)->str, "const %s", base);
 }
-#line 5787 "y.tab.c"
+#line 5386 "y.tab.c"
     break;
 
-  case 76: /* STMNTS: STMNTS M A  */
-#line 3771 "parser_fix.y"
+  case 75: /* STMNTS: STMNTS M A  */
+#line 3380 "parser.y"
                    {if (!e){backpatch((yyvsp[-2].b)->N,(yyvsp[-1].addr));
                                         (yyval.b) = createBoolNode();
                                         (yyval.b)->N = (yyvsp[0].b)->N;
                                         (yyval.b)->B = merge((yyvsp[-2].b)->B, (yyvsp[0].b)->B);
                                         (yyval.b)->C = merge((yyvsp[-2].b)->C, (yyvsp[0].b)->C);
 }}
-#line 5798 "y.tab.c"
+#line 5397 "y.tab.c"
     break;
 
-  case 77: /* STMNTS: A M  */
-#line 3777 "parser_fix.y"
+  case 76: /* STMNTS: A M  */
+#line 3386 "parser.y"
              {if (!e){(yyval.b) = createBoolNode();
                 (yyval.b)->N = (yyvsp[-1].b)->N;
                 (yyval.b)->B = (yyvsp[-1].b)->B;
                 (yyval.b)->C = (yyvsp[-1].b)->C;
 }}
-#line 5808 "y.tab.c"
+#line 5407 "y.tab.c"
     break;
 
-  case 78: /* ASSGN: '='  */
-#line 3784 "parser_fix.y"
+  case 77: /* ASSGN: '='  */
+#line 3393 "parser.y"
            {strcpy((yyval.str),"=");}
-#line 5814 "y.tab.c"
+#line 5413 "y.tab.c"
     break;
 
-  case 79: /* ASSGN: PASN  */
-#line 3785 "parser_fix.y"
+  case 78: /* ASSGN: PASN  */
+#line 3394 "parser.y"
                 {strcpy((yyval.str),(yyvsp[0].str));}
-#line 5820 "y.tab.c"
+#line 5419 "y.tab.c"
     break;
 
-  case 80: /* ASSGN: MASN  */
-#line 3786 "parser_fix.y"
+  case 79: /* ASSGN: MASN  */
+#line 3395 "parser.y"
                 {strcpy((yyval.str),(yyvsp[0].str));}
-#line 5826 "y.tab.c"
+#line 5425 "y.tab.c"
     break;
 
-  case 81: /* ASSGN: DASN  */
-#line 3787 "parser_fix.y"
+  case 80: /* ASSGN: DASN  */
+#line 3396 "parser.y"
             {strcpy((yyval.str),(yyvsp[0].str));}
-#line 5832 "y.tab.c"
+#line 5431 "y.tab.c"
     break;
 
-  case 82: /* ASSGN: SASN  */
-#line 3788 "parser_fix.y"
+  case 81: /* ASSGN: SASN  */
+#line 3397 "parser.y"
             {strcpy((yyval.str),(yyvsp[0].str));}
-#line 5838 "y.tab.c"
+#line 5437 "y.tab.c"
     break;
 
-  case 83: /* ASSGN: BANDASN  */
-#line 3789 "parser_fix.y"
+  case 82: /* ASSGN: BANDASN  */
+#line 3398 "parser.y"
                {strcpy((yyval.str),"&=");}
-#line 5844 "y.tab.c"
+#line 5443 "y.tab.c"
     break;
 
-  case 84: /* ASSGN: BORASN  */
-#line 3790 "parser_fix.y"
+  case 83: /* ASSGN: BORASN  */
+#line 3399 "parser.y"
                {strcpy((yyval.str),"|=");}
-#line 5850 "y.tab.c"
+#line 5449 "y.tab.c"
     break;
 
-  case 85: /* ASSGN: BXORASN  */
-#line 3791 "parser_fix.y"
+  case 84: /* ASSGN: BXORASN  */
+#line 3400 "parser.y"
                {strcpy((yyval.str),"^=");}
-#line 5856 "y.tab.c"
+#line 5455 "y.tab.c"
     break;
 
-  case 86: /* ASSGN: LSHIFTASN  */
-#line 3792 "parser_fix.y"
+  case 85: /* ASSGN: LSHIFTASN  */
+#line 3401 "parser.y"
                  {strcpy((yyval.str),"<<=");}
-#line 5862 "y.tab.c"
+#line 5461 "y.tab.c"
     break;
 
-  case 87: /* ASSGN: RSHIFTASN  */
-#line 3793 "parser_fix.y"
+  case 86: /* ASSGN: RSHIFTASN  */
+#line 3402 "parser.y"
                  {strcpy((yyval.str),">>=");}
-#line 5868 "y.tab.c"
+#line 5467 "y.tab.c"
     break;
 
-  case 88: /* BOOLEXPR: BOOLEXPR OR M BOOLEXPR  */
-#line 3796 "parser_fix.y"
-                                {
-             if (!e){
-                 (yyval.b) = createBoolNode();
-              
-                 struct Node* b1_T = (yyvsp[-3].b)->T;
-                 struct Node* b1_F = (yyvsp[-3].b)->F;
-
-                 if (b1_T != NULL && b1_T->addr == FALL_THROUGH
-                     && b1_F != NULL && b1_F->addr != FALL_THROUGH) {
-                     if (flipCondToTrue(b1_F->addr)) {
-                         b1_T = b1_F;   /* jump node → now fires on true */
-                         b1_F = (yyvsp[-3].b)->T;  /* FALL_THROUGH → false falls into B2 */
-                     }
-                 }
-                 backpatch(b1_F, (yyvsp[-1].addr));
-                 (yyval.b)->T = merge(b1_T, (yyvsp[0].b)->T);
-                 (yyval.b)->F = (yyvsp[0].b)->F;
-             }}
-#line 5891 "y.tab.c"
+  case 87: /* BOOLEXPR: BOOLEXPR OR M BOOLEXPR  */
+#line 3405 "parser.y"
+                                {  if (!e){backpatch((yyvsp[-3].b)->F,(yyvsp[-1].addr));
+                                                                (yyval.b) = createBoolNode();
+                                                                (yyval.b)->T = merge((yyvsp[-3].b)->T,(yyvsp[0].b)->T);
+                                                                (yyval.b)->F = (yyvsp[0].b)->F;
+                                                         }}
+#line 5477 "y.tab.c"
     break;
 
-  case 89: /* BOOLEXPR: BOOLEXPR AND M BOOLEXPR  */
-#line 3814 "parser_fix.y"
-                              {
-             if (!e){
-                 /* B1->T leads into B2 (B1 true ⟹ evaluate B2).
-                    FALL_THROUGH nodes are skipped by backpatch() — that is
-                    correct because control already falls through to B2. */
-                 backpatch((yyvsp[-3].b)->T,(yyvsp[-1].addr));
-                 (yyval.b) = createBoolNode();
-                 (yyval.b)->T = (yyvsp[0].b)->T;
-                 (yyval.b)->F = merge((yyvsp[-3].b)->F,(yyvsp[0].b)->F);
-             }}
-#line 5906 "y.tab.c"
+  case 88: /* BOOLEXPR: BOOLEXPR AND M BOOLEXPR  */
+#line 3410 "parser.y"
+                              { if (!e){backpatch((yyvsp[-3].b)->T,(yyvsp[-1].addr));
+                                                                (yyval.b) = createBoolNode();
+                                                                (yyval.b)->T = (yyvsp[0].b)->T;
+                                                                (yyval.b)->F = merge((yyvsp[-3].b)->F,(yyvsp[0].b)->F);
+                                                                }}
+#line 5487 "y.tab.c"
     break;
 
-  case 90: /* BOOLEXPR: '!' BOOLEXPR  */
-#line 3824 "parser_fix.y"
+  case 89: /* BOOLEXPR: '!' BOOLEXPR  */
+#line 3415 "parser.y"
                        {
                 if (!e){ (yyval.b) = createBoolNode(); (yyval.b)->T = (yyvsp[0].b)->F; (yyval.b)->F = (yyvsp[0].b)->T; }
         }
-#line 5914 "y.tab.c"
+#line 5495 "y.tab.c"
     break;
 
-  case 91: /* BOOLEXPR: '(' BOOLEXPR ')'  */
-#line 3827 "parser_fix.y"
+  case 90: /* BOOLEXPR: '(' BOOLEXPR ')'  */
+#line 3418 "parser.y"
                            {
                 if (!e){ (yyval.b) = createBoolNode(); (yyval.b)->T = (yyvsp[-1].b)->T; (yyval.b)->F = (yyvsp[-1].b)->F; }
         }
-#line 5922 "y.tab.c"
+#line 5503 "y.tab.c"
     break;
 
-  case 92: /* BOOLEXPR: EXPR LT EXPR  */
-#line 3830 "parser_fix.y"
-                        {if(!e) {
-               
-                (yyval.b) = createBoolNode();
-                sprintf(imcode[code],"%d if %s >= %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[0].expr)->str);
-                (yyval.b)->F = createNode(code); code++;
-                (yyval.b)->T = createNode(FALL_THROUGH);
-        }}
-#line 5934 "y.tab.c"
+  case 91: /* BOOLEXPR: EXPR LT EXPR  */
+#line 3421 "parser.y"
+                        {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
+                                                        (yyval.b) = createBoolNode();
+                                                        (yyval.b)->T = createNode(code); code++;
+                                                        sprintf(imcode[code],"%d goto ",code);
+                                                        (yyval.b)->F = createNode(code); code++;}}
+#line 5513 "y.tab.c"
     break;
 
-  case 93: /* BOOLEXPR: EXPR GT EXPR  */
-#line 3837 "parser_fix.y"
-                    {if(!e) {
-                (yyval.b) = createBoolNode();
-                sprintf(imcode[code],"%d if %s <= %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[0].expr)->str);
-                (yyval.b)->F = createNode(code); code++;
-                (yyval.b)->T = createNode(FALL_THROUGH);
-        }}
-#line 5945 "y.tab.c"
+  case 92: /* BOOLEXPR: EXPR GT EXPR  */
+#line 3426 "parser.y"
+                    {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
+                                                        (yyval.b) = createBoolNode();
+                                                        (yyval.b)->T = createNode(code); code++;
+                                                        sprintf(imcode[code],"%d goto ",code);
+                                                        (yyval.b)->F = createNode(code); code++;}}
+#line 5523 "y.tab.c"
     break;
 
-  case 94: /* BOOLEXPR: EXPR EQ EXPR  */
-#line 3843 "parser_fix.y"
-                        {if(!e) {
-                (yyval.b) = createBoolNode();
-                sprintf(imcode[code],"%d if %s != %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[0].expr)->str);
-                (yyval.b)->F = createNode(code); code++;
-                (yyval.b)->T = createNode(FALL_THROUGH);
-        }}
-#line 5956 "y.tab.c"
+  case 93: /* BOOLEXPR: EXPR EQ EXPR  */
+#line 3431 "parser.y"
+                        {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
+                                                        (yyval.b) = createBoolNode();
+                                                        (yyval.b)->T = createNode(code); code++;
+                                                        sprintf(imcode[code],"%d goto ",code);
+                                                        (yyval.b)->F = createNode(code); code++;}}
+#line 5533 "y.tab.c"
     break;
 
-  case 95: /* BOOLEXPR: EXPR NE EXPR  */
-#line 3849 "parser_fix.y"
-                    {if(!e) {
-                (yyval.b) = createBoolNode();
-                sprintf(imcode[code],"%d if %s == %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[0].expr)->str);
-                (yyval.b)->F = createNode(code); code++;
-                (yyval.b)->T = createNode(FALL_THROUGH);
-        }}
-#line 5967 "y.tab.c"
+  case 94: /* BOOLEXPR: EXPR NE EXPR  */
+#line 3436 "parser.y"
+                    {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
+                                                        (yyval.b) = createBoolNode();
+                                                        (yyval.b)->T = createNode(code); code++;
+                                                        sprintf(imcode[code],"%d goto ",code);
+                                                        (yyval.b)->F = createNode(code); code++;}}
+#line 5543 "y.tab.c"
     break;
 
-  case 96: /* BOOLEXPR: EXPR LE EXPR  */
-#line 3855 "parser_fix.y"
-                        {if(!e) {
-                (yyval.b) = createBoolNode();
-                sprintf(imcode[code],"%d if %s > %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[0].expr)->str);
-                (yyval.b)->F = createNode(code); code++;
-                (yyval.b)->T = createNode(FALL_THROUGH);
-        }}
-#line 5978 "y.tab.c"
+  case 95: /* BOOLEXPR: EXPR LE EXPR  */
+#line 3441 "parser.y"
+                        {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
+                                                        (yyval.b) = createBoolNode();
+                                                        (yyval.b)->T = createNode(code); code++;
+                                                        sprintf(imcode[code],"%d goto ",code);
+                                                        (yyval.b)->F = createNode(code); code++;}}
+#line 5553 "y.tab.c"
     break;
 
-  case 97: /* BOOLEXPR: EXPR GE EXPR  */
-#line 3861 "parser_fix.y"
-                    {if(!e) {
-                (yyval.b) = createBoolNode();
-                sprintf(imcode[code],"%d if %s < %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[0].expr)->str);
-                (yyval.b)->F = createNode(code); code++;
-                (yyval.b)->T = createNode(FALL_THROUGH);
-        }}
-#line 5989 "y.tab.c"
+  case 96: /* BOOLEXPR: EXPR GE EXPR  */
+#line 3446 "parser.y"
+                    {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
+                                                        (yyval.b) = createBoolNode();
+                                                        (yyval.b)->T = createNode(code); code++;
+                                                        sprintf(imcode[code],"%d goto ",code);
+                                                        (yyval.b)->F = createNode(code); code++;}}
+#line 5563 "y.tab.c"
     break;
 
-  case 98: /* BOOLEXPR: TR  */
-#line 3867 "parser_fix.y"
+  case 97: /* BOOLEXPR: TR  */
+#line 3451 "parser.y"
              {if (!e){
                 (yyval.b) = createBoolNode();
                 (yyval.b)->T = createNode(code);
                 sprintf(imcode[code],"%d goto ",code);
                 code++;
         }}
-#line 6000 "y.tab.c"
+#line 5574 "y.tab.c"
     break;
 
-  case 99: /* BOOLEXPR: FL  */
-#line 3873 "parser_fix.y"
+  case 98: /* BOOLEXPR: FL  */
+#line 3457 "parser.y"
              {if (!e){
                 (yyval.b) = createBoolNode();
                 (yyval.b)->F = createNode(code);
                 sprintf(imcode[code],"%d goto ",code);
                 code++;
         }}
-#line 6011 "y.tab.c"
+#line 5585 "y.tab.c"
     break;
 
-  case 100: /* M: %empty  */
-#line 3881 "parser_fix.y"
+  case 99: /* M: %empty  */
+#line 3465 "parser.y"
    {(yyval.addr)=code;}
-#line 6017 "y.tab.c"
+#line 5591 "y.tab.c"
     break;
 
-  case 101: /* NN: %empty  */
-#line 3882 "parser_fix.y"
+  case 100: /* NN: %empty  */
+#line 3466 "parser.y"
     {(yyval.b)=createBoolNode();
         (yyval.b)->N = createNode(code);
         sprintf(imcode[code],"%d goto ",code);
         code++;
         }
-#line 6027 "y.tab.c"
+#line 5601 "y.tab.c"
     break;
 
-  case 102: /* ASNEXPR: BANDASN  */
-#line 3889 "parser_fix.y"
+  case 101: /* ASNEXPR: BANDASN  */
+#line 3473 "parser.y"
                  {strcpy((yyval.b), "&=");}
-#line 6033 "y.tab.c"
+#line 5607 "y.tab.c"
     break;
 
-  case 103: /* ASNEXPR: BORASN  */
-#line 3890 "parser_fix.y"
+  case 102: /* ASNEXPR: BORASN  */
+#line 3474 "parser.y"
               {strcpy((yyval.b), "|=");}
-#line 6039 "y.tab.c"
+#line 5613 "y.tab.c"
     break;
 
-  case 104: /* ASNEXPR: BXORASN  */
-#line 3891 "parser_fix.y"
+  case 103: /* ASNEXPR: BXORASN  */
+#line 3475 "parser.y"
                {strcpy((yyval.b), "^=");}
-#line 6045 "y.tab.c"
+#line 5619 "y.tab.c"
     break;
 
-  case 105: /* ASNEXPR: LSHIFTASN  */
-#line 3892 "parser_fix.y"
+  case 104: /* ASNEXPR: LSHIFTASN  */
+#line 3476 "parser.y"
                  {strcpy((yyval.b), "<<=");}
-#line 6051 "y.tab.c"
+#line 5625 "y.tab.c"
     break;
 
-  case 106: /* ASNEXPR: RSHIFTASN  */
-#line 3893 "parser_fix.y"
+  case 105: /* ASNEXPR: RSHIFTASN  */
+#line 3477 "parser.y"
                  {strcpy((yyval.b), ">>=");}
-#line 6057 "y.tab.c"
+#line 5631 "y.tab.c"
     break;
 
-  case 107: /* ASNEXPR: EXPR ASSGN EXPR  */
-#line 3894 "parser_fix.y"
+  case 106: /* ASNEXPR: EXPR ASSGN EXPR  */
+#line 3478 "parser.y"
                  {
     if (!e && (yyvsp[-2].expr)->lv){
          if(strcmp((yyvsp[0].expr)->type, "void")==0){
@@ -6169,31 +5743,11 @@ else if(strcmp(actual_type,"double")==0){
     }
     if (!(yyvsp[-2].expr)->lv){e=1;strcat(err,"L value not assignable\n");}
 }
-#line 6173 "y.tab.c"
+#line 5747 "y.tab.c"
     break;
 
-  case 108: /* FORINCR: ASNEXPR  */
-#line 4007 "parser_fix.y"
-                 {
-    if (!e) {
-        (yyval.b) = (yyvsp[0].b);
-    }
-}
-#line 6183 "y.tab.c"
-    break;
-
-  case 109: /* FORINCR: EXPR  */
-#line 4012 "parser_fix.y"
-       {
-    if (!e) {
-        (yyval.b) = createBoolNode();
-    }
-}
-#line 6193 "y.tab.c"
-    break;
-
-  case 110: /* EXPR: SIZEOF '(' IDEN ')'  */
-#line 4021 "parser_fix.y"
+  case 107: /* EXPR: SIZEOF '(' IDEN ')'  */
+#line 3591 "parser.y"
                           {
     if(!e){
         (yyval.expr) = createExpr();
@@ -6222,11 +5776,11 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv = 0;
     }
 }
-#line 6226 "y.tab.c"
+#line 5780 "y.tab.c"
     break;
 
-  case 111: /* EXPR: EXPR '+' EXPR  */
-#line 4049 "parser_fix.y"
+  case 108: /* EXPR: EXPR '+' EXPR  */
+#line 3619 "parser.y"
                 {
     if (!e){
         (yyval.expr) = createExpr();
@@ -6243,11 +5797,11 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv=0;
     }
 }
-#line 6247 "y.tab.c"
+#line 5801 "y.tab.c"
     break;
 
-  case 112: /* EXPR: EXPR '-' EXPR  */
-#line 4065 "parser_fix.y"
+  case 109: /* EXPR: EXPR '-' EXPR  */
+#line 3635 "parser.y"
                 {
     if (!e){
         (yyval.expr) = createExpr();
@@ -6264,11 +5818,11 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv=0;
     }
 }
-#line 6268 "y.tab.c"
+#line 5822 "y.tab.c"
     break;
 
-  case 113: /* EXPR: EXPR '*' EXPR  */
-#line 4081 "parser_fix.y"
+  case 110: /* EXPR: EXPR '*' EXPR  */
+#line 3651 "parser.y"
                 {
     if (!e){
         (yyval.expr) = createExpr();
@@ -6285,11 +5839,11 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv=0;
     }
 }
-#line 6289 "y.tab.c"
+#line 5843 "y.tab.c"
     break;
 
-  case 114: /* EXPR: EXPR '/' EXPR  */
-#line 4097 "parser_fix.y"
+  case 111: /* EXPR: EXPR '/' EXPR  */
+#line 3667 "parser.y"
                 {
     if (!e){
         /*  division by zero check */
@@ -6310,11 +5864,11 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv=0;
     }
 }
-#line 6314 "y.tab.c"
+#line 5868 "y.tab.c"
     break;
 
-  case 115: /* EXPR: EXPR '%' EXPR  */
-#line 4117 "parser_fix.y"
+  case 112: /* EXPR: EXPR '%' EXPR  */
+#line 3687 "parser.y"
                 {
     if (!e){
         /* modulo by zero check*/
@@ -6339,23 +5893,23 @@ else if(strcmp(actual_type,"double")==0){
         (yyval.expr)->lv=0;
     }
 }
-#line 6343 "y.tab.c"
+#line 5897 "y.tab.c"
     break;
 
-  case 116: /* EXPR: '(' EXPR ')'  */
-#line 4141 "parser_fix.y"
+  case 113: /* EXPR: '(' EXPR ')'  */
+#line 3711 "parser.y"
                {if (!e){(yyval.expr) = createExpr();strcpy((yyval.expr)->str,(yyvsp[-1].expr)->str); strcpy((yyval.expr)->type,(yyvsp[-1].expr)->type);(yyval.expr)->lv=(yyvsp[-1].expr)->lv;}}
-#line 6349 "y.tab.c"
+#line 5903 "y.tab.c"
     break;
 
-  case 117: /* EXPR: EXPR OP '$'  */
-#line 4142 "parser_fix.y"
+  case 114: /* EXPR: EXPR OP '$'  */
+#line 3712 "parser.y"
                      {e=1;strcpy(err,"Missing operand");yyerrok;}
-#line 6355 "y.tab.c"
+#line 5909 "y.tab.c"
     break;
 
-  case 118: /* EXPR: EXPR BAND EXPR  */
-#line 4143 "parser_fix.y"
+  case 115: /* EXPR: EXPR BAND EXPR  */
+#line 3713 "parser.y"
                      {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -6372,11 +5926,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.expr)->lv=0;
         }
     }
-#line 6376 "y.tab.c"
+#line 5930 "y.tab.c"
     break;
 
-  case 119: /* EXPR: EXPR BOR EXPR  */
-#line 4159 "parser_fix.y"
+  case 116: /* EXPR: EXPR BOR EXPR  */
+#line 3729 "parser.y"
                     {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -6393,11 +5947,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.expr)->lv=0;
         }
     }
-#line 6397 "y.tab.c"
+#line 5951 "y.tab.c"
     break;
 
-  case 120: /* EXPR: EXPR BXOR EXPR  */
-#line 4175 "parser_fix.y"
+  case 117: /* EXPR: EXPR BXOR EXPR  */
+#line 3745 "parser.y"
                      {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -6414,11 +5968,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.expr)->lv=0;
         }
     }
-#line 6418 "y.tab.c"
+#line 5972 "y.tab.c"
     break;
 
-  case 121: /* EXPR: EXPR LSHIFT EXPR  */
-#line 4191 "parser_fix.y"
+  case 118: /* EXPR: EXPR LSHIFT EXPR  */
+#line 3761 "parser.y"
                        {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -6431,11 +5985,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.expr)->lv=0;
         }
     }
-#line 6435 "y.tab.c"
+#line 5989 "y.tab.c"
     break;
 
-  case 122: /* EXPR: EXPR RSHIFT EXPR  */
-#line 4203 "parser_fix.y"
+  case 119: /* EXPR: EXPR RSHIFT EXPR  */
+#line 3773 "parser.y"
                        {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -6448,11 +6002,11 @@ else if(strcmp(actual_type,"double")==0){
             (yyval.expr)->lv=0;
         }
     }
-#line 6452 "y.tab.c"
+#line 6006 "y.tab.c"
     break;
 
-  case 123: /* EXPR: BNOT EXPR  */
-#line 4215 "parser_fix.y"
+  case 120: /* EXPR: BNOT EXPR  */
+#line 3785 "parser.y"
                 {
     if (!e){
         if (isFloatingType((yyvsp[0].expr)->type)){ e=1; sprintf(err+strlen(err),"invalid operand to bitwise ~ (float/double)\n"); }
@@ -6469,23 +6023,23 @@ else if(strcmp(actual_type,"double")==0){
         }
     }
 }
-#line 6473 "y.tab.c"
+#line 6027 "y.tab.c"
     break;
 
-  case 124: /* EXPR: FUNCALL  */
-#line 4231 "parser_fix.y"
+  case 121: /* EXPR: FUNCALL  */
+#line 3801 "parser.y"
               {(yyval.expr) = (yyvsp[0].expr);}
-#line 6479 "y.tab.c"
+#line 6033 "y.tab.c"
     break;
 
-  case 125: /* EXPR: TERM  */
-#line 4232 "parser_fix.y"
+  case 122: /* EXPR: TERM  */
+#line 3802 "parser.y"
            {(yyval.expr) = (yyvsp[0].expr);}
-#line 6485 "y.tab.c"
+#line 6039 "y.tab.c"
     break;
 
-  case 126: /* FUNCALL: CALL IDEN '(' ARGLIST ')'  */
-#line 4235 "parser_fix.y"
+  case 123: /* FUNCALL: CALL IDEN '(' ARGLIST ')'  */
+#line 3805 "parser.y"
                                    {
             if(!e){
                 Function* f = findFunction((yyvsp[-3].str));
@@ -6554,11 +6108,11 @@ else if(strcmp(actual_type,"double")==0){
                 }
             }
         }
-#line 6558 "y.tab.c"
+#line 6112 "y.tab.c"
     break;
 
-  case 127: /* FUNCALL: CALL IDEN '(' ')'  */
-#line 4303 "parser_fix.y"
+  case 124: /* FUNCALL: CALL IDEN '(' ')'  */
+#line 3873 "parser.y"
                     {
             if(!e){
                 Function* f = findFunction((yyvsp[-2].str));
@@ -6592,27 +6146,27 @@ else if(strcmp(actual_type,"double")==0){
                 }
             }
         }
-#line 6596 "y.tab.c"
+#line 6150 "y.tab.c"
     break;
 
-  case 128: /* ARGLIST: EXPR ',' ARGLIST  */
-#line 4337 "parser_fix.y"
+  case 125: /* ARGLIST: EXPR ',' ARGLIST  */
+#line 3907 "parser.y"
                           {
             if(!e){ (yyval.expr) = (yyvsp[-2].expr); (yyval.expr)->next = (yyvsp[0].expr); }
         }
-#line 6604 "y.tab.c"
+#line 6158 "y.tab.c"
     break;
 
-  case 129: /* ARGLIST: EXPR  */
-#line 4340 "parser_fix.y"
+  case 126: /* ARGLIST: EXPR  */
+#line 3910 "parser.y"
                {
             if(!e){ (yyval.expr) = (yyvsp[0].expr); (yyval.expr)->next = NULL; }
         }
-#line 6612 "y.tab.c"
+#line 6166 "y.tab.c"
     break;
 
-  case 140: /* SUBSCRIPTS: '[' EXPR ']'  */
-#line 4346 "parser_fix.y"
+  case 137: /* SUBSCRIPTS: '[' EXPR ']'  */
+#line 3916 "parser.y"
                          {
                 if (!e) {
                         (yyval.sub) = createSubscript();
@@ -6620,11 +6174,11 @@ else if(strcmp(actual_type,"double")==0){
                         (yyval.sub)->count = 1;
                 }
         }
-#line 6624 "y.tab.c"
+#line 6178 "y.tab.c"
     break;
 
-  case 141: /* SUBSCRIPTS: SUBSCRIPTS '[' EXPR ']'  */
-#line 4353 "parser_fix.y"
+  case 138: /* SUBSCRIPTS: SUBSCRIPTS '[' EXPR ']'  */
+#line 3923 "parser.y"
                                   {
                 if (!e) {
                         (yyval.sub) = createSubscript();
@@ -6632,11 +6186,11 @@ else if(strcmp(actual_type,"double")==0){
                         (yyval.sub)->count = (yyvsp[-3].sub)->count + 1;
                 }
         }
-#line 6636 "y.tab.c"
+#line 6190 "y.tab.c"
     break;
 
-  case 142: /* TERM: STRING  */
-#line 4362 "parser_fix.y"
+  case 139: /* TERM: STRING  */
+#line 3932 "parser.y"
              {
     (yyval.expr) = createExpr();
     strcpy((yyval.expr)->str, (yyvsp[0].str));
@@ -6644,11 +6198,11 @@ else if(strcmp(actual_type,"double")==0){
     (yyval.expr)->str_len = strlen((yyvsp[0].str)) - 2 + 1;
     (yyval.expr)->lv = 0;
 }
-#line 6648 "y.tab.c"
+#line 6202 "y.tab.c"
     break;
 
-  case 143: /* TERM: '(' TYPE ')' EXPR  */
-#line 4369 "parser_fix.y"
+  case 140: /* TERM: '(' TYPE ')' EXPR  */
+#line 3939 "parser.y"
                     {
     if(!e){
         (yyval.expr) = createExpr();
@@ -6671,11 +6225,11 @@ else if(strcmp(actual_type,"double")==0){
         }
     }
 }
-#line 6675 "y.tab.c"
+#line 6229 "y.tab.c"
     break;
 
-  case 144: /* TERM: UN OPR IDEN B  */
-#line 4391 "parser_fix.y"
+  case 141: /* TERM: UN OPR IDEN B  */
+#line 3961 "parser.y"
                 {
     (yyval.expr) = createExpr();  
     if (strcmp((yyvsp[-3].str),"-")){
@@ -6692,13 +6246,10 @@ else if(strcmp(actual_type,"double")==0){
             temp = temp->prev;
         }
         if (!found){ sprintf(err+strlen(err),"%s is not declared in scope\n",(yyvsp[-1].str)); e=1; }
-        /*char*t2=genvar();
-        sprintf(imcode[code],"%d %s = %s %c 1\n",code,t2,$3,$2[0]);code++;
-        sprintf(imcode[code],"%d %s = %s\n",code,$3,t2);code++;
-        strcpy($$->str,t2);*/
-        sprintf(imcode[code],"%d %s = %s %c 1\n",code,(yyvsp[-1].str),(yyvsp[-1].str),(yyvsp[-2].str)[0]);code++;
-strcpy((yyval.expr)->str,(yyvsp[-1].str));
-
+        char*t2=genvar();
+        sprintf(imcode[code],"%d %s = %s %c 1\n",code,t2,(yyvsp[-1].str),(yyvsp[-2].str)[0]);code++;
+        sprintf(imcode[code],"%d %s = %s\n",code,(yyvsp[-1].str),t2);code++;
+        strcpy((yyval.expr)->str,t2);
     } else {
         if (!strcmp((yyvsp[-2].str),"--")){e=1;strcpy(err,"--- not allowed");}
         Env* temp = top; int found=0;
@@ -6723,25 +6274,19 @@ strcpy((yyval.expr)->str,(yyvsp[-1].str));
     }
     (yyval.expr)->lv = 0;
 }
-#line 6727 "y.tab.c"
+#line 6278 "y.tab.c"
     break;
 
-  case 145: /* TERM: UN IDEN OPR B  */
-#line 4438 "parser_fix.y"
+  case 142: /* TERM: UN IDEN OPR B  */
+#line 4005 "parser.y"
                 {
     (yyval.expr) = createExpr();  
     if (strcmp((yyvsp[-3].str),"-")){
-       /* char*t = genvar();char*t2=genvar();
-        sprintf(imcode[code],"%d %s = %s\n",code,t,$2);code++;
-        sprintf(imcode[code],"%d %s = %s %c 1\n",code,t2,$2,$3[0]);code++;
-        sprintf(imcode[code],"%d %s = %s\n",code,$2,t2);code++;
-        strcpy($$->str,t);
-        */
-        char*t = genvar();
-sprintf(imcode[code],"%d %s = %s\n",code,t,(yyvsp[-2].str));code++;
-sprintf(imcode[code],"%d %s = %s %c 1\n",code,(yyvsp[-2].str),(yyvsp[-2].str),(yyvsp[-1].str)[0]);code++;
-strcpy((yyval.expr)->str,t);
-
+        char*t = genvar();char*t2=genvar();
+        sprintf(imcode[code],"%d %s = %s\n",code,t,(yyvsp[-2].str));code++;
+        sprintf(imcode[code],"%d %s = %s %c 1\n",code,t2,(yyvsp[-2].str),(yyvsp[-1].str)[0]);code++;
+        sprintf(imcode[code],"%d %s = %s\n",code,(yyvsp[-2].str),t2);code++;
+        strcpy((yyval.expr)->str,t);
         Env* temp = top; int found=0;
         while(temp){
             if (get(temp->table,(yyvsp[-2].str))){
@@ -6777,11 +6322,11 @@ strcpy((yyval.expr)->str,t);
     }
     (yyval.expr)->lv=0;
 }
-#line 6781 "y.tab.c"
+#line 6326 "y.tab.c"
     break;
 
-  case 146: /* TERM: UN NUM C  */
-#line 4487 "parser_fix.y"
+  case 143: /* TERM: UN NUM C  */
+#line 4048 "parser.y"
            {
     (yyval.expr) = createExpr();  
     if (!strcmp((yyvsp[-2].str),"-")) {
@@ -6794,11 +6339,11 @@ strcpy((yyval.expr)->str,t);
     else strcpy((yyval.expr)->type,"int");
     (yyval.expr)->lv = 0;
 }
-#line 6798 "y.tab.c"
+#line 6343 "y.tab.c"
     break;
 
-  case 147: /* TERM: UN IDEN SUBSCRIPTS  */
-#line 4499 "parser_fix.y"
+  case 144: /* TERM: UN IDEN SUBSCRIPTS  */
+#line 4060 "parser.y"
                      {
     (yyval.expr) = createExpr();  
     Env* temp = top; int found=0; Symbol* sym_found = NULL;
@@ -6837,11 +6382,11 @@ strcpy((yyval.expr)->str,t);
         }
     }
 }
-#line 6841 "y.tab.c"
+#line 6386 "y.tab.c"
     break;
 
-  case 148: /* TERM: UN IDEN C  */
-#line 4537 "parser_fix.y"
+  case 145: /* TERM: UN IDEN C  */
+#line 4098 "parser.y"
             {
     (yyval.expr) = createExpr();  
     if (!strcmp((yyvsp[-2].str),"-")) {
@@ -6864,11 +6409,11 @@ strcpy((yyval.expr)->str,t);
     }
     if (!found){ sprintf(err+strlen(err),"%s is not declared in scope\n",(yyvsp[-1].str)); e=1; }
 }
-#line 6868 "y.tab.c"
+#line 6413 "y.tab.c"
     break;
 
-  case 149: /* TERM: UN CHARR C  */
-#line 4559 "parser_fix.y"
+  case 146: /* TERM: UN CHARR C  */
+#line 4120 "parser.y"
              {
     (yyval.expr) = createExpr();
     if (!strcmp((yyvsp[-2].str),"-")) {
@@ -6881,95 +6426,95 @@ strcpy((yyval.expr)->str,t);
     }
     strcpy((yyval.expr)->type, "char");
 }
-#line 6885 "y.tab.c"
+#line 6430 "y.tab.c"
     break;
 
-  case 150: /* TERM: UN INC NUM  */
-#line 4571 "parser_fix.y"
+  case 147: /* TERM: UN INC NUM  */
+#line 4132 "parser.y"
              {e=1;strcpy(err,"cannot increment a constant value");}
-#line 6891 "y.tab.c"
+#line 6436 "y.tab.c"
     break;
 
-  case 151: /* TERM: UN DEC NUM  */
-#line 4572 "parser_fix.y"
+  case 148: /* TERM: UN DEC NUM  */
+#line 4133 "parser.y"
              {e=1;strcpy(err,"cannot decrement a constant value");}
-#line 6897 "y.tab.c"
+#line 6442 "y.tab.c"
     break;
 
-  case 152: /* TERM: UN NUM INC  */
-#line 4573 "parser_fix.y"
+  case 149: /* TERM: UN NUM INC  */
+#line 4134 "parser.y"
              {e=1;strcpy(err,"cannot increment a constant value");}
-#line 6903 "y.tab.c"
+#line 6448 "y.tab.c"
     break;
 
-  case 153: /* TERM: UN NUM DEC  */
-#line 4574 "parser_fix.y"
+  case 150: /* TERM: UN NUM DEC  */
+#line 4135 "parser.y"
              {e=1;strcpy(err,"cannot decrement a constant value");}
-#line 6909 "y.tab.c"
+#line 6454 "y.tab.c"
     break;
 
-  case 154: /* OPR: INC  */
-#line 4577 "parser_fix.y"
+  case 151: /* OPR: INC  */
+#line 4138 "parser.y"
              {strcpy((yyval.str),(yyvsp[0].str));}
-#line 6915 "y.tab.c"
+#line 6460 "y.tab.c"
     break;
 
-  case 155: /* OPR: DEC  */
-#line 4577 "parser_fix.y"
+  case 152: /* OPR: DEC  */
+#line 4138 "parser.y"
                                    {strcpy((yyval.str),(yyvsp[0].str));}
-#line 6921 "y.tab.c"
+#line 6466 "y.tab.c"
     break;
 
-  case 156: /* B: OPR  */
-#line 4579 "parser_fix.y"
+  case 153: /* B: OPR  */
+#line 4140 "parser.y"
         {e=1;strcpy(err,"expression is not assignable");}
-#line 6927 "y.tab.c"
+#line 6472 "y.tab.c"
     break;
 
-  case 157: /* B: IDEN  */
-#line 4580 "parser_fix.y"
+  case 154: /* B: IDEN  */
+#line 4141 "parser.y"
          {e=1;strcpy(err,"missing operator");}
-#line 6933 "y.tab.c"
+#line 6478 "y.tab.c"
     break;
 
-  case 158: /* B: NUM  */
-#line 4581 "parser_fix.y"
+  case 155: /* B: NUM  */
+#line 4142 "parser.y"
         {e=1;strcpy(err,"missing operator");}
-#line 6939 "y.tab.c"
+#line 6484 "y.tab.c"
     break;
 
-  case 160: /* C: IDEN  */
-#line 4583 "parser_fix.y"
+  case 157: /* C: IDEN  */
+#line 4144 "parser.y"
          {e=1;strcpy(err,"missing operator");}
-#line 6945 "y.tab.c"
+#line 6490 "y.tab.c"
     break;
 
-  case 161: /* C: NUM  */
-#line 4584 "parser_fix.y"
+  case 158: /* C: NUM  */
+#line 4145 "parser.y"
         {e=1;strcpy(err,"missing operator");}
-#line 6951 "y.tab.c"
+#line 6496 "y.tab.c"
     break;
 
-  case 163: /* UN: '-'  */
-#line 4586 "parser_fix.y"
+  case 160: /* UN: '-'  */
+#line 4147 "parser.y"
          {strcpy((yyval.str),"-");}
-#line 6957 "y.tab.c"
+#line 6502 "y.tab.c"
     break;
 
-  case 164: /* UN: '+'  */
-#line 4586 "parser_fix.y"
+  case 161: /* UN: '+'  */
+#line 4147 "parser.y"
                                   {strcpy((yyval.str),"+");}
-#line 6963 "y.tab.c"
+#line 6508 "y.tab.c"
     break;
 
-  case 165: /* UN: %empty  */
-#line 4586 "parser_fix.y"
+  case 162: /* UN: %empty  */
+#line 4147 "parser.y"
                                                       {strcpy((yyval.str),"");}
-#line 6969 "y.tab.c"
+#line 6514 "y.tab.c"
     break;
 
 
-#line 6973 "y.tab.c"
+#line 6518 "y.tab.c"
 
       default: break;
     }
@@ -7162,7 +6707,7 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 4587 "parser_fix.y"
+#line 4148 "parser.y"
 
 
 char* genvar(){
@@ -7180,8 +6725,8 @@ void generateSymbolTableDOT() {
     fprintf(dot, "digraph SymbolTable {\n");
         fprintf(dot, "  node [shape=record, style=filled, fillcolor=lightblue];\n");
     for (int i = 0; i < env_count; i++) {
-        fprintf(dot, "  scope%d [label=\"{Scope %d - %s|", i, i, (i == 0) ? "Global" : "Local");
-
+        fprintf(dot, "  scope%d [label=\"{Scope %d|", i, i);
+        
         Table* table = envs[i]->table;
         int first = 1;
         for (int j = 0; j < table->size; j++) {
@@ -8052,8 +7597,8 @@ void generateCallGraphDOT() {
 void generateAllImages() {
     system("dot -Tpng tac_flow.dot -o tac_flow.png 2>/dev/null");
     system("dot -Tpng tac_flow_blocks.dot -o tac_flow_blocks.png 2>/dev/null");
-   // system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
-   system("dot -Tpng symbol_table.dot -o symbol_table.png 2>/dev/null");
+    //system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
+    //system("dot -Tpng symbol_table.dot -o symbol_table.png 2>/dev/null");
 }
 
 
@@ -8079,7 +7624,10 @@ int main(int argc, char* argv[]) {
         raw[fsize] = '\0';
         fclose(f);
 
-       
+        /* Preprocess:
+           - strip carriage returns (\r) so Windows files work
+           - ensure a space before and after every '$' so "2$" lexes as NUM + '$'
+           - ensure file ends with a newline so flex sees a clean EOF */
         char* clean = (char*)malloc(fsize * 3 + 4);
         if (!clean) { free(raw); return 1; }
         int j = 0;
@@ -8099,7 +7647,7 @@ int main(int argc, char* argv[]) {
         free(raw);
 
         memset(imcode, 0, sizeof(imcode));
-        yy_scan_string(clean);  
+        yy_scan_string(clean);  /* feed preprocessed source to lexer */
         yyparse();
         free(clean);
     }
@@ -8113,7 +7661,11 @@ int main(int argc, char* argv[]) {
                 fprintf(tac_file, "%s", imcode[i]);
             fclose(tac_file);
         }
-
+       // generateSymbolTableDOT();
+        generateTACFlowDOT();
+        generateTACFlowWithBlocks();
+       // generateCallGraphDOT();
+        generateAllImages();
     }
     return 0;
 }
