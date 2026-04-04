@@ -5,13 +5,25 @@ cd 3_Compilers_LabProject/compiler
 #### Build the compiler
 make
 
-#### Run the parser
-./parser
-./parser ../test_cases/test1_basic_decls.txt
-
 #### compiler
 sudo apt install graphviz
 
 chmod +x compiler
 
 ./compiler ../demo/temp
+
+./compiler ../cases_asm/c1
+ 
+sudo apt install gcc-riscv64-linux-gnu qemu-user
+
+# Generate assembly from TAC
+python3 tac_to_risc.py opt.tac output.s
+
+# Compile assembly to executable
+riscv64-linux-gnu-gcc -static -o program output.s
+
+# Run on emulator
+qemu-riscv64 program
+
+# All in one (with --run flag)
+python3 tac_to_risc.py opt.tac output.s --run
