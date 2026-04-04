@@ -16,14 +16,14 @@ chmod +x compiler
  
 sudo apt install gcc-riscv64-linux-gnu qemu-user
 
-# Generate assembly from TAC
+#### Generate assembly from TAC
 python3 tac_to_risc.py opt.tac output.s
 
-# Compile assembly to executable
+#### Compile assembly to executable
 riscv64-linux-gnu-gcc -static -o program output.s
 
-# Run on emulator
+#### Run on emulator
 qemu-riscv64 program
 
-# All in one (with --run flag)
+#### All in one (with --run flag)
 python3 tac_to_risc.py opt.tac output.s --run
