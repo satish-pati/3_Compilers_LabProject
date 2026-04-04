@@ -9,14 +9,14 @@ lexer_test: lexer.l
 	$(LEX) lexer.l
 	$(CC) $(CFLAGS) lex.yy.c -lfl -o lexer_test
 
-parser: parser.y lexer.l
+parser: parser_unoptimized.y lexer.l
 	$(LEX) lexer.l
-	$(YACC) -d parser.y
+	$(YACC) -d parser_unoptimized.y
 	$(CC) $(CFLAGS) y.tab.c lex.yy.c -lfl -o parser
 
-parser2: parser_fix.y lexer.l
+parser2: parser_optimized.y lexer.l
 	$(LEX) lexer.l
-	$(YACC) -d parser_fix.y
+	$(YACC) -d parser_optimized.y
 	$(CC) $(CFLAGS) y.tab.c lex.yy.c -lfl -o parser2
 
 clean:

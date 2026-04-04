@@ -1,0 +1,11 @@
+@int a is 48 $
+@int b is 18 $
+@int temp $
+
+loop (b != 0) {
+    temp = b $
+    b = a % b $
+    a = temp $
+}
+
+show(a) $

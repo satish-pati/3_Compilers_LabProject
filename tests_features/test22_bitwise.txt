@@ -1,0 +1,14 @@
+@int a is 12 $
+@int b is 10 $
+@int r1 is a bitand b $
+@int r2 is a bitor b $
+@int r3 is a bitxor b $
+@int r4 is bitnot a $
+@int r5 is a lshift 1 $
+@int r6 is a rshift 1 $
+show(r1)$
+show(r2)$
+show(r3)$
+show(r4)$
+show(r5)$
+show(r6)$

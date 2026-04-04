@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control Flow - Compiler Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+<div class="page-header">
+<div class="header2">
+<a href="index.html" class="back-btn">⬅ Back</a>
+<h1> Function Call Graphs</h1>
+</div>
+</div>
+<div class="toolbar">
+</div>
+<div class="image-container">
+<div class="zoom-controls">
+<button class="zoom-btn" onclick="zoomImage('callgraph', -0.1)">−</button>
+<span class="zoom-level" id="callgraphZoomLevel">100%</span>
+<button class="zoom-btn" onclick="zoomImage('callgraph', 0.1)">+</button>
+<button class="zoom-btn " onclick="resetZoom('callgraph')">⟲</button>
+<button class="zoom-btn fullscreen-btn" onclick="openFullscreen('callgraph')">⛶</button>
+</div>
+<div class="image-wrapper" id="callgraphWrapper" onmousedown="startPan(event, 'callgraph')">
+<img id="callgraphImage" src="call_graph.png" alt="Call Graph">
+</div>
+</div>
+<div id="fullscreenModal" class="fullscreen-modal"></div>
+<script src="script.js"></script>
+</body>
+</html>

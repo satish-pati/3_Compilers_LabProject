@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TAC Code - Compiler Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+.toggle-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 12px 20px;
+    background: #111827;
+    border-radius: 8px;
+    border: 1px solid rgba(41, 227, 60, 0.2);
+    margin-left: auto;
+    margin-bottom: 25px;
+       margin-top: 18px;
+}
+.toggle-label {
+    font-size: 17px;
+    color: #c7cacf;
+    font-weight: 700;
+}
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 30px;
+}
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #3b82f6;
+    transition: .4s;
+    border-radius: 30px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+.slider:before {
+    position: absolute;
+    content: '';
+    height: 22px;
+    width: 22px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+input:checked + .slider {
+    background: linear-gradient(90deg, rgba(97,215,101,1) 0%, rgba(41,227,60,1) 100%);
+}
+input:checked + .slider:before {
+    transform: translateX(30px);
+}
+.toggle-status {
+    font-size: 17px;
+    font-weight: 700;
+    min-width: 110px;
+    background: linear-gradient(90deg, rgba(97,215,101,1) 0%, rgba(225,255,64,1) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.toggle-status.unoptimized {
+    background: #3b82f6;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.loading {
+    color: #9ca3af;
+    font-style: italic;
+    padding: 20px;
+    text-align: center;
+}
+</style>
+</head>
+<body>
+<div class="page-header">
+<div class="header2">
+<a href="index.html" class="back-btn">⬅ Back</a>
+<h1>Three-Address Code</h1>
+<div class="toggle-container">
+<span class="toggle-label">Code View:</span>
+<span class="toggle-status unoptimized" id="toggleStatus">Unoptimized</span>
+<label class="toggle-switch">
+<input type="checkbox" id="codeToggle">
+<span class="slider"></span>
+</label>
+</div>
+</div>
+<div class="code-viewer" id="codeViewer">
+<div class="loading">Loading TAC code...</div>
+</div>
+</div>
+<script>
+let unoptimizedCode = [];
+let optimizedCode = [];
+let isLoaded = false;
+const codeViewer = document.getElementById('codeViewer');
+const codeToggle = document.getElementById('codeToggle');
+const toggleStatus = document.getElementById('toggleStatus');
+async function loadTACFiles() {
+    try {
+        const unoptResponse = await fetch('unopt.tac');
+        if (unoptResponse.ok) {
+            const unoptText = await unoptResponse.text();
+            unoptimizedCode = unoptText.trim().split('\n').filter(line => line.trim() !== '');
+        }
+        const optResponse = await fetch('opt.tac');
+        if (optResponse.ok) {
+            const optText = await optResponse.text();
+            optimizedCode = optText.trim().split('\n').filter(line => line.trim() !== '');
+        }
+        isLoaded = true;
+        displayCode(unoptimizedCode, false);
+    } catch (error) {
+        console.error('Error loading TAC files:', error);
+        codeViewer.innerHTML = '<div style="color: #ff6b6b; padding: 20px; text-align: center;">Error loading TAC files</div>';
+    }
+}
+function displayCode(codeArray, isOptimized) {
+    codeViewer.innerHTML = '';
+    if (!codeArray || codeArray.length === 0) {
+        codeViewer.innerHTML = '<div style="color: #ff6b6b; padding: 20px;">No code to display</div>';
+        return;
+    }
+    codeArray.forEach(line => {
+        const span = document.createElement('span');
+        span.className = 'code-line';
+        if (isOptimized && (line.includes('// DEAD') || line.includes('//DEAD'))) {
+            span.classList.add('dead');
+        }
+        if (line.trim().startsWith('//')) {
+            span.classList.add('comment');
+        }
+        span.textContent = line;
+        codeViewer.appendChild(span);
+    });
+}
+codeToggle.addEventListener('change', function() {
+    if (!isLoaded) return;
+    if (this.checked) {
+        displayCode(optimizedCode, true);
+        toggleStatus.textContent = 'Optimized';
+        toggleStatus.classList.remove('unoptimized');
+    } else {
+        displayCode(unoptimizedCode, false);
+        toggleStatus.textContent = 'Unoptimized';
+        toggleStatus.classList.add('unoptimized');
+    }
+});
+loadTACFiles();
+</script>
+<script src="script.js"></script>
+</body>
+</html>

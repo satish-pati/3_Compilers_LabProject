@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assembly - Compiler Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+.asm-directive { color: #79c0ff; }
+.asm-label     { color: #ffa657; font-weight: 700; }
+.asm-comment   { color: #8b949e; font-style: italic; }
+.asm-instr     { color: #e6edf3; }
+.line-num      { color: #4b5563; user-select: none; min-width: 40px;
+                 display: inline-block; margin-right: 12px; text-align: right; }
+.toggle-container { display: flex; align-items: center; gap: 15px;
+    padding: 12px 20px; background: #111827; border-radius: 8px;
+    border: 1px solid rgba(41,227,60,0.2); margin-left: auto; }
+.toggle-label  { font-size: 14px; color: #9ca3af; font-weight: 600; }
+.asm-stats     { display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
+.asm-stat      { background: #111827; border: 1px solid rgba(41,227,60,0.2);
+                 border-radius: 8px; padding: 10px 20px; text-align: center; }
+.asm-stat .num { font-size: 1.6em; font-weight: 700;
+    background: linear-gradient(90deg,rgba(97,215,101,1) 0%,rgba(225,255,64,1) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; }
+.asm-stat .lbl { color: #9ca3af; font-size: 0.8em; margin-top: 2px; }
+.search-bar    { display: flex; gap: 10px; margin-bottom: 16px; }
+.search-bar input { flex: 1; background: #111827;
+    border: 1px solid rgba(41,227,60,0.2); color: #f3f4f6;
+    border-radius: 8px; padding: 10px 16px; font-size: 14px; outline: none; }
+.search-bar input:focus { border-color: rgba(41,227,60,0.6); }
+.search-bar input::placeholder { color: #4b5563; }
+.highlight     { background: rgba(255,214,0,0.25); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="page-header">
+<div class="header2">
+<a href="index.html" class="back-btn">⬅ Back</a>
+<h1>Assembly Code</h1>
+<div class="toggle-container">
+<span class="toggle-label" id="lineCountLabel">Loading...</span>
+</div>
+</div>
+<div class="asm-stats" id="asmStats"></div>
+<div class="search-bar">
+<input type="text" id="searchInput" placeholder="Search instruction, register, label..." oninput="doSearch()">
+</div>
+<div class="code-viewer" id="codeViewer"><div class="loading">Loading assembly...</div></div>
+</div>
+<script>
+let asmLines = [];
+let searchTerm = '';
+async function loadAsm() {
+    try {
+        const r = await fetch('output.s');
+        if (!r.ok) throw new Error('Not found');
+        const txt = await r.text();
+        asmLines = txt.split('\n');
+        document.getElementById('lineCountLabel').textContent = asmLines.length + ' lines';
+        renderLines(asmLines);
+    } catch(e) {
+        document.getElementById('codeViewer').innerHTML =
+            '<div style="color:#ff6b6b;padding:20px;text-align:center;">Could not load output.s</div>';
+    }
+}
+function computeStats() {
+    let instrs=0, labels=0, directives=0, comments=0;
+    asmLines.forEach(l => {
+        const t = l.trim();
+        if (!t) return;
+        if (t.startsWith('#')) comments++;
+        else if (t.startsWith('.')) directives++;
+        else if (t.endsWith(':')) labels++;
+        else instrs++;
+    });
+    document.getElementById('asmStats').innerHTML = [
+        ['Instructions',instrs],['Labels',labels],
+        ['Directives',directives],['Comments',comments]
+    ].map(([l,n]) => `<div class='asm-stat'><div class='num'>${n}</div><div class='lbl'>${l}</div></div>`).join('');
+}
+function classify(line) {
+    const t = line.trim();
+    if (!t) return 'asm-instr';
+    if (t.startsWith('#')) return 'asm-comment';
+    if (t.startsWith('.')) return 'asm-directive';
+    if (t.endsWith(':')) return 'asm-label';
+    return 'asm-instr';
+}
+function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function renderLines(lines) {
+    document.getElementById('codeViewer').innerHTML = lines.map((line,i) => {
+        const cls = classify(line);
+        let content = escHtml(line);
+        if (searchTerm && content.toLowerCase().includes(searchTerm)) {
+            const re = new RegExp(searchTerm.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&'),'gi');
+            content = content.replace(re, m => `<mark class='highlight'>${m}</mark>`);
+        }
+        return `<span class='code-line ${cls}'><span class='line-num'>${i+1}</span>${content}</span>`;
+    }).join('');
+}
+function doSearch() {
+    searchTerm = document.getElementById('searchInput').value.trim().toLowerCase();
+    renderLines(asmLines);
+    if (searchTerm) {
+        const first = document.querySelector('.highlight');
+        if (first) first.scrollIntoView({block:'center'});
+    }
+}
+loadAsm();
+</script>
+<script src="script.js"></script>
+</body>
+</html>

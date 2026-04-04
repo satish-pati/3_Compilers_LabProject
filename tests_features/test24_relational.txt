@@ -1,0 +1,20 @@
+@int a is 5 $
+@int b is 10 $
+@int r1 is 0 $
+@int r2 is 0 $
+@int r3 is 0 $
+if(a lt b)
+begin
+    r1 is 1 $
+end
+if(a != b)
+begin
+    r2 is 1 $
+end
+if(b ge a)
+begin
+    r3 is 1 $
+end
+show(r1)$
+show(r2)$
+show(r3)$

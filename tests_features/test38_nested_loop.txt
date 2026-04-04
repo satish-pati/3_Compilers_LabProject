@@ -1,0 +1,11 @@
+@int i is 0 $
+@int j is 0 $
+@int count is 0 $
+iterate(i is 0 $ i < 3 $ i=i+1)
+begin
+    iterate(j is 0 $ j < 3 $ j=j+1)
+    begin
+        count += 1 $
+    end
+end
+show(count)$

@@ -1,0 +1,4 @@
+@int x is 10 $
+@int y is 3 $
+@int z is x + y $
+show(z)$

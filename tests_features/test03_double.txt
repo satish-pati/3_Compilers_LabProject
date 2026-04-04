@@ -1,0 +1,4 @@
+@double a is 9.99 $
+@double b is 0.01 $
+@double c is a + b $
+show(c)$

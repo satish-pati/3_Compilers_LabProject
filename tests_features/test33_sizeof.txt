@@ -1,0 +1,24 @@
+@int   x $
+@float f $
+@double d $
+@short s $
+@long  l $
+@char  c $
+@int arr[4]$
+@double darr[4]$
+@int sz_x is getsizeof(x) $
+@int sz_f is getsizeof(f) $
+@int sz_d is getsizeof(d) $
+@int sz_s is getsizeof(s) $
+@int sz_l is getsizeof(l) $
+@int sz_c is getsizeof(c) $
+@int sz_arr is getsizeof(arr) $
+@int sz_darr is getsizeof(darr)$
+show(sz_x)$
+show(sz_f)$
+show(sz_d)$
+show(sz_s)$
+show(sz_l)$
+show(sz_c)$
+show(sz_arr)$
+show(sz_darr)$

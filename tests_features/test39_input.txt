@@ -1,0 +1,3 @@
+@int n $
+input(n)$
+show(n)$

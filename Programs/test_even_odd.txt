@@ -1,0 +1,16 @@
+@int arr[8] = {12, 15, 18, 21, 24, 27, 30, 33} $
+@int n is 8 $
+@int even_count is 0 $
+@int odd_count is 0 $
+@int i $
+
+iterate (i = 0 $ i < n $ i = i + 1) {
+    if (arr[i] % 2 == 0) {
+        even_count = even_count + 1 $
+    } else {
+        odd_count = odd_count + 1 $
+    }
+}
+
+show(even_count) $
+show(odd_count) $

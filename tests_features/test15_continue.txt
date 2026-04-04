@@ -1,0 +1,12 @@
+@int i is 0 $
+@int sum is 0 $
+iterate(i is 0 $ i < 6 $ i=i+1)
+begin
+    if(i == 3)
+    begin
+        skip $
+    end
+    show(i)$
+    sum += i $
+end
+show(sum)$

@@ -1,0 +1,12 @@
+@int x is 0 $
+if(true)
+begin
+    x is 1 $
+end
+show(x)$
+@int y is 99 $
+if(false)
+begin
+    y is 0 $
+end
+show(y)$

@@ -1,3 +1,4 @@
+
 %{
 #include<stdio.h>
 #include<string.h>
@@ -13,6 +14,8 @@ int label=0;
 char* genvar();
 char imcode[10000][10000];
 int code=0;
+/* FOR-loop increment stash stack: supports nested for-loops.
+ * Each nested for pushes onto this stack; post-action pops it.  */
 #define FOR_STASH_DEPTH 16
 #define FOR_STASH_SLOTS 64
 static char for_incr_stash[FOR_STASH_DEPTH][FOR_STASH_SLOTS][10000];
@@ -198,7 +201,12 @@ struct Node* merge(struct Node* a,struct Node* b){
         return a;
 }
 
-
+/* ── Fall-through sentinel for redundant-goto elimination ─────────────────
+   A Node with addr == FALL_THROUGH means "control reaches the target by
+   falling through the next sequential instruction — no goto needed."
+   backpatch() silently skips such nodes; the IF/WHILE rules that call
+   backpatch($B->T, M) still work correctly because M == code == the very
+   next instruction that will be emitted, which IS the fall-through target. */
 #define FALL_THROUGH (-1)
 
 /* Return the negated relational operator string */
@@ -212,7 +220,15 @@ static const char* negateOp(const char* op) {
     return op;
 }
 
-
+/* flipCondToTrue:  We now emit  "N if op1 neg(rel) op2 goto _"  where
+ * T=FALL_THROUGH (true falls through) and F=jump (false jumps).
+ *
+ * For OR: B1-true must JUMP over B2.  The existing instruction jumps on FALSE.
+ * Fix: negate the operator once more (double-negate = original rel) so it
+ * now jumps when the ORIGINAL condition is TRUE.  Swap T↔F nodes.
+ *
+ * For do-while / for-loop back-edge: we want "if orig_rel goto loop_start"
+ * i.e. jump when condition is TRUE.  Same operation — negate the neg(rel).  */
 static int flipCondToTrue(int line_idx) {
     char* line = imcode[line_idx];
     /* Line format: "N if op1 rel op2 goto " (no ifFalse any more) */
@@ -1045,7 +1061,6 @@ void checkTypeAssign(struct Expr* op1, struct Expr* op2, char* opr){
     }
 }
 
-
 void identityAssignmentElimination() {
     for (int i = 0; i < code; i++) {
         if (strstr(imcode[i], "// DEAD") != NULL) continue;
@@ -1228,7 +1243,7 @@ void peepholeOptimization() {
                 strchr(rhs2,'+') == NULL && strchr(rhs2,'-') == NULL &&
                 strchr(rhs2,'*') == NULL && strchr(rhs2,'/') == NULL) {
                 if (strcmp(lhs1, rhs2) == 0 && strcmp(rhs1, lhs2) == 0)
-                    sprintf(imcode[i+1], "%d // PEEPHOLE: %s = %s (redundant peephole)\n", line_num2, lhs2, rhs2);
+                    sprintf(imcode[i+1], "%d // PEEPHOLE: %s = %s (redundant swap)\n", line_num2, lhs2, rhs2);
             }
         }
     }
@@ -1257,7 +1272,7 @@ void peepholeOptimization() {
                     if (strcmp(check_lhs, lhs) == 0) {
                         if (strcmp(check_rhs, rhs) == 0) {
                             int check_line_num; sscanf(imcode[j], "%d", &check_line_num);
-                            sprintf(imcode[j], "%d // PEEPHOLE: %s = %s (redundant peephole)\n", check_line_num, check_lhs, check_rhs);
+                            sprintf(imcode[j], "%d // PEEPHOLE: %s = %s (redundant reassignment)\n", check_line_num, check_lhs, check_rhs);
                         }
                         break;
                     }
@@ -1555,8 +1570,6 @@ void constantFoldConditionals() {
         }
     }
 }
-
-
 
 
 
@@ -2650,7 +2663,7 @@ void commonSubexpressionElimination() {
 %type <decl> PARAMLIST
 %type <expr> ARGLIST FUNCALL
 %type <b> PROGRAM FUNDECL
-%type <b>  CASE_LIST CASE_ITEM FORINCR
+%type <b>  CASE_LIST CASE_ITEM
 %type <expr> CASE_EXPR
 
 %%
@@ -2666,13 +2679,15 @@ S:      {top = create_env(top,0);} PROGRAM M MEOF{
                        for (int i=0;i<code;i++){
                                 printf("%s",imcode[i]);
                         }*/
-                                generateSymbolTableDOT();
+                               // generateSymbolTableDOT();
         generateTACFlowDOT();
         generateTACFlowWithBlocks();
-        generateCallGraphDOT();
+        //generateCallGraphDOT();
         generateAllImages();
-          printf("\noptmized Three Address :\n\n");
- for (int pass = 0; pass < 15; pass++) {
+
+                                                printf("\noptmized Three Address :\n\n");
+
+                     for (int pass = 0; pass < 15; pass++) {
     constantFolding();
     constantFoldConditionals();
     copyPropagation();
@@ -3121,7 +3136,7 @@ if(strstr($3->type, "[") != NULL) {
        
         $<addr>$ = code;   /* incr_start_saved = current code position   */
     }
-    '$' M FORINCR 
+    '$' M ASNEXPR
     {
         int incr_start = $<addr>7;   /* saved before ASNEXPR was parsed  */
         int incr_end   = code;       /* one-past the last incr line       */
@@ -4002,20 +4017,6 @@ ASNEXPR: BANDASN {strcpy($$, "&=");}
     if (!$1->lv){e=1;strcat(err,"L value not assignable\n");}
 }
 
-
-FORINCR: ASNEXPR {
-    if (!e) {
-        $$ = $1;
-    }
-}
-| EXPR {
-    if (!e) {
-        $$ = createBoolNode();
-    }
-}
-;
-
-
 /* EXPR: division/modulo by zero checks added */
 EXPR: SIZEOF '(' IDEN ')' {
     if(!e){
@@ -4403,13 +4404,10 @@ TERM: STRING {
             temp = temp->prev;
         }
         if (!found){ sprintf(err+strlen(err),"%s is not declared in scope\n",$3); e=1; }
-        /*char*t2=genvar();
+        char*t2=genvar();
         sprintf(imcode[code],"%d %s = %s %c 1\n",code,t2,$3,$2[0]);code++;
         sprintf(imcode[code],"%d %s = %s\n",code,$3,t2);code++;
-        strcpy($$->str,t2);*/
-        sprintf(imcode[code],"%d %s = %s %c 1\n",code,$3,$3,$2[0]);code++;
-strcpy($$->str,$3);
-
+        strcpy($$->str,t2);
     } else {
         if (!strcmp($2,"--")){e=1;strcpy(err,"--- not allowed");}
         Env* temp = top; int found=0;
@@ -4437,17 +4435,11 @@ strcpy($$->str,$3);
 | UN IDEN OPR B {
     $$ = createExpr();  
     if (strcmp($1,"-")){
-       /* char*t = genvar();char*t2=genvar();
+        char*t = genvar();char*t2=genvar();
         sprintf(imcode[code],"%d %s = %s\n",code,t,$2);code++;
         sprintf(imcode[code],"%d %s = %s %c 1\n",code,t2,$2,$3[0]);code++;
         sprintf(imcode[code],"%d %s = %s\n",code,$2,t2);code++;
         strcpy($$->str,t);
-        */
-        char*t = genvar();
-sprintf(imcode[code],"%d %s = %s\n",code,t,$2);code++;
-sprintf(imcode[code],"%d %s = %s %c 1\n",code,$2,$2,$3[0]);code++;
-strcpy($$->str,t);
-
         Env* temp = top; int found=0;
         while(temp){
             if (get(temp->table,$2)){
@@ -5469,12 +5461,358 @@ void generateCallGraphDOT() {
     printf("=============================\n");
 }
 
+
+void generateInteractiveDashboard() {
+    // Generate index.html (main page)
+    FILE* index = fopen("index.html", "w");
+    fprintf(index, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(index, "<meta charset=\"UTF-8\">\n");
+    fprintf(index, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(index, "<title>Compiler Visualization Dashboard</title>\n");
+    fprintf(index, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(index, "</head>\n<body>\n");
+    
+    fprintf(index, "<div class=\"container\">\n");
+    fprintf(index, "<div class=\"header\">\n");
+    fprintf(index, "<h1>Compiler Visualization Dashboard</h1>\n");
+    fprintf(index, "<p>Three-Address Code Generation & Optimization Analysis</p>\n");
+    fprintf(index, "</div>\n");
+    
+    // Statistics Cards
+    fprintf(index, "<div class=\"stats\">\n");
+    fprintf(index, "<div class=\"stat-card\"><div class=\"number\">%d</div><div class=\"label\">TAC Instructions</div></div>\n", code);
+    fprintf(index, "<div class=\"stat-card\"><div class=\"number\">%d</div><div class=\"label\">Scopes</div></div>\n", env_count);
+    
+    int func_count = 0;
+    Function* f = func_list;
+    while (f) { func_count++; f = f->next; }
+    fprintf(index, "<div class=\"stat-card\"><div class=\"number\">%d</div><div class=\"label\">Functions</div></div>\n", func_count);
+    fprintf(index, "<div class=\"stat-card\"><div class=\"number\">%d</div><div class=\"label\">Basic Blocks</div></div>\n", block_count);
+    fprintf(index, "</div>\n");
+    
+    // Navigation Cards
+    fprintf(index, "<div class=\"nav-grid\">\n");
+    fprintf(index, "<a href=\"tac.html\" class=\"nav-card\">\n");
+    fprintf(index, "<div class=\"icon\">📝</div>\n");
+    fprintf(index, "<h2>TAC Code</h2>\n");
+    fprintf(index, "<p>View three-address code with optimizations</p>\n");
+    fprintf(index, "</a>\n");
+    
+    fprintf(index, "<a href=\"cfg.html\" class=\"nav-card\">\n");
+    fprintf(index, "<div class=\"icon\">🔀</div>\n");
+    fprintf(index, "<h2>Control Flow</h2>\n");
+    fprintf(index, "<p>Visualize program control flow graphs</p>\n");
+    fprintf(index, "</a>\n");
+
+        
+    fprintf(index, "<a href=\"bsb.html\" class=\"nav-card\">\n");
+    fprintf(index, "<div class=\"icon\">🧱</div>\n");
+    fprintf(index, "<h2>Basic blocks</h2>\n");
+    fprintf(index, "<p>Visualize control flow graphs using Basic blocks  </p>\n");
+    fprintf(index, "</a>\n");
+    
+    fprintf(index, "<a href=\"callgraph.html\" class=\"nav-card\">\n");
+    fprintf(index, "<div class=\"icon\">📞</div>\n");
+    fprintf(index, "<h2>Call Graph</h2>\n");
+    fprintf(index, "<p>Function call relationships & metrics</p>\n");
+    fprintf(index, "</a>\n");
+    
+    fprintf(index, "<a href=\"symbols.html\" class=\"nav-card\">\n");
+    fprintf(index, "<div class=\"icon\">🔤</div>\n");
+    fprintf(index, "<h2>Symbol Tables</h2>\n");
+    fprintf(index, "<p>Variable scopes and storage layout</p>\n");
+    fprintf(index, "</a>\n");
+    fprintf(index, "</div>\n");
+    
+    fprintf(index, "</div>\n");
+    fprintf(index, "<script src=\"script.js\"></script>\n");
+    fprintf(index, "</body>\n</html>\n");
+    fclose(index);
+    
+    // Generate TAC page
+    generateTACPage();
+    
+    // Generate CFG page
+    generateCFGPage();
+    
+    generateBBPage();
+    // Generate Call Graph page
+    generateCallGraphPage();
+    
+    // Generate Symbol Tables page
+    generateSymbolsPage();
+   
+}
+
+// Generate TAC page
+void generateTACPage() {
+    FILE* html = fopen("tac.html", "w");
+    fprintf(html, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(html, "<meta charset=\"UTF-8\">\n");
+    fprintf(html, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(html, "<title>TAC Code - Compiler Dashboard</title>\n");
+    fprintf(html, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(html, "</head>\n<body>\n");
+    fprintf(html, "<div class=\"page-header\">\n");
+    fprintf(html, "<div class=\"header2\">\n");
+   fprintf(html, "<a href=\"index.html\" class=\"back-btn\">⬅ Back</a>\n");
+   fprintf(html, "<h1>Three-Address Code</h1>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"toolbar\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"code-viewer\">\n");
+    for (int i = 0; i < code; i++) {
+        char line[10000];
+        strcpy(line, imcode[i]);
+        char* newline = strchr(line, '\n');
+        if (newline) *newline = '\0';
+        
+        char escaped[20000];
+        int j = 0, k = 0;
+        while (line[j]) {
+            if (line[j] == '<') { strcpy(&escaped[k], "&lt;"); k += 4; }
+            else if (line[j] == '>') { strcpy(&escaped[k], "&gt;"); k += 4; }
+            else if (line[j] == '&') { strcpy(&escaped[k], "&amp;"); k += 5; }
+            else escaped[k++] = line[j];
+            j++;
+        }
+        escaped[k] = '\0';
+        
+        if (strstr(line, "// DEAD")) {
+            fprintf(html, "<span class=\"code-line dead\">%s</span>\n", escaped);
+        } else if (strstr(line, "//")) {
+            fprintf(html, "<span class=\"code-line comment\">%s</span>\n", escaped);
+        } else {
+            fprintf(html, "<span class=\"code-line\">%s</span>\n", escaped);
+        }
+    }
+
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    
+    fprintf(html, "<script src=\"script.js\"></script>\n");
+    fprintf(html, "</body>\n</html>\n");
+    fclose(html);
+}
+
+// Generate CFG page
+void generateCFGPage() {
+    FILE* html = fopen("cfg.html", "w");
+        fprintf(html, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(html, "<meta charset=\"UTF-8\">\n");
+    fprintf(html, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(html, "<title>Control Flow - Compiler Dashboard</title>\n");
+    fprintf(html, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(html, "</head>\n<body>\n");  
+    fprintf(html, "<div class=\"container\">\n");
+    fprintf(html, "<div class=\"page-header\">\n");
+        fprintf(html, "<div class=\"header2\">\n");
+   fprintf(html, "<a href=\"index.html\" class=\"back-btn\">⬅ Back</a>\n");
+    fprintf(html, "<h1> Control Flow Graphs</h1>\n");
+    fprintf(html, "</div>\n");
+        fprintf(html, "</div>\n");
+    // Basic Blocks CFG
+    fprintf(html, "<div class=\"toolbar\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-container\">\n");
+    fprintf(html, "<div class=\"zoom-controls\">\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('cfg', -0.1)\">−</button>\n");
+    fprintf(html, "<span class=\"zoom-level\" id=\"cfgZoomLevel\">100%%</span>\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('cfg', 0.1)\">+</button>\n");
+    fprintf(html, "<button class=\"zoom-btn \" onclick=\"resetZoom('cfg')\">⟲</button>\n");
+    fprintf(html, "<button class=\"zoom-btn fullscreen-btn\" onclick=\"openFullscreen('cfg')\">⛶</button>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-wrapper\" id=\"cfgWrapper\" onmousedown=\"startPan(event, 'cfg')\">\n");
+    fprintf(html, "<img id=\"cfgImage\" src=\"tac_flow.png\" alt=\"Control Flow Graph\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div id=\"fullscreenModal\" class=\"fullscreen-modal\"></div>\n");
+    fprintf(html, "<script src=\"script.js\"></script>\n");
+    fprintf(html, "</body>\n</html>\n");
+    fclose(html);
+}
+
+
+
+// Generate CFG page
+void generateBBPage() {
+    FILE* html = fopen("bsb.html", "w");
+    fprintf(html, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(html, "<meta charset=\"UTF-8\">\n");
+    fprintf(html, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(html, "<title>Control Flow - Compiler Dashboard</title>\n");
+    fprintf(html, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(html, "</head>\n<body>\n");  
+    fprintf(html, "<div class=\"container\">\n");
+    fprintf(html, "<div class=\"page-header\">\n");
+        fprintf(html, "<div class=\"header2\">\n");
+   fprintf(html, "<a href=\"index.html\" class=\"back-btn\">⬅ Back</a>\n");
+    fprintf(html, "<h1> Control Flow Graphs with Basic Blocks</h1>\n");
+    fprintf(html, "</div>\n");
+        fprintf(html, "</div>\n");
+    // Basic Blocks CFG
+    fprintf(html, "<div class=\"toolbar\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-container\">\n");
+    fprintf(html, "<div class=\"zoom-controls\">\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('blocks', -0.1)\">−</button>\n");
+    fprintf(html, "<span class=\"zoom-level\" id=\"blocksZoomLevel\">100%%</span>\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('blocks', 0.1)\">+</button>\n");
+    fprintf(html, "<button class=\"zoom-btn \" onclick=\"resetZoom('blocks')\">⟲</button>\n");
+    fprintf(html, "<button class=\"zoom-btn fullscreen-btn\" onclick=\"openFullscreen('blocks')\">⛶</button>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-wrapper\" id=\"blocksWrapper\" onmousedown=\"startPan(event, 'blocks')\">\n");
+    fprintf(html, "<img id=\"blocksImage\" src=\"tac_flow_blocks.png\" alt=\"Basic Blocks CFG\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+
+    
+    // Basic Block Statistics
+    fprintf(html, "<div class=\"stats-section\">\n");
+    fprintf(html, "<h3>Basic Block Statistics</h3>\n");
+    fprintf(html, "<table>\n");
+    fprintf(html, "<tr><th>Block ID</th><th>Start Line</th><th>End Line</th><th>Instructions</th></tr>\n");
+    
+    BasicBlock* bb = blocks;
+    while (bb) {
+        int inst_count = 0;
+        for (int i = bb->start_line; i <= bb->end_line && i < code; i++) {
+            if (strstr(imcode[i], "// DEAD") == NULL) inst_count++;
+        }
+        fprintf(html, "<tr><td>%d</td><td>%d</td><td>%d</td><td>%d</td></tr>\n",
+                bb->block_id, bb->start_line, bb->end_line, inst_count);
+        bb = bb->next;
+    }
+    fprintf(html, "</table>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div id=\"fullscreenModal\" class=\"fullscreen-modal\"></div>\n");
+    fprintf(html, "<script src=\"script.js\"></script>\n");
+    fprintf(html, "</body>\n</html>\n");
+    fclose(html);
+}
+
+// Generate Call Graph page
+void generateCallGraphPage() {
+    FILE* html = fopen("callgraph.html", "w");
+ fprintf(html, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(html, "<meta charset=\"UTF-8\">\n");
+    fprintf(html, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(html, "<title>Control Flow - Compiler Dashboard</title>\n");
+    fprintf(html, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(html, "</head>\n<body>\n");  
+    fprintf(html, "<div class=\"container\">\n");
+    fprintf(html, "<div class=\"page-header\">\n");
+        fprintf(html, "<div class=\"header2\">\n");
+   fprintf(html, "<a href=\"index.html\" class=\"back-btn\">⬅ Back</a>\n");
+    fprintf(html, "<h1> Function Call Graphs</h1>\n");
+    fprintf(html, "</div>\n");
+        fprintf(html, "</div>\n");
+    // Basic Blocks CFG
+    fprintf(html, "<div class=\"toolbar\">\n");
+    fprintf(html, "</div>\n");
+    
+    fprintf(html, "<div class=\"image-container\">\n");
+    fprintf(html, "<div class=\"zoom-controls\">\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('callgraph', -0.1)\">−</button>\n");
+    fprintf(html, "<span class=\"zoom-level\" id=\"callgraphZoomLevel\">100%%</span>\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('callgraph', 0.1)\">+</button>\n");
+    fprintf(html, "<button class=\"zoom-btn \" onclick=\"resetZoom('callgraph')\">⟲</button>\n");
+    fprintf(html, "<button class=\"zoom-btn fullscreen-btn\" onclick=\"openFullscreen('callgraph')\">⛶</button>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-wrapper\" id=\"callgraphWrapper\" onmousedown=\"startPan(event, 'callgraph')\">\n");
+    fprintf(html, "<img id=\"callgraphImage\" src=\"call_graph.png\" alt=\"Call Graph\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div id=\"fullscreenModal\" class=\"fullscreen-modal\"></div>\n");
+    fprintf(html, "<script src=\"script.js\"></script>\n");
+    fprintf(html, "</body>\n</html>\n");
+    fclose(html);
+}
+
+// Generate Symbols page
+void generateSymbolsPage() {
+    FILE* html = fopen("symbols.html", "w");
+  fprintf(html, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(html, "<meta charset=\"UTF-8\">\n");
+    fprintf(html, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(html, "<title>Control Flow - Compiler Dashboard</title>\n");
+    fprintf(html, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(html, "</head>\n<body>\n");  
+    fprintf(html, "<div class=\"container\">\n");
+    fprintf(html, "<div class=\"page-header\">\n");
+        fprintf(html, "<div class=\"header2\">\n");
+   fprintf(html, "<a href=\"index.html\" class=\"back-btn\">⬅ Back</a>\n");
+    fprintf(html, "<h1> Symbol Table and Scope Views </h1>\n");
+    fprintf(html, "</div>\n");
+        fprintf(html, "</div>\n");
+    // Basic Blocks CFG
+    fprintf(html, "<div class=\"toolbar\">\n");
+    fprintf(html, "</div>\n");
+
+    fprintf(html, "<div class=\"image-container\" style=\"margin-top: 30px;\">\n");
+    fprintf(html, "<div class=\"zoom-controls\">\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('symbols', -0.1)\">−</button>\n");
+    fprintf(html, "<span class=\"zoom-level\" id=\"symbolsZoomLevel\">100%%</span>\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('symbols', 0.1)\">+</button>\n");
+    fprintf(html, "<button class=\"zoom-btn \" onclick=\"resetZoom('symbols')\">⟲</button>\n");
+    fprintf(html, "<button class=\"zoom-btn fullscreen-btn\" onclick=\"openFullscreen('symbols')\">⛶</button>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-wrapper\" id=\"symbolsWrapper\" onmousedown=\"startPan(event, 'symbols')\">\n");
+    fprintf(html, "<img id=\"symbolsImage\" src=\"symbol_table.png\" alt=\"Symbol Table Graph\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+
+
+  for (int i = 0; i < env_count; i++) {
+        fprintf(html, "<div class=\"scope-section\">\n");
+        fprintf(html, "<h3>Scope %d</h3>\n", i);
+        fprintf(html, "<table>\n");
+        fprintf(html, "<tr><th>Variable</th><th>Type</th><th>Offset</th><th>Dimensions</th></tr>\n");
+        Table* table = envs[i]->table;
+        for (int j = 0; j < table->size; j++) {
+            TableEntry* entry = table->buckets[j];
+            while (entry) {
+                char dims[100] = "-";
+                if (entry->value->dim_count > 0) {
+                    strcpy(dims, "[");
+                    for (int d = 0; d < entry->value->dim_count; d++) {
+                        char temp[20];
+                        sprintf(temp, "%d", entry->value->dimensions[d]);
+                        strcat(dims, temp);
+                        if (d < entry->value->dim_count - 1) strcat(dims, "][");
+                    }
+                    strcat(dims, "]");
+                }
+                fprintf(html, "<tr><td>%s</td><td>%s</td><td>%d</td><td>%s</td></tr>\n",
+                        entry->value->name, entry->value->type, 
+                        entry->value->offset, dims);
+                entry = entry->next;
+            }
+        }
+        fprintf(html, "</table>\n");
+        fprintf(html, "</div>\n");
+    }
+    
+    
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div id=\"fullscreenModal\" class=\"fullscreen-modal\"></div>\n");
+    fprintf(html, "<script src=\"script.js\"></script>\n");
+    fprintf(html, "</body>\n</html>\n");
+    fclose(html);
+}
+
 void generateAllImages() {
     system("dot -Tpng tac_flow.dot -o tac_flow.png 2>/dev/null");
     system("dot -Tpng tac_flow_blocks.dot -o tac_flow_blocks.png 2>/dev/null");
-   system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
-   system("dot -Tpng symbol_table.dot -o symbol_table.png 2>/dev/null");
+    system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
+    system("dot -Tpng symbol_table.dot -o symbol_table.png 2>/dev/null");
 }
+
 
 
 int main(int argc, char* argv[]) {
@@ -5499,7 +5837,10 @@ int main(int argc, char* argv[]) {
         raw[fsize] = '\0';
         fclose(f);
 
-       
+        /* Preprocess:
+           - strip carriage returns (\r) so Windows files work
+           - ensure a space before and after every '$' so "2$" lexes as NUM + '$'
+           - ensure file ends with a newline so flex sees a clean EOF */
         char* clean = (char*)malloc(fsize * 3 + 4);
         if (!clean) { free(raw); return 1; }
         int j = 0;
@@ -5519,7 +5860,7 @@ int main(int argc, char* argv[]) {
         free(raw);
 
         memset(imcode, 0, sizeof(imcode));
-        yy_scan_string(clean);  
+        yy_scan_string(clean);  /* feed preprocessed source to lexer */
         yyparse();
         free(clean);
     }
@@ -5533,7 +5874,12 @@ int main(int argc, char* argv[]) {
                 fprintf(tac_file, "%s", imcode[i]);
             fclose(tac_file);
         }
-
+        generateSymbolTableDOT();
+        generateTACFlowDOT();
+        generateTACFlowWithBlocks();
+        generateCallGraphDOT();
+        generateAllImages();
+        generateInteractiveDashboard();
     }
     return 0;
 }

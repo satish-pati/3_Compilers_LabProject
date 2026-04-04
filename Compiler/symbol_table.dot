@@ -1,12 +1,6 @@
 digraph SymbolTable {
   node [shape=record, style=filled, fillcolor=lightblue];
-  scope0 [label="{Scope 0 - Global|}"];
-  scope1 [label="{Scope 1 - Local|a : int - 0|b : int - 4|c : int - 8|d : int - 12|p : int - 20|x : int - 16}"];
+  scope0 [label="{Scope 0 - Global|i : int - 32|n : int - 24|sum : int - 28|arr : int[6] - 0}"];
+  scope1 [label="{Scope 1 - Local|}"];
   scope1 -> scope0;
-  scope2 [label="{Scope 2 - Local|y : int - 0}"];
-  scope2 -> scope1;
-  scope3 [label="{Scope 3 - Local|z : int - 0}"];
-  scope3 -> scope1;
-  scope4 [label="{Scope 4 - Local|p : int - 0}"];
-  scope4 -> scope1;
 }

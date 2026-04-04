@@ -1,0 +1,12 @@
+@int a is 10 $
+@int b is 3 $
+@int r1 is a + b $
+@int r2 is a - b $
+@int r3 is a * b $
+@int r4 is a / b $
+@int r5 is a % b $
+show(r1)$
+show(r2)$
+show(r3)$
+show(r4)$
+show(r5)$

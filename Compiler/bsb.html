@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control Flow - Compiler Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+<div class="page-header">
+<div class="header2">
+<a href="index.html" class="back-btn">⬅ Back</a>
+<h1> Control Flow Graphs with Basic Blocks</h1>
+</div>
+</div>
+<div class="toolbar">
+</div>
+<div class="image-container">
+<div class="zoom-controls">
+<button class="zoom-btn" onclick="zoomImage('blocks', -0.1)">−</button>
+<span class="zoom-level" id="blocksZoomLevel">100%</span>
+<button class="zoom-btn" onclick="zoomImage('blocks', 0.1)">+</button>
+<button class="zoom-btn " onclick="resetZoom('blocks')">⟲</button>
+<button class="zoom-btn fullscreen-btn" onclick="openFullscreen('blocks')">⛶</button>
+</div>
+<div class="image-wrapper" id="blocksWrapper" onmousedown="startPan(event, 'blocks')">
+<img id="blocksImage" src="tac_flow_blocks.png" alt="Basic Blocks CFG">
+</div>
+</div>
+<div class="stats-section">
+<h3>Basic Block Statistics</h3>
+<table>
+<tr><th>Block ID</th><th>Start Line</th><th>End Line</th><th>Instructions</th></tr>
+<tr><td>3</td><td>15</td><td>15</td><td>1</td></tr>
+<tr><td>2</td><td>9</td><td>14</td><td>6</td></tr>
+<tr><td>1</td><td>8</td><td>8</td><td>1</td></tr>
+<tr><td>0</td><td>0</td><td>7</td><td>7</td></tr>
+</table>
+</div>
+</div>
+</div>
+<div id="fullscreenModal" class="fullscreen-modal"></div>
+<script src="script.js"></script>
+</body>
+</html>

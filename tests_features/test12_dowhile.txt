@@ -1,0 +1,6 @@
+@int x is 0 $
+repeat
+begin
+    x is x + 1 $
+end loop(x < 4)$
+show(x)$

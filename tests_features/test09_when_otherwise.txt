@@ -1,0 +1,11 @@
+@int score is 85 $
+@int pass is 0 $
+when(score >= 60)
+begin
+    pass is 1 $
+end
+otherwise
+begin
+    pass is 0 $
+end
+show(pass)$

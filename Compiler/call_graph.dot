@@ -3,16 +3,6 @@ digraph CallGraph {
   rankdir=TB;
   concentrate=true;
 
-  "main" [fillcolor=lightblue, label=<
-    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
-      <TR><TD BGCOLOR="lightblue"><FONT COLOR="black"><B>main</B></FONT></TD></TR>
-      <TR><TD ALIGN="LEFT"><B>Returns:</B> int</TD></TR>
-      <TR><TD ALIGN="LEFT"><B>Params:</B> void</TD></TR>
-      <TR><TD ALIGN="LEFT"><B>TAC Lines:</B> 42 (Complex)</TD></TR>
-      <TR><TD ALIGN="LEFT"><B>Called:</B> 0 times</TD></TR>
-    </TABLE>
-  >];
-
 
   // Call relationships
 

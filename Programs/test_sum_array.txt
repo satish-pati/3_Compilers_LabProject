@@ -1,0 +1,13 @@
+@int arr[6] = {10, 20, 30, 40, 50, 60} $
+@int n is 6 $
+@int sum is 0 $
+@int i,j,k=5 $
+
+iterate (i = 0 $ i < n $ i = i + 1) {
+     #show(n)$
+     #k=k+ 5 $
+      j=k$
+    sum = sum + arr[i] $
+}
+
+show(sum) $

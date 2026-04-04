@@ -1,0 +1,14 @@
+# @int  is 0 $
+func @void increment(@int counter )
+begin
+    counter is counter + 1 $
+show(counter)$
+    ret $
+end
+
+func @int main(){
+@int counter=0 $
+call increment(counter) $
+call increment(counter) $
+ret 0 $
+}

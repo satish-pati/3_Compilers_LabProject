@@ -1,0 +1,4 @@
+@float a is 3.14 $
+@float b is 2.0 $
+@float c is a + b $
+show(c)$

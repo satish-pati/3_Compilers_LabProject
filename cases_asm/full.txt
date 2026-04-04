@@ -1,0 +1,236 @@
+# ----  Function returning int ----
+func @int add(@int p , @int q)
+begin
+    @int s is p + q $
+    ret s $
+end
+
+# ----  void function ----
+func @void print_double(@int n)
+begin
+    @int d is n * 2 $
+    show(d)$
+    ret $
+end
+
+# recursion
+func @int fact(@int n)
+begin
+    if(n <= 1)
+    begin
+        ret 1 $
+    end
+    @int sub is n - 1 $
+    @int r   is call fact(sub) $
+    ret n * r $
+end
+
+# ---- 1. Variable declarations & basic types ----
+@int    a is 10 $
+@int    b is 3  $
+@float  f is 3.14 $
+@char   c is 'A' $
+fixed @int MAX is 100 $
+
+# ---- 2. Arithmetic operators ----
+@int r_add is a + b $
+@int r_sub is a - b $
+@int r_mul is a * b $
+@int r_div is a / b $
+
+show(r_add)$
+show(r_sub)$
+show(r_mul)$
+show(r_div)$
+
+
+# ---- 3. Unary operators ----
+@int neg is -a $
+@int pos is +a $
+show(neg)$
+show(pos)$
+
+# ---- 4. Inc / Dec ----
+@int x is 5 $
+@int post_inc is x++ $
+@int pre_inc  is ++x $
+show(post_inc)$
+show(pre_inc)$
+x-- $
+show(x)$
+
+
+# ---- 6. Bitwise operators ----
+@int ba is 12 $
+@int bb is 10 $
+@int bw_and  is ba bitand bb $
+@int bw_or   is ba bitor  bb $
+@int bw_xor  is ba bitxor bb $
+@int bw_not  is bitnot ba     $
+@int bw_lsh  is ba lshift 1   $
+@int bw_rsh  is ba rshift 1   $
+show(bw_and)$
+show(bw_or)$
+show(bw_xor)$
+show(bw_not)$
+show(bw_lsh)$
+show(bw_rsh)$
+
+# ---- 7. Bitwise assignment operators ----
+@int bca is 12 $
+bca bitand= 10 $
+show(bca)$
+@int bcb is 8 $
+bcb bitor= 3 $
+show(bcb)$
+@int bcc is 15 $
+bcc bitxor= 5 $
+show(bcc)$
+@int bcd is 4 $
+bcd lshift= 2 $
+show(bcd)$
+@int bce is 16 $
+bce rshift= 2  $
+show(bce)$
+
+# ---- 8. Relational & logical operators ----
+@int rel is 0 $
+if(a lt b)
+begin
+    rel is 1 $
+end
+if(b != a)
+begin
+    rel is 2 $
+end
+if(a ge b)
+begin
+    rel is 3 $
+end
+show(rel)$
+
+
+
+
+# ---- 11. Nested if ----
+@int val is 15 $
+@int grade is 0 $
+if(val > 10)
+begin
+    if(val > 20)
+    begin
+        grade is 2 $
+    end
+    else
+    begin
+        grade is 1 $
+    end
+end
+show(grade)$
+
+# ---- 12. loop (while) + exit (break) ----
+@int w is 0 $
+loop(w < 10)
+begin
+    if(w == 5)
+    begin
+        exit $
+    end
+    w++ $
+end
+show(w)$
+
+# ---- 13. iterate (for) + skip (continue) ----
+@int sum is 0 $
+@int i   is 0 $
+iterate(i is 0 $ i < 6 $ i=i+1)
+begin
+    if(i == 3)
+    begin
+        skip $
+    end
+    sum += i $
+end
+show(sum)$
+
+# ---- 14. repeat (do-while) ----
+@int dw is 0 $
+repeat
+begin
+    dw is dw + 1 $
+end loop(dw < 4)$
+show(dw)$
+
+# ---- 15. choose / option / def (switch) ----
+@int day    is 3 $
+@int result is 0 $
+choose(day)
+begin
+    option 1 : result is 10 $
+    option 2 : result is 20 $
+    option 3 : result is 30 $
+               exit $
+    def      : result is 99 $
+end
+show(result)$
+
+# ---- 16. 1D array (declaration + assignment + access) ----
+@int arr[5] $
+arr[0] is 10 $
+arr[1] is 20 $
+arr[2] is 30 $
+arr[3] is 40 $
+arr[4] is 50 $
+show(arr[0])$
+show(arr[4])$
+
+# ---- 17. 1D array with initializer ----
+@int nums[4] is {10, 20, 30, 40} $
+show(nums[0])$
+show(nums[3])$
+
+# ---- 18. 2D array ----
+@int mat[2][3] $
+mat[0][0] is 1 $
+mat[0][1] is 2 $
+mat[1][0] is 3 $
+mat[1][1] is 4 $
+show(mat[0][1])$
+show(mat[1][0])$
+
+# ---- 19. Array traversal with loop ----
+@int idx   is 0 $
+@int total is 0 $
+loop(idx < 4)
+begin
+    total += nums[idx] $
+    idx++ $
+end
+show(total)$
+
+
+
+# ---- 25. Input / output ----
+@int inp $
+input(inp)$
+show(inp)$
+
+
+# ---- 24. Nested loops ----
+@int ni    is 0 $
+@int nj    is 0 $
+@int count is 0 $
+iterate(ni is 0 $ ni < 3 $ ni=ni+1)
+begin
+    iterate(nj is 0 $ nj < 3 $ nj=nj+1)
+    begin
+        count += 1 $
+    end
+end
+show(count)$
+
+@int sum2 is call add(6, 4) $
+show(sum2)$
+call print_double(7) $
+@int fval is call fact(5) $
+show(fval)$

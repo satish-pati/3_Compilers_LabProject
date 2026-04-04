@@ -1,0 +1,13 @@
+func  @int fact(@int n) 
+begin
+    if(n <= 1)
+    begin
+        ret 1 $
+    end
+    @int sub is n - 1 $
+    @int r is call fact(sub) $
+    ret n * r $
+end
+
+@int result is call fact(5) $
+show(result)$

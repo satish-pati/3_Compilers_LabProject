@@ -1,0 +1,4 @@
+@short s is 200 $
+@short t is 56 $
+@short u is s + t $
+show(u)$

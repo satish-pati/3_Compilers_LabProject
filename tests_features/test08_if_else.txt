@@ -1,0 +1,12 @@
+@int a is 10 $
+@int b is 20 $
+@int bigger is 0 $
+if(a > b)
+begin
+    bigger is a $
+end
+else
+begin
+    bigger is b $
+end
+show(bigger)$

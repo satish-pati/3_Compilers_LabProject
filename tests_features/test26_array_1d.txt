@@ -1,0 +1,7 @@
+@int arr[5] $
+arr[0] is 10 $
+arr[1] is 20 $
+arr[2] is 30 $
+show(arr[0])$
+show(arr[1])$
+show(arr[2])$

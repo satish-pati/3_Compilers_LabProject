@@ -1,0 +1,14 @@
+@int x is 15 $
+@int result is 0 $
+if(x > 10)
+begin
+    if(x > 20)
+    begin
+        result is 2 $
+    end
+    else
+    begin
+        result is 1 $
+    end
+end
+show(result)$

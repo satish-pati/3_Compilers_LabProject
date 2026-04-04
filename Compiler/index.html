@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compiler Visualization Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+<div class="header">
+<h1>Compiler Visualization Dashboard</h1>
+<p>Three-Address Code Generation & Optimization Analysis</p>
+</div>
+<div class="stats">
+<div class="stat-card"><div class="number">16</div><div class="label">TAC Instructions</div></div>
+<div class="stat-card"><div class="number">2</div><div class="label">Scopes</div></div>
+<div class="stat-card"><div class="number">0</div><div class="label">Functions</div></div>
+<div class="stat-card"><div class="number">4</div><div class="label">Basic Blocks</div></div>
+</div>
+<div class="nav-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:30px;margin-top:20px;">
+<a href="tac.html" class="nav-card">
+<div class="icon">📝</div>
+<h2>TAC Code</h2>
+<p>View three-address code with optimizations</p>
+</a>
+<a href="cfg.html" class="nav-card">
+<div class="icon">🔀</div>
+<h2>Control Flow</h2>
+<p>Visualize program control flow graphs</p>
+</a>
+<a href="bsb.html" class="nav-card">
+<div class="icon">🧱</div>
+<h2>Basic blocks</h2>
+<p>Visualize control flow graphs using Basic blocks  </p>
+</a>
+<a href="callgraph.html" class="nav-card">
+<div class="icon">📞</div>
+<h2>Call Graph</h2>
+<p>Function call relationships & metrics</p>
+</a>
+<a href="symbols.html" class="nav-card">
+<div class="icon">🔤</div>
+<h2>Symbol Tables</h2>
+<p>Variable scopes and storage layout</p>
+</a>
+<a href="asm.html" class="nav-card">
+<div class="icon">⚙️</div>
+<h2>Assembly</h2>
+<p>RISC-V assembly code generated from TAC</p>
+</a>
+</div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

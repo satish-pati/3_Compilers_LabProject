@@ -1798,7 +1798,6 @@ if (isalnum(after) || after == '_' || after == '\'') is_whole_word = 0;
 }
 
 
-
 void booleanSimplification() {
     for (int i = 0; i < code; i++) {
         if (strstr(imcode[i], "// DEAD") != NULL) continue;
@@ -1867,6 +1866,489 @@ void booleanSimplification() {
     }
 }
 
+
+
+static int licm_is_dead(int i) {
+    /* Dead if marked by a prior pass */
+    if (strstr(imcode[i], "// DEAD") != NULL) return 1;
+    /* Dead if an unfilled preheader placeholder */
+    if (strstr(imcode[i], "LICM_PREHEADER_SLOT") != NULL) return 1;
+    /* "// LICM:" appears on two kinds of lines:
+     *   (a) In-loop NOP:  "21 // LICM: found hoisted ..."  — NO '=' before the tag
+     *   (b) Live preheader instruction (legacy, should not occur with clean-write fix,
+     *       but guard anyway): has a real '=' BEFORE the tag.
+     * Only treat as dead when there is no assignment before the tag. */
+    const char *tag = strstr(imcode[i], "// LICM:");
+    if (tag) {
+        const char *eq = strchr(imcode[i], '=');
+        if (!eq || eq > tag) return 1;  /* no real assignment before tag -> NOP */
+    }
+    return 0;
+}
+
+static int licm_uncond_goto(int i, int *tgt) {
+    if (licm_is_dead(i)) return 0;
+    char *gp = strstr(imcode[i], "goto");
+    if (!gp) return 0;
+    char *ifp = strstr(imcode[i], "if");
+    if (ifp && ifp < gp) return 0;
+    char *tp = gp + 4;
+    while (*tp == ' ' || *tp == '\t') tp++;
+    if (!isdigit(*tp)) return 0;
+    *tgt = atoi(tp);
+    return 1;
+}
+
+static int licm_assigns(int i, const char *var) {
+    if (licm_is_dead(i)) return 0;
+    char line[10000]; strcpy(line, imcode[i]);
+    char lhs[200];
+    if (sscanf(line, "%*d %s =", lhs) != 1) return 0;
+    // Strip array subscript for bare name comparison
+    char bare[200]; strcpy(bare, lhs);
+    char *br = strchr(bare, '['); if (br) *br = '\0';
+    return (strcmp(lhs, var) == 0 || strcmp(bare, var) == 0);
+}
+
+static int licm_has_call(int i) {
+    if (licm_is_dead(i)) return 0;
+    return strstr(imcode[i], "Call ") != NULL ||
+           strstr(imcode[i], "PushParam") != NULL;
+}
+
+/* Returns 1 if any line in the loop body (body[]) writes to the array
+ * named `arr_base` (e.g. "arr[x] = ..."). */
+static int licm_array_written_in_body(int H, int B, int *body, const char *arr_base) {
+    for (int k = H; k <= B; k++) {
+        if (!body[k] || licm_is_dead(k)) continue;
+        char lhs_buf[200];
+        if (sscanf(imcode[k], "%*d %s =", lhs_buf) != 1) continue;
+        /* lhs_buf like "arr[t1]" -- strip subscript to get base */
+        char base[200]; strcpy(base, lhs_buf);
+        char *br = strchr(base, '['); if (br) *br = '\0';
+        if (strchr(lhs_buf, '[') && strcmp(base, arr_base) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/* Returns 1 if the operand `op` (which may be "arr[idx]" or a plain var)
+ * is NOT loop-invariant in the loop body [H..B].
+ * Checks:
+ *  - plain var: is it assigned anywhere in body?
+ *  - array read "base[idx]": is idx assigned in body? is base array-written in body?
+ */
+static int licm_operand_modified(int H, int B, int *body, const char *op) {
+    if (!op || op[0] == '\0') return 0;
+    if (isdigit((unsigned char)op[0]) || op[0] == '-' || op[0] == '+') {
+        /* numeric literal — always invariant */
+        return 0;
+    }
+
+    char op_copy[200]; strncpy(op_copy, op, 199); op_copy[199] = '\0';
+    char *bracket = strchr(op_copy, '[');
+
+    if (bracket) {
+        /* Array read: "base[index]" */
+        *bracket = '\0';
+        const char *arr_base = op_copy;
+        const char *index    = bracket + 1;
+        /* strip trailing ']' from index */
+        char idx[200]; strncpy(idx, index, 199); idx[199] = '\0';
+        char *rb = strchr(idx, ']'); if (rb) *rb = '\0';
+
+        /* 1. Is the array base written (as array) in the loop body? */
+        if (licm_array_written_in_body(H, B, body, arr_base)) return 1;
+
+        /* 2. Is the index variable assigned in the loop body? */
+        if (idx[0] != '\0' && !isdigit((unsigned char)idx[0])) {
+            for (int k = H; k <= B; k++) {
+                if (!body[k]) continue;
+                if (licm_assigns(k, idx)) return 1;
+            }
+        }
+        return 0;
+    } else {
+        /* Plain variable: is it assigned anywhere in body? */
+        for (int k = H; k <= B; k++) {
+            if (!body[k]) continue;
+            if (licm_assigns(k, op_copy)) return 1;
+        }
+        return 0;
+    }
+}
+
+static int licm_has_side_effect(int i) {
+    if (licm_is_dead(i)) return 0;
+    char *ln = imcode[i];
+    if (strstr(ln, "print")     != NULL) return 1;
+    if (strstr(ln, "input")     != NULL) return 1;
+    if (strstr(ln, "Call ")     != NULL) return 1;
+    if (strstr(ln, "PushParam") != NULL) return 1;
+    if (strstr(ln, "Return")    != NULL) return 1;
+    if (strstr(ln, "BeginFunc") != NULL) return 1;
+    if (strstr(ln, "EndFunc")   != NULL) return 1;
+    // Array write: "N var[...] = ..."
+    char lhs_buf[200];
+    if (sscanf(ln, "%*d %s =", lhs_buf) == 1 && strchr(lhs_buf,'[') != NULL)
+        return 1;
+    return 0;
+}
+
+/* ---------------------------------------------------------------
+ * Compute the FULL natural loop body for back-edge (B->H).
+ * BFS from H following all CFG edges, bounded to lines <= B.
+ * body[i] = 1 means line i belongs to this loop.
+ * --------------------------------------------------------------- */
+static void licm_compute_body(int H, int B, int *body) {
+    memset(body, 0, sizeof(int) * 10000);
+    int visited[10000] = {0};
+    int queue[10000];
+    int qhead = 0, qtail = 0;
+    queue[qtail++] = H;
+    while (qhead < qtail) {
+        int cur = queue[qhead++];
+        if (cur < 0 || cur > B) continue;
+        if (visited[cur]) continue;
+        visited[cur] = 1;
+        char *ln = imcode[cur];
+        if (licm_is_dead(cur)) {
+            if (cur+1 <= B && !visited[cur+1]) queue[qtail++] = cur+1;
+            continue;
+        }
+        char *gp  = strstr(ln, "goto");
+        char *ifp = strstr(ln, "if ");
+        int is_uncond = (gp && (!ifp || ifp > gp));
+        int is_cond   = (ifp && gp && ifp < gp);
+        if (is_uncond) {
+            char *tp = gp+4; while(*tp==' '||*tp=='\t') tp++;
+            if (isdigit(*tp)) { int t=atoi(tp); if(t<=B && !visited[t]) queue[qtail++]=t; }
+        } else if (is_cond) {
+            char *tp = gp+4; while(*tp==' '||*tp=='\t') tp++;
+            if (isdigit(*tp)) { int t=atoi(tp); if(t<=B && !visited[t]) queue[qtail++]=t; }
+            if (cur+1 <= B && !visited[cur+1]) queue[qtail++] = cur+1;
+        } else {
+            if (cur+1 <= B && !visited[cur+1]) queue[qtail++] = cur+1;
+        }
+    }
+    for (int i = H; i <= B; i++) if (visited[i]) body[i] = 1;
+}
+
+/* ---------------------------------------------------------------
+ * Insert a blank preheader slot just before line `before_line`
+ * by shifting all imcode[before_line..code-1] down by one.
+ * Updates all goto targets in the entire program accordingly.
+ * Returns the index of the new blank slot (= before_line).
+ * --------------------------------------------------------------- */
+static int licm_insert_preheader(int before_line) {
+    /* shift code down */
+    for (int i = code; i > before_line; i--)
+        strcpy(imcode[i], imcode[i-1]);
+    code++;
+
+    /* blank out the new slot */
+    sprintf(imcode[before_line], "%d // LICM_PREHEADER_SLOT\n", before_line);
+
+    /* fix line-number prefixes in shifted lines */
+    for (int i = before_line + 1; i < code; i++) {
+        char tmp[10000];
+        /* read off old line number, rewrite with new */
+        int old_ln;
+        char rest[10000];
+        if (sscanf(imcode[i], "%d %[^\n]", &old_ln, rest) == 2)
+            sprintf(imcode[i], "%d %s\n", i, rest);
+        else if (sscanf(imcode[i], "%d\n", &old_ln) == 1)
+            sprintf(imcode[i], "%d\n", i);
+        (void)tmp;
+    }
+
+    /* update all goto targets: any target >= before_line gets +1 */
+    for (int i = 0; i < code; i++) {
+        if (licm_is_dead(i)) continue;
+        char *p = imcode[i];
+        /* find all "goto NNN" occurrences and patch */
+        char newline[10000]; newline[0] = '\0';
+        char *cur = p;
+        while (*cur) {
+            char *gp = strstr(cur, "goto ");
+            if (!gp) { strcat(newline, cur); break; }
+            /* copy up to and including "goto " */
+            int pfx = (int)(gp - cur) + 5;
+            strncat(newline, cur, pfx);
+            cur = gp + 5;
+            /* read the number */
+            char *np = cur;
+            while (*np == ' ' || *np == '\t') np++;
+            if (isdigit(*np)) {
+                int tgt = atoi(np);
+                if (tgt >= before_line) tgt++;
+                char num[32]; sprintf(num, "%d", tgt);
+                strcat(newline, num);
+                /* skip past old digits */
+                while (isdigit(*np)) np++;
+                cur = np;
+            }
+        }
+        strcpy(imcode[i], newline);
+    }
+
+    return before_line;
+}
+
+void loopInvariantCodeMotion() {
+    #define MAX_LOOPS 200
+    int loop_H[MAX_LOOPS], loop_B[MAX_LOOPS];
+    int nloops = 0;
+
+    // ---- Detect loops via back edges ----
+    for (int i = 0; i < code && nloops < MAX_LOOPS; i++) {
+        int tgt;
+        if (!licm_uncond_goto(i, &tgt)) continue;
+        if (tgt >= i) continue;
+        if (licm_is_dead(tgt)) continue;
+        int dup = 0;
+        for (int k = 0; k < nloops; k++)
+            if (loop_H[k] == tgt && loop_B[k] == i) { dup = 1; break; }
+        if (!dup) { loop_H[nloops] = tgt; loop_B[nloops] = i; nloops++; }
+    }
+
+    /* ---- Merge compound loops ----
+     * For-loops produce TWO back-edges in our TAC:
+     *   increment->header: e.g. line13 goto9  => H=9,  B=13
+     *   body->increment:   e.g. line18 goto11 => H=11, B=18
+     * The real outer loop is H=9, B=18.
+     * Rule: if Hb is inside (Ha..Ba], extend Ba = max(Ba,Bb). Repeat. */
+    {
+        int changed2 = 1;
+        while (changed2) {
+            changed2 = 0;
+            for (int a = 0; a < nloops; a++)
+                for (int b2 = 0; b2 < nloops; b2++) {
+                    if (a == b2) continue;
+                    if (loop_H[b2] > loop_H[a] && loop_H[b2] <= loop_B[a]
+                        && loop_B[b2] > loop_B[a]) {
+                        loop_B[a] = loop_B[b2]; changed2 = 1;
+                    }
+                }
+        }
+        /* Remove loops fully subsumed: H deeper but same B (original correct rule) */
+        for (int a = 0; a < nloops; ) {
+            int sub = 0;
+            for (int b2 = 0; b2 < nloops; b2++) {
+                if (a == b2) continue;
+                if (loop_H[a] > loop_H[b2] && loop_B[a] == loop_B[b2])
+                    { sub = 1; break; }
+            }
+            if (sub) {
+                for (int k = a; k < nloops-1; k++) {
+                    loop_H[k]=loop_H[k+1]; loop_B[k]=loop_B[k+1]; }
+                nloops--;
+            } else a++;
+        }
+        /* Remove exact duplicates */
+        for (int a = 0; a < nloops; a++)
+            for (int b2 = a+1; b2 < nloops; )
+                if (loop_H[a]==loop_H[b2] && loop_B[a]==loop_B[b2]) {
+                    for(int k=b2;k<nloops-1;k++){loop_H[k]=loop_H[k+1];loop_B[k]=loop_B[k+1];}
+                    nloops--;
+                } else b2++;
+    }
+
+    /* Process largest span first */
+    for (int a = 0; a < nloops-1; a++)
+        for (int b2 = a+1; b2 < nloops; b2++)
+            if ((loop_B[b2]-loop_H[b2]) > (loop_B[a]-loop_H[a])) {
+                int th=loop_H[a]; loop_H[a]=loop_H[b2]; loop_H[b2]=th;
+                int tb=loop_B[a]; loop_B[a]=loop_B[b2]; loop_B[b2]=tb;
+            }
+
+    for (int li = 0; li < nloops; li++) {
+        int H = loop_H[li];
+        int B = loop_B[li];
+
+        /* Compute natural loop body */
+        int body[10000];
+        licm_compute_body(H, B, body);
+
+        /* Skip if no real body beyond the header */
+        int has_body = 0;
+        for (int i = H+1; i <= B; i++) if (body[i]) { has_body=1; break; }
+        if (!has_body) continue;
+
+        /* ---- Valid loop header check ----
+         * H must be the true entry point of the loop. If any line in the body
+         * has a goto to a target BELOW H, then H is not the real entry — it is
+         * an interior block (e.g. the increment of a for-loop) reachable from
+         * the real header which is above H.
+         *
+         * Example: merged for-loop produces back-edges (H=17,B=21) and (H=19,B=27).
+         * After merge we still have (H=19,B=25) as a sub-loop. The body of (19,25)
+         * includes line 21 "goto 17" (17 < H=19), so H=19 is NOT the true entry.
+         * Processing this loop would:
+         *   1. Insert a preheader at line 19 (inside the real loop), making it
+         *      unreachable on the first entry via the condition check at 17.
+         *   2. Miss assignments that occur between B=25 and the real loop tail
+         *      (e.g. min_idx=j at line 26 is outside B=25), allowing invariant
+         *      checks to wrongly pass for variables that ARE modified in the loop.
+         * Both errors corrupt correctness. Skip such loops entirely. */
+        int valid_header = 1;
+        for (int k = H; k <= B; k++) {
+            if (!body[k] || licm_is_dead(k)) continue;
+            char *gp = strstr(imcode[k], "goto");
+            if (!gp) continue;
+            char *tp = gp+4; while(*tp==' '||*tp=='\t') tp++;
+            if (!isdigit(*tp)) continue;
+            int tgt = atoi(tp);
+            if (tgt < H) { valid_header = 0; break; }
+        }
+        if (!valid_header) continue;
+
+        // ---- Check 4: any Call/PushParam in loop? ----
+        int has_call = 0;
+        for (int i = H; i <= B; i++)
+            if (body[i] && licm_has_call(i)) { has_call=1; break; }
+        if (has_call) continue;
+
+        // ---- Collect invariant candidates ----
+        // We'll gather them first, then insert preheader slots as needed.
+        int cands[200]; int ncands = 0;
+
+        for (int I = H+1; I <= B && ncands < 200; I++) {
+            if (!body[I]) continue;
+            if (licm_is_dead(I)) continue;
+            if (licm_has_side_effect(I)) continue;
+
+            char line[10000]; strcpy(line, imcode[I]);
+            int line_num;
+            char lhs[100], op1[100], op[20], op2[100];
+            int nf = sscanf(line, "%d %s = %s %s %s",
+                            &line_num, lhs, op1, op, op2);
+            if (nf < 3) continue;
+            if (strchr(lhs,'[') != NULL) continue;
+            {
+                char *eq  = strchr(line,'='); if (!eq) continue;
+                char *gp2 = strstr(line,"goto");
+                char *ip2 = strstr(line," if ");
+                if (gp2 && gp2 < eq) continue;
+                if (ip2 && ip2 < eq) continue;
+                if (strstr(line,"Call ") != NULL) continue;
+            }
+            int is_binary = (nf==5), is_unary = (nf==3);
+            if (!is_binary && !is_unary) continue;
+
+            // Check 3: lhs defined only here
+            int multidef = 0;
+            for (int k=H; k<=B; k++) {
+                if (!body[k]||k==I) continue;
+                if (licm_assigns(k,lhs)) { multidef=1; break; }
+            }
+            if (multidef) continue;
+
+            // Check 2: operands not modified anywhere in loop body
+            // (handles plain vars AND array reads like arr[t1])
+            if (licm_operand_modified(H, B, body, op1)) continue;
+            if (is_binary && licm_operand_modified(H, B, body, op2)) continue;
+
+            // Check 5: dominance
+            int dominated = 1;
+            for (int k=H; k<I; k++) {
+                if (!body[k]||licm_is_dead(k)) continue;
+                char kl[10000]; strcpy(kl,imcode[k]);
+                char *ifp2=strstr(kl,"if "), *gp2=strstr(kl,"goto");
+                if (!ifp2||!gp2||ifp2>gp2) continue;
+                char *tp=gp2+4; while(*tp==' '||*tp=='\t') tp++;
+                if (!isdigit(*tp)) continue;
+                int bt=atoi(tp);
+                if (body[bt] && bt >= I) { dominated=0; break; }
+            }
+            if (!dominated) continue;
+
+            cands[ncands++] = I;
+        }
+
+        if (ncands == 0) continue;
+
+        /* ---- Insert preheader slots just before H ----
+           Insert all `ncands` slots at position `first_slot` one at a time.
+           Every insertion shifts H, B, and cand indices up by 1. */
+        int first_slot = H;
+        for (int c = 0; c < ncands; c++) {
+            /* Always insert at first_slot — each insertion pushes previous
+               slots and H one further down, so slots accumulate at
+               [first_slot .. first_slot+c] and H ends at first_slot+ncands */
+            licm_insert_preheader(first_slot);
+            H++;  B++;
+            for (int x = 0; x < nloops; x++) {
+                if (loop_H[x] >= first_slot) loop_H[x]++;
+                if (loop_B[x] >= first_slot) loop_B[x]++;
+            }
+            for (int x = 0; x < ncands; x++)
+                if (cands[x] >= first_slot) cands[x]++;
+        }
+
+        /* Now dead slots are at [first_slot .. first_slot+ncands-1]
+           and H = first_slot + ncands, B shifted accordingly.
+           Recompute body after shifts. */
+        licm_compute_body(H, B, body);
+
+        /* ---- Hoist each candidate into its preheader slot ---- */
+        int slot_idx = first_slot;  /* next slot to fill */
+        int first_slot_used = -1;
+
+        for (int c = 0; c < ncands; c++) {
+            int I = cands[c];
+            int D = slot_idx++;
+
+            if (first_slot_used == -1) first_slot_used = D;
+
+            char line[10000]; strcpy(line, imcode[I]);
+            int line_num;
+            char lhs[100], op1[100], op[20], op2[100];
+            int nf = sscanf(line, "%d %s = %s %s %s",
+                            &line_num, lhs, op1, op, op2);
+            int is_binary = (nf==5);
+
+            /* Write CLEAN instruction — no trailing comment.
+             * The TAC-to-assembly generator parses output.tac line by line;
+             * any "// LICM:" comment on the same line as a real instruction
+             * causes it to misparse or silently skip the instruction,
+             * producing wrong or missing assembly output. */
+            if (is_binary)
+                sprintf(imcode[D], "%d %s = %s %s %s\n",
+                        D, lhs, op1, op, op2);
+            else
+                sprintf(imcode[D], "%d %s = %s\n",
+                        D, lhs, op1);
+
+            /* In-loop NOP: pure comment line — assembly gen skips it safely */
+            sprintf(imcode[I], "%d // LICM: %s hoisted to preheader (line %d)\n",
+                    line_num, lhs, D);
+        }
+
+        if (first_slot_used == -1) continue;
+
+        /* ---- Redirect external gotos from H → first_slot_used ---- */
+        /* Re-recompute body after all insertions */
+        licm_compute_body(H, B, body);
+        for (int E = 0; E < code; E++) {
+            if (body[E]) continue;
+            if (licm_is_dead(E)) continue;
+            char *gp2 = strstr(imcode[E], "goto");
+            if (!gp2) continue;
+            char *tp = gp2+4; while(*tp==' '||*tp=='\t') tp++;
+            if (!isdigit(*tp)) continue;
+            if (atoi(tp) != H) continue;
+            char before[10000];
+            int pfxlen = (int)(tp - imcode[E]);
+            strncpy(before, imcode[E], pfxlen); before[pfxlen]='\0';
+            char *num_end = tp; while(isdigit(*num_end)) num_end++;
+            char newline[10000];
+            snprintf(newline, sizeof(newline), "%s%d%s", before, first_slot_used, num_end);
+            strcpy(imcode[E], newline);
+        }
+    }
+    #undef MAX_LOOPS
+}
 
 
 
@@ -1940,6 +2422,7 @@ void conservativeJumpChaining() {
         }
     }
 }
+
 
 
 void constantFolding() {
@@ -2357,22 +2840,30 @@ S:      {top = create_env(top,0);} PROGRAM M MEOF{
                         e=0;err[0]="\0";buffer[0]='\0';}
                 else {
                         backpatch($2->N,$3);
-                        printf("%s\nAccepted -Unoptimized > Three Address :\n",buffer);
-                     /*for (int pass = 0; pass < 12; pass++) {
-    constantFolding();
-     constantFoldConditionals();      
-    copyPropagation();             
+                        printf("%s\nAccepted -> Unoptmized Three Address :\n \n",buffer);
+                       for (int i=0;i<code;i++){
+                                printf("%s",imcode[i]);
+                        }
+
+                                                printf("\noptmized Three Address :\n\n");
+
+                     for (int pass = 0; pass < 8; pass++) {
+       constantFolding();
+    constantFoldConditionals();
+    copyPropagation();
     algebraicSimplification();
-        booleanSimplification();   
-    strengthReduction();            
+    booleanSimplification();
+    strengthReduction();
     commonSubexpressionElimination();
     peepholeOptimization();
     identityAssignmentElimination();
-    deadStoreElimination();         
-    redundantLoadElimination(); 
-        eliminateDeadCode();
+    deadStoreElimination();
+    redundantLoadElimination();
+    eliminateDeadCode();
+    loopInvariantCodeMotion();
+    eliminateDeadCode();
     conservativeJumpChaining();
-        eliminateDeadCode();
+    eliminateDeadCode();
 }
 deadVariableElimination();
 int prev_dead_count = -1;
@@ -2384,18 +2875,18 @@ for (int dce_pass = 0; dce_pass < 10; dce_pass++) {
     }
     if (dead_count == prev_dead_count) break;
     prev_dead_count = dead_count;
-}*/
+}
                         for (int i=0;i<code;i++){
                                 printf("%s",imcode[i]);
                         }
-                          /*if (strlen(err) > 0) {
+                          if (strlen(err) > 0) {
         printf("\n=== Warnings ===\n%s", err);
     }
-                        print_all_envs(top);*/
+                        print_all_envs(top);
                 }YYACCEPT;}
         | MEOF{YYACCEPT;}
         | error MEOF{e=1;strcpy(err,"Invalid Statements");
-                //printf("%s \nRejected -> %s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
+                printf("%s \nRejected -> %s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
                 YYACCEPT;};
 
 
@@ -2753,11 +3244,11 @@ if(strstr($3->type, "[") != NULL) {
     backpatch($8->N,$2);
     backpatch($8->C, $2);
     backpatch($4->T,$6);
+    $$ = createBoolNode();
+    $$->N = $4->F;
     sprintf(imcode[code],"%d goto %d\n",code,$2);
     code++;
     backpatch($8->B, code);
-    $$ = createBoolNode();
-    $$->N = $4->F;
 }}
         | WHILE M  BOOLEXPR ')' M A{{strcat(err,"missing (\n");e=1;}}
 
@@ -5031,12 +5522,358 @@ void generateCallGraphDOT() {
     printf("=============================\n");
 }
 
+
+void generateInteractiveDashboard() {
+    // Generate index.html (main page)
+    FILE* index = fopen("index.html", "w");
+    fprintf(index, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(index, "<meta charset=\"UTF-8\">\n");
+    fprintf(index, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(index, "<title>Compiler Visualization Dashboard</title>\n");
+    fprintf(index, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(index, "</head>\n<body>\n");
+    
+    fprintf(index, "<div class=\"container\">\n");
+    fprintf(index, "<div class=\"header\">\n");
+    fprintf(index, "<h1>Compiler Visualization Dashboard</h1>\n");
+    fprintf(index, "<p>Three-Address Code Generation & Optimization Analysis</p>\n");
+    fprintf(index, "</div>\n");
+    
+    // Statistics Cards
+    fprintf(index, "<div class=\"stats\">\n");
+    fprintf(index, "<div class=\"stat-card\"><div class=\"number\">%d</div><div class=\"label\">TAC Instructions</div></div>\n", code);
+    fprintf(index, "<div class=\"stat-card\"><div class=\"number\">%d</div><div class=\"label\">Scopes</div></div>\n", env_count);
+    
+    int func_count = 0;
+    Function* f = func_list;
+    while (f) { func_count++; f = f->next; }
+    fprintf(index, "<div class=\"stat-card\"><div class=\"number\">%d</div><div class=\"label\">Functions</div></div>\n", func_count);
+    fprintf(index, "<div class=\"stat-card\"><div class=\"number\">%d</div><div class=\"label\">Basic Blocks</div></div>\n", block_count);
+    fprintf(index, "</div>\n");
+    
+    // Navigation Cards
+    fprintf(index, "<div class=\"nav-grid\">\n");
+    fprintf(index, "<a href=\"tac.html\" class=\"nav-card\">\n");
+    fprintf(index, "<div class=\"icon\">📝</div>\n");
+    fprintf(index, "<h2>TAC Code</h2>\n");
+    fprintf(index, "<p>View three-address code with optimizations</p>\n");
+    fprintf(index, "</a>\n");
+    
+    fprintf(index, "<a href=\"cfg.html\" class=\"nav-card\">\n");
+    fprintf(index, "<div class=\"icon\">🔀</div>\n");
+    fprintf(index, "<h2>Control Flow</h2>\n");
+    fprintf(index, "<p>Visualize program control flow graphs</p>\n");
+    fprintf(index, "</a>\n");
+
+        
+    fprintf(index, "<a href=\"bsb.html\" class=\"nav-card\">\n");
+    fprintf(index, "<div class=\"icon\">🧱</div>\n");
+    fprintf(index, "<h2>Basic blocks</h2>\n");
+    fprintf(index, "<p>Visualize control flow graphs using Basic blocks  </p>\n");
+    fprintf(index, "</a>\n");
+    
+    fprintf(index, "<a href=\"callgraph.html\" class=\"nav-card\">\n");
+    fprintf(index, "<div class=\"icon\">📞</div>\n");
+    fprintf(index, "<h2>Call Graph</h2>\n");
+    fprintf(index, "<p>Function call relationships & metrics</p>\n");
+    fprintf(index, "</a>\n");
+    
+    fprintf(index, "<a href=\"symbols.html\" class=\"nav-card\">\n");
+    fprintf(index, "<div class=\"icon\">🔤</div>\n");
+    fprintf(index, "<h2>Symbol Tables</h2>\n");
+    fprintf(index, "<p>Variable scopes and storage layout</p>\n");
+    fprintf(index, "</a>\n");
+    fprintf(index, "</div>\n");
+    
+    fprintf(index, "</div>\n");
+    fprintf(index, "<script src=\"script.js\"></script>\n");
+    fprintf(index, "</body>\n</html>\n");
+    fclose(index);
+    
+    // Generate TAC page
+    generateTACPage();
+    
+    // Generate CFG page
+    generateCFGPage();
+    
+    generateBBPage();
+    // Generate Call Graph page
+    generateCallGraphPage();
+    
+    // Generate Symbol Tables page
+    generateSymbolsPage();
+   
+}
+
+// Generate TAC page
+void generateTACPage() {
+    FILE* html = fopen("tac.html", "w");
+    fprintf(html, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(html, "<meta charset=\"UTF-8\">\n");
+    fprintf(html, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(html, "<title>TAC Code - Compiler Dashboard</title>\n");
+    fprintf(html, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(html, "</head>\n<body>\n");
+    fprintf(html, "<div class=\"page-header\">\n");
+    fprintf(html, "<div class=\"header2\">\n");
+   fprintf(html, "<a href=\"index.html\" class=\"back-btn\">⬅ Back</a>\n");
+   fprintf(html, "<h1>Three-Address Code</h1>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"toolbar\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"code-viewer\">\n");
+    for (int i = 0; i < code; i++) {
+        char line[10000];
+        strcpy(line, imcode[i]);
+        char* newline = strchr(line, '\n');
+        if (newline) *newline = '\0';
+        
+        char escaped[20000];
+        int j = 0, k = 0;
+        while (line[j]) {
+            if (line[j] == '<') { strcpy(&escaped[k], "&lt;"); k += 4; }
+            else if (line[j] == '>') { strcpy(&escaped[k], "&gt;"); k += 4; }
+            else if (line[j] == '&') { strcpy(&escaped[k], "&amp;"); k += 5; }
+            else escaped[k++] = line[j];
+            j++;
+        }
+        escaped[k] = '\0';
+        
+        if (strstr(line, "// DEAD")) {
+            fprintf(html, "<span class=\"code-line dead\">%s</span>\n", escaped);
+        } else if (strstr(line, "//")) {
+            fprintf(html, "<span class=\"code-line comment\">%s</span>\n", escaped);
+        } else {
+            fprintf(html, "<span class=\"code-line\">%s</span>\n", escaped);
+        }
+    }
+
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    
+    fprintf(html, "<script src=\"script.js\"></script>\n");
+    fprintf(html, "</body>\n</html>\n");
+    fclose(html);
+}
+
+// Generate CFG page
+void generateCFGPage() {
+    FILE* html = fopen("cfg.html", "w");
+        fprintf(html, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(html, "<meta charset=\"UTF-8\">\n");
+    fprintf(html, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(html, "<title>Control Flow - Compiler Dashboard</title>\n");
+    fprintf(html, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(html, "</head>\n<body>\n");  
+    fprintf(html, "<div class=\"container\">\n");
+    fprintf(html, "<div class=\"page-header\">\n");
+        fprintf(html, "<div class=\"header2\">\n");
+   fprintf(html, "<a href=\"index.html\" class=\"back-btn\">⬅ Back</a>\n");
+    fprintf(html, "<h1> Control Flow Graphs</h1>\n");
+    fprintf(html, "</div>\n");
+        fprintf(html, "</div>\n");
+    // Basic Blocks CFG
+    fprintf(html, "<div class=\"toolbar\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-container\">\n");
+    fprintf(html, "<div class=\"zoom-controls\">\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('cfg', -0.1)\">−</button>\n");
+    fprintf(html, "<span class=\"zoom-level\" id=\"cfgZoomLevel\">100%%</span>\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('cfg', 0.1)\">+</button>\n");
+    fprintf(html, "<button class=\"zoom-btn \" onclick=\"resetZoom('cfg')\">⟲</button>\n");
+    fprintf(html, "<button class=\"zoom-btn fullscreen-btn\" onclick=\"openFullscreen('cfg')\">⛶</button>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-wrapper\" id=\"cfgWrapper\" onmousedown=\"startPan(event, 'cfg')\">\n");
+    fprintf(html, "<img id=\"cfgImage\" src=\"tac_flow.png\" alt=\"Control Flow Graph\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div id=\"fullscreenModal\" class=\"fullscreen-modal\"></div>\n");
+    fprintf(html, "<script src=\"script.js\"></script>\n");
+    fprintf(html, "</body>\n</html>\n");
+    fclose(html);
+}
+
+
+
+// Generate CFG page
+void generateBBPage() {
+    FILE* html = fopen("bsb.html", "w");
+    fprintf(html, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(html, "<meta charset=\"UTF-8\">\n");
+    fprintf(html, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(html, "<title>Control Flow - Compiler Dashboard</title>\n");
+    fprintf(html, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(html, "</head>\n<body>\n");  
+    fprintf(html, "<div class=\"container\">\n");
+    fprintf(html, "<div class=\"page-header\">\n");
+        fprintf(html, "<div class=\"header2\">\n");
+   fprintf(html, "<a href=\"index.html\" class=\"back-btn\">⬅ Back</a>\n");
+    fprintf(html, "<h1> Control Flow Graphs with Basic Blocks</h1>\n");
+    fprintf(html, "</div>\n");
+        fprintf(html, "</div>\n");
+    // Basic Blocks CFG
+    fprintf(html, "<div class=\"toolbar\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-container\">\n");
+    fprintf(html, "<div class=\"zoom-controls\">\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('blocks', -0.1)\">−</button>\n");
+    fprintf(html, "<span class=\"zoom-level\" id=\"blocksZoomLevel\">100%%</span>\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('blocks', 0.1)\">+</button>\n");
+    fprintf(html, "<button class=\"zoom-btn \" onclick=\"resetZoom('blocks')\">⟲</button>\n");
+    fprintf(html, "<button class=\"zoom-btn fullscreen-btn\" onclick=\"openFullscreen('blocks')\">⛶</button>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-wrapper\" id=\"blocksWrapper\" onmousedown=\"startPan(event, 'blocks')\">\n");
+    fprintf(html, "<img id=\"blocksImage\" src=\"tac_flow_blocks.png\" alt=\"Basic Blocks CFG\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+
+    
+    // Basic Block Statistics
+    fprintf(html, "<div class=\"stats-section\">\n");
+    fprintf(html, "<h3>Basic Block Statistics</h3>\n");
+    fprintf(html, "<table>\n");
+    fprintf(html, "<tr><th>Block ID</th><th>Start Line</th><th>End Line</th><th>Instructions</th></tr>\n");
+    
+    BasicBlock* bb = blocks;
+    while (bb) {
+        int inst_count = 0;
+        for (int i = bb->start_line; i <= bb->end_line && i < code; i++) {
+            if (strstr(imcode[i], "// DEAD") == NULL) inst_count++;
+        }
+        fprintf(html, "<tr><td>%d</td><td>%d</td><td>%d</td><td>%d</td></tr>\n",
+                bb->block_id, bb->start_line, bb->end_line, inst_count);
+        bb = bb->next;
+    }
+    fprintf(html, "</table>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div id=\"fullscreenModal\" class=\"fullscreen-modal\"></div>\n");
+    fprintf(html, "<script src=\"script.js\"></script>\n");
+    fprintf(html, "</body>\n</html>\n");
+    fclose(html);
+}
+
+// Generate Call Graph page
+void generateCallGraphPage() {
+    FILE* html = fopen("callgraph.html", "w");
+ fprintf(html, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(html, "<meta charset=\"UTF-8\">\n");
+    fprintf(html, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(html, "<title>Control Flow - Compiler Dashboard</title>\n");
+    fprintf(html, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(html, "</head>\n<body>\n");  
+    fprintf(html, "<div class=\"container\">\n");
+    fprintf(html, "<div class=\"page-header\">\n");
+        fprintf(html, "<div class=\"header2\">\n");
+   fprintf(html, "<a href=\"index.html\" class=\"back-btn\">⬅ Back</a>\n");
+    fprintf(html, "<h1> Function Call Graphs</h1>\n");
+    fprintf(html, "</div>\n");
+        fprintf(html, "</div>\n");
+    // Basic Blocks CFG
+    fprintf(html, "<div class=\"toolbar\">\n");
+    fprintf(html, "</div>\n");
+    
+    fprintf(html, "<div class=\"image-container\">\n");
+    fprintf(html, "<div class=\"zoom-controls\">\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('callgraph', -0.1)\">−</button>\n");
+    fprintf(html, "<span class=\"zoom-level\" id=\"callgraphZoomLevel\">100%%</span>\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('callgraph', 0.1)\">+</button>\n");
+    fprintf(html, "<button class=\"zoom-btn \" onclick=\"resetZoom('callgraph')\">⟲</button>\n");
+    fprintf(html, "<button class=\"zoom-btn fullscreen-btn\" onclick=\"openFullscreen('callgraph')\">⛶</button>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-wrapper\" id=\"callgraphWrapper\" onmousedown=\"startPan(event, 'callgraph')\">\n");
+    fprintf(html, "<img id=\"callgraphImage\" src=\"call_graph.png\" alt=\"Call Graph\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div id=\"fullscreenModal\" class=\"fullscreen-modal\"></div>\n");
+    fprintf(html, "<script src=\"script.js\"></script>\n");
+    fprintf(html, "</body>\n</html>\n");
+    fclose(html);
+}
+
+// Generate Symbols page
+void generateSymbolsPage() {
+    FILE* html = fopen("symbols.html", "w");
+  fprintf(html, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    fprintf(html, "<meta charset=\"UTF-8\">\n");
+    fprintf(html, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    fprintf(html, "<title>Control Flow - Compiler Dashboard</title>\n");
+    fprintf(html, "<link rel=\"stylesheet\" href=\"styles.css\">\n");
+    fprintf(html, "</head>\n<body>\n");  
+    fprintf(html, "<div class=\"container\">\n");
+    fprintf(html, "<div class=\"page-header\">\n");
+        fprintf(html, "<div class=\"header2\">\n");
+   fprintf(html, "<a href=\"index.html\" class=\"back-btn\">⬅ Back</a>\n");
+    fprintf(html, "<h1> Symbol Table and Scope Views </h1>\n");
+    fprintf(html, "</div>\n");
+        fprintf(html, "</div>\n");
+    // Basic Blocks CFG
+    fprintf(html, "<div class=\"toolbar\">\n");
+    fprintf(html, "</div>\n");
+
+    fprintf(html, "<div class=\"image-container\" style=\"margin-top: 30px;\">\n");
+    fprintf(html, "<div class=\"zoom-controls\">\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('symbols', -0.1)\">−</button>\n");
+    fprintf(html, "<span class=\"zoom-level\" id=\"symbolsZoomLevel\">100%%</span>\n");
+    fprintf(html, "<button class=\"zoom-btn\" onclick=\"zoomImage('symbols', 0.1)\">+</button>\n");
+    fprintf(html, "<button class=\"zoom-btn \" onclick=\"resetZoom('symbols')\">⟲</button>\n");
+    fprintf(html, "<button class=\"zoom-btn fullscreen-btn\" onclick=\"openFullscreen('symbols')\">⛶</button>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div class=\"image-wrapper\" id=\"symbolsWrapper\" onmousedown=\"startPan(event, 'symbols')\">\n");
+    fprintf(html, "<img id=\"symbolsImage\" src=\"symbol_table.png\" alt=\"Symbol Table Graph\">\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+
+
+  for (int i = 0; i < env_count; i++) {
+        fprintf(html, "<div class=\"scope-section\">\n");
+        fprintf(html, "<h3>Scope %d</h3>\n", i);
+        fprintf(html, "<table>\n");
+        fprintf(html, "<tr><th>Variable</th><th>Type</th><th>Offset</th><th>Dimensions</th></tr>\n");
+        Table* table = envs[i]->table;
+        for (int j = 0; j < table->size; j++) {
+            TableEntry* entry = table->buckets[j];
+            while (entry) {
+                char dims[100] = "-";
+                if (entry->value->dim_count > 0) {
+                    strcpy(dims, "[");
+                    for (int d = 0; d < entry->value->dim_count; d++) {
+                        char temp[20];
+                        sprintf(temp, "%d", entry->value->dimensions[d]);
+                        strcat(dims, temp);
+                        if (d < entry->value->dim_count - 1) strcat(dims, "][");
+                    }
+                    strcat(dims, "]");
+                }
+                fprintf(html, "<tr><td>%s</td><td>%s</td><td>%d</td><td>%s</td></tr>\n",
+                        entry->value->name, entry->value->type, 
+                        entry->value->offset, dims);
+                entry = entry->next;
+            }
+        }
+        fprintf(html, "</table>\n");
+        fprintf(html, "</div>\n");
+    }
+    
+    
+    fprintf(html, "</div>\n");
+    fprintf(html, "</div>\n");
+    fprintf(html, "<div id=\"fullscreenModal\" class=\"fullscreen-modal\"></div>\n");
+    fprintf(html, "<script src=\"script.js\"></script>\n");
+    fprintf(html, "</body>\n</html>\n");
+    fclose(html);
+}
+
 void generateAllImages() {
     system("dot -Tpng tac_flow.dot -o tac_flow.png 2>/dev/null");
     system("dot -Tpng tac_flow_blocks.dot -o tac_flow_blocks.png 2>/dev/null");
-    //system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
-    //system("dot -Tpng symbol_table.dot -o symbol_table.png 2>/dev/null");
+    system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
+    system("dot -Tpng symbol_table.dot -o symbol_table.png 2>/dev/null");
 }
+
 
 
 int main(int argc, char* argv[]) {
@@ -5098,11 +5935,12 @@ int main(int argc, char* argv[]) {
                 fprintf(tac_file, "%s", imcode[i]);
             fclose(tac_file);
         }
-       // generateSymbolTableDOT();
+        generateSymbolTableDOT();
         generateTACFlowDOT();
         generateTACFlowWithBlocks();
-       // generateCallGraphDOT();
+        generateCallGraphDOT();
         generateAllImages();
+        generateInteractiveDashboard();
     }
     return 0;
 }

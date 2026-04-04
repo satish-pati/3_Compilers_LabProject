@@ -1,0 +1,15 @@
+@int n is 10 $
+@int a is 0 $
+@int b is 1 $
+@int i $
+@int next $
+
+show(a) $
+show(b) $
+
+iterate (i = 2 $ i < n $ i = i + 1) {
+    next = a + b $
+    show(next) $
+    a = b $
+    b = next $
+}

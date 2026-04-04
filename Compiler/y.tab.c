@@ -67,7 +67,7 @@
 
 
 /* First part of user prologue.  */
-#line 2 "parser.y"
+#line 2 "parser_unoptimized.y"
 
 #include<stdio.h>
 #include<string.h>
@@ -2538,7 +2538,7 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 2298 "parser.y"
+#line 2298 "parser_unoptimized.y"
 
         char str[1000];
         struct BoolNode* b;
@@ -4022,13 +4022,13 @@ yyreduce:
   switch (yyn)
     {
   case 2: /* $@1: %empty  */
-#line 2354 "parser.y"
+#line 2354 "parser_unoptimized.y"
         {top = create_env(top,0);}
 #line 4028 "y.tab.c"
     break;
 
   case 3: /* S: $@1 PROGRAM M MEOF  */
-#line 2354 "parser.y"
+#line 2354 "parser_unoptimized.y"
                                                  {
         if (e){
                         printf("%s\nRejected \n%s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
@@ -4075,13 +4075,13 @@ for (int dce_pass = 0; dce_pass < 10; dce_pass++) {
     break;
 
   case 4: /* S: MEOF  */
-#line 2396 "parser.y"
+#line 2396 "parser_unoptimized.y"
               {YYACCEPT;}
 #line 4081 "y.tab.c"
     break;
 
   case 5: /* S: error MEOF  */
-#line 2397 "parser.y"
+#line 2397 "parser_unoptimized.y"
                     {e=1;strcpy(err,"Invalid Statements");
                 //printf("%s \nRejected -> %s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
                 YYACCEPT;}
@@ -4089,7 +4089,7 @@ for (int dce_pass = 0; dce_pass < 10; dce_pass++) {
     break;
 
   case 6: /* PROGRAM: FUNDECL PROGRAM  */
-#line 2402 "parser.y"
+#line 2402 "parser_unoptimized.y"
                          {
             if(!e){
                 (yyval.b) = createBoolNode();
@@ -4100,13 +4100,13 @@ for (int dce_pass = 0; dce_pass < 10; dce_pass++) {
     break;
 
   case 7: /* PROGRAM: STMNTS  */
-#line 2408 "parser.y"
+#line 2408 "parser_unoptimized.y"
                  {(yyval.b) = (yyvsp[0].b);}
 #line 4106 "y.tab.c"
     break;
 
   case 8: /* PROGRAM: FUNDECL  */
-#line 2409 "parser.y"
+#line 2409 "parser_unoptimized.y"
                   {
             if(!e){
                 (yyval.b) = createBoolNode();
@@ -4117,7 +4117,7 @@ for (int dce_pass = 0; dce_pass < 10; dce_pass++) {
     break;
 
   case 9: /* $@2: %empty  */
-#line 2421 "parser.y"
+#line 2421 "parser_unoptimized.y"
                                               {
     if(!e){
         /*  duplicate parameter check */
@@ -4189,7 +4189,7 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
     break;
 
   case 10: /* FUNDECL: FUNCTION TYPE IDEN '(' PARAMLIST ')' $@2 '{' STMNTS '}'  */
-#line 2487 "parser.y"
+#line 2487 "parser_unoptimized.y"
                  {
     if(!e){
     if(strcmp(current_return_type, "void") != 0 && !has_return_statement) {
@@ -4218,7 +4218,7 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
     break;
 
   case 11: /* PARAMLIST: TYPE IDEN ',' PARAMLIST  */
-#line 2512 "parser.y"
+#line 2512 "parser_unoptimized.y"
                                    {
             if(!e){
                 (yyval.decl) = createDecl((yyvsp[-2].str));
@@ -4233,7 +4233,7 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
     break;
 
   case 12: /* PARAMLIST: TYPE IDEN  */
-#line 2522 "parser.y"
+#line 2522 "parser_unoptimized.y"
                     {
             if(!e){
                 (yyval.decl) = createDecl((yyvsp[0].str));
@@ -4247,13 +4247,13 @@ Function* f = createFunction((yyvsp[-3].str), clean_ret_type);  // stores "void"
     break;
 
   case 13: /* PARAMLIST: %empty  */
-#line 2531 "parser.y"
+#line 2531 "parser_unoptimized.y"
           {(yyval.decl) = NULL;}
 #line 4253 "y.tab.c"
     break;
 
   case 14: /* $@3: %empty  */
-#line 2534 "parser.y"
+#line 2534 "parser_unoptimized.y"
                             { 
        if(!e) {
            strcpy(current_switch_var, (yyvsp[-2].expr)->str);
@@ -4280,7 +4280,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 15: /* A: SWITCH '(' EXPR ')' '{' $@3 CASE_LIST '}'  */
-#line 2555 "parser.y"
+#line 2555 "parser_unoptimized.y"
                    {
        if(!e) {
            (yyval.b) = createBoolNode();
@@ -4297,7 +4297,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 16: /* A: BREAK '$'  */
-#line 2567 "parser.y"
+#line 2567 "parser_unoptimized.y"
             {
     if (!e) {
         /*  break must be inside loop or switch */
@@ -4315,7 +4315,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 17: /* A: CONTINUE '$'  */
-#line 2580 "parser.y"
+#line 2580 "parser_unoptimized.y"
                {
     if (!e) {
         /*  continue must be inside a loop */
@@ -4333,7 +4333,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 18: /* A: RETURN EXPR '$'  */
-#line 2593 "parser.y"
+#line 2593 "parser_unoptimized.y"
                   {
     if(!e){
         has_return_statement = 1;
@@ -4370,7 +4370,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 19: /* A: RETURN '$'  */
-#line 2625 "parser.y"
+#line 2625 "parser_unoptimized.y"
              {
     if(!e){
         has_return_statement = 1;
@@ -4392,7 +4392,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 20: /* A: CALL IDEN '(' ARGLIST ')' '$'  */
-#line 2643 "parser.y"
+#line 2643 "parser_unoptimized.y"
                                 {
     if(!e){
         Function* f = findFunction((yyvsp[-4].str));
@@ -4426,7 +4426,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 21: /* A: CALL IDEN '(' ')' '$'  */
-#line 2672 "parser.y"
+#line 2672 "parser_unoptimized.y"
                         {
     if(!e){
         Function* f = findFunction((yyvsp[-3].str));
@@ -4451,7 +4451,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 22: /* A: PRINT '(' EXPR ')' '$'  */
-#line 2692 "parser.y"
+#line 2692 "parser_unoptimized.y"
                         {
     if (!e) {
         char* base_type = getBaseType((yyvsp[-2].expr)->type);
@@ -4471,7 +4471,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 23: /* A: INPUT '(' EXPR ')' '$'  */
-#line 2707 "parser.y"
+#line 2707 "parser_unoptimized.y"
                         {
     if (!e) {
         if(!(yyvsp[-2].expr)->lv) {
@@ -4497,13 +4497,13 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 24: /* A: ASNEXPR '$'  */
-#line 2728 "parser.y"
+#line 2728 "parser_unoptimized.y"
               {if (!e){(yyval.b) = (yyvsp[-1].b);}}
 #line 4503 "y.tab.c"
     break;
 
   case 25: /* A: ASNEXPR error MEOF  */
-#line 2729 "parser.y"
+#line 2729 "parser_unoptimized.y"
                             {strcat(err,"$ missing\n");yyerrok;e=1;
                                                         printf("%s\nRejected -> %s -> Could not generate Three Address Code / Storage Layout\n",buffer,err);
                                                         YYACCEPT;}
@@ -4511,7 +4511,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 26: /* A: IF '(' BOOLEXPR ')' M A  */
-#line 2732 "parser.y"
+#line 2732 "parser_unoptimized.y"
                                    {if (!e){backpatch((yyvsp[-3].b)->T,(yyvsp[-1].addr));
                                                                                 (yyval.b) = createBoolNode();
                                                                                 (yyval.b)->N = merge((yyvsp[-3].b)->F,(yyvsp[0].b)->N);
@@ -4522,7 +4522,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 27: /* A: IF '(' BOOLEXPR ')' M A ELSE NN M A  */
-#line 2738 "parser.y"
+#line 2738 "parser_unoptimized.y"
                                               {if (!e){
                 backpatch((yyvsp[-7].b)->T,(yyvsp[-5].addr));
                 backpatch((yyvsp[-7].b)->F,(yyvsp[-1].addr));
@@ -4535,7 +4535,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 28: /* A: EXPR error MEOF  */
-#line 2746 "parser.y"
+#line 2746 "parser_unoptimized.y"
                          {{strcat(err,"$ missing");yyerrok;e=1;}
                                                         printf("%s\nRejected -> %s -> Could not generate Three Address Code / Storage Layout\n",buffer,err);
                                                         YYACCEPT;}
@@ -4543,19 +4543,19 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 29: /* A: IF BOOLEXPR ')' M A ELSE NN M A  */
-#line 2749 "parser.y"
+#line 2749 "parser_unoptimized.y"
                                          {{strcat(err,"missing (\n");e=1;}}
 #line 4549 "y.tab.c"
     break;
 
   case 30: /* $@4: %empty  */
-#line 2751 "parser.y"
+#line 2751 "parser_unoptimized.y"
                                      {loop_depth++;}
 #line 4555 "y.tab.c"
     break;
 
   case 31: /* A: WHILE M '(' BOOLEXPR ')' M $@4 A  */
-#line 2751 "parser.y"
+#line 2751 "parser_unoptimized.y"
                                                        {if (!e){
     loop_depth--;
     backpatch((yyvsp[0].b)->N,(yyvsp[-6].addr));
@@ -4571,19 +4571,19 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 32: /* A: WHILE M BOOLEXPR ')' M A  */
-#line 2762 "parser.y"
+#line 2762 "parser_unoptimized.y"
                                    {{strcat(err,"missing (\n");e=1;}}
 #line 4577 "y.tab.c"
     break;
 
   case 33: /* $@5: %empty  */
-#line 2764 "parser.y"
+#line 2764 "parser_unoptimized.y"
                {loop_depth++;}
 #line 4583 "y.tab.c"
     break;
 
   case 34: /* A: DO M $@5 A WHILE M '(' BOOLEXPR ')' '$'  */
-#line 2764 "parser.y"
+#line 2764 "parser_unoptimized.y"
                                                               {
     if (!e) {
         loop_depth--;
@@ -4600,7 +4600,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 35: /* $@6: %empty  */
-#line 2777 "parser.y"
+#line 2777 "parser_unoptimized.y"
     { 
         sprintf(imcode[code], "%d goto %d\n", code, (yyvsp[-4].addr)); 
         code++; 
@@ -4609,13 +4609,13 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 36: /* $@7: %empty  */
-#line 2781 "parser.y"
+#line 2781 "parser_unoptimized.y"
         {loop_depth++;}
 #line 4615 "y.tab.c"
     break;
 
   case 37: /* A: FOR '(' ASNEXPR '$' M BOOLEXPR '$' M ASNEXPR $@6 ')' M $@7 A  */
-#line 2782 "parser.y"
+#line 2782 "parser_unoptimized.y"
     {
         if (!e) {
             loop_depth--;
@@ -4633,13 +4633,13 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 38: /* $@8: %empty  */
-#line 2795 "parser.y"
+#line 2795 "parser_unoptimized.y"
      {top = create_env(top,offset);offset=0;}
 #line 4639 "y.tab.c"
     break;
 
   case 39: /* A: '{' $@8 STMNTS '}'  */
-#line 2795 "parser.y"
+#line 2795 "parser_unoptimized.y"
                                                          {if (!e) {
                                                 (yyval.b) = createBoolNode();
                                                 (yyval.b)->N = (yyvsp[-1].b)->N;
@@ -4653,19 +4653,19 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 40: /* A: '{' '}'  */
-#line 2804 "parser.y"
+#line 2804 "parser_unoptimized.y"
                   {if (!e){(yyval.b)=createBoolNode();}}
 #line 4659 "y.tab.c"
     break;
 
   case 41: /* A: EXPR '$'  */
-#line 2805 "parser.y"
+#line 2805 "parser_unoptimized.y"
                   {if (!e) {(yyval.b)=createBoolNode();}}
 #line 4665 "y.tab.c"
     break;
 
   case 42: /* A: DECLSTATEMENT  */
-#line 2806 "parser.y"
+#line 2806 "parser_unoptimized.y"
                         {
             if (!e){(yyval.b)=createBoolNode();}
             }
@@ -4673,7 +4673,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 43: /* CASE_LIST: CASE_ITEM M CASE_LIST  */
-#line 2811 "parser.y"
+#line 2811 "parser_unoptimized.y"
                                  {
        if(!e) {
            backpatch((yyvsp[-2].b)->N, (yyvsp[-1].addr));
@@ -4686,7 +4686,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 44: /* CASE_LIST: CASE_ITEM  */
-#line 2819 "parser.y"
+#line 2819 "parser_unoptimized.y"
                {
        if(!e) { (yyval.b) = (yyvsp[0].b); }
    }
@@ -4694,7 +4694,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 45: /* @9: %empty  */
-#line 2823 "parser.y"
+#line 2823 "parser_unoptimized.y"
                                    {
        if(!e) {
            sprintf(imcode[code], "%d if %s != %s goto ", code, 
@@ -4707,7 +4707,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 46: /* CASE_ITEM: CASE CASE_EXPR ':' M @9 STMNTS  */
-#line 2830 "parser.y"
+#line 2830 "parser_unoptimized.y"
             {
        if(!e) {
            (yyval.b) = createBoolNode();
@@ -4719,7 +4719,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 47: /* CASE_ITEM: DEFAULT ':' M STMNTS  */
-#line 2837 "parser.y"
+#line 2837 "parser_unoptimized.y"
                           {
        if(!e) {
            (yyval.b) = createBoolNode();
@@ -4731,7 +4731,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 48: /* CASE_EXPR: NUM  */
-#line 2845 "parser.y"
+#line 2845 "parser_unoptimized.y"
                   {
        if(!e) {
            (yyval.expr) = createExpr();
@@ -4744,7 +4744,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 49: /* CASE_EXPR: CHARR  */
-#line 2853 "parser.y"
+#line 2853 "parser_unoptimized.y"
            {
        if(!e) {
            (yyval.expr) = createExpr();
@@ -4756,7 +4756,7 @@ if(strstr((yyvsp[-2].expr)->type, "[") != NULL) {
     break;
 
   case 50: /* DECLSTATEMENT: TYPE DECLLIST '$'  */
-#line 2866 "parser.y"
+#line 2866 "parser_unoptimized.y"
                                  {
         struct Decl* temp = (yyvsp[-1].decl);
         while(temp){
@@ -5071,7 +5071,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 51: /* DECLSTATEMENT: TYPE DECLLIST error MEOF  */
-#line 3176 "parser.y"
+#line 3176 "parser_unoptimized.y"
                            {{strcat(err,"$ missing\n");yyerrok;e=1;}
                                                         printf("%s\nRejected -> %s -> Could not generate Three Address Code / Storage Layout\n",buffer,err);
                                                         YYACCEPT; }
@@ -5079,7 +5079,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 52: /* INIT_LIST: EXPR ',' INIT_LIST  */
-#line 3182 "parser.y"
+#line 3182 "parser_unoptimized.y"
                               {
         if(!e){ (yyval.expr) = (yyvsp[-2].expr); (yyval.expr)->next = (yyvsp[0].expr); }
     }
@@ -5087,13 +5087,13 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 53: /* INIT_LIST: EXPR  */
-#line 3185 "parser.y"
+#line 3185 "parser_unoptimized.y"
            { if(!e){ (yyval.expr) = (yyvsp[0].expr); (yyval.expr)->next = NULL; } }
 #line 5093 "y.tab.c"
     break;
 
   case 54: /* DECLLIST: IDEN ',' DECLLIST  */
-#line 3187 "parser.y"
+#line 3187 "parser_unoptimized.y"
                             {if (get(top->table,(yyvsp[-2].str))==NULL){
                                                                 Symbol* s = createSymbol((yyvsp[-2].str));
                                                                 put(top->table,(yyvsp[-2].str),s);
@@ -5110,7 +5110,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 55: /* DECLLIST: IDEN INDEX ',' DECLLIST  */
-#line 3199 "parser.y"
+#line 3199 "parser_unoptimized.y"
                                   {
                                 if (get(top->table,(yyvsp[-3].str))==NULL){
                                         Symbol* s = createSymbol((yyvsp[-3].str));
@@ -5130,7 +5130,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 56: /* DECLLIST: IDEN  */
-#line 3214 "parser.y"
+#line 3214 "parser_unoptimized.y"
                {if (get(top->table,(yyvsp[0].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[0].str));
                                                 put(top->table,(yyvsp[0].str),s);
@@ -5145,7 +5145,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 57: /* DECLLIST: IDEN '=' EXPR  */
-#line 3224 "parser.y"
+#line 3224 "parser_unoptimized.y"
                         {
                                         if (get(top->table,(yyvsp[-2].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[-2].str));
@@ -5167,7 +5167,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 58: /* DECLLIST: IDEN '=' EXPR ',' DECLLIST  */
-#line 3241 "parser.y"
+#line 3241 "parser_unoptimized.y"
                               {
                                         if (get(top->table,(yyvsp[-4].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[-4].str));
@@ -5191,7 +5191,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 59: /* DECLLIST: IDEN INDEX  */
-#line 3260 "parser.y"
+#line 3260 "parser_unoptimized.y"
                      {if (get(top->table,(yyvsp[-1].str))==NULL){
                                                 Symbol* s = createSymbol((yyvsp[-1].str));
                                                 put(top->table,(yyvsp[-1].str),s);
@@ -5208,7 +5208,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 60: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}'  */
-#line 3272 "parser.y"
+#line 3272 "parser_unoptimized.y"
                                            {
         if (get(top->table,(yyvsp[-5].str))==NULL){
             Symbol* s = createSymbol((yyvsp[-5].str));
@@ -5229,7 +5229,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 61: /* DECLLIST: IDEN INDEX '=' '{' INIT_LIST '}' ',' DECLLIST  */
-#line 3288 "parser.y"
+#line 3288 "parser_unoptimized.y"
                                                     {
         if (get(top->table,(yyvsp[-7].str))==NULL){
             Symbol* s = createSymbol((yyvsp[-7].str));
@@ -5251,7 +5251,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 62: /* DECLLIST: IDEN INDEX '=' EXPR  */
-#line 3305 "parser.y"
+#line 3305 "parser_unoptimized.y"
                               {
                 if (get(top->table,(yyvsp[-3].str))==NULL){
                     Symbol* s = createSymbol((yyvsp[-3].str));
@@ -5271,7 +5271,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 63: /* DECLLIST: IDEN INDEX '=' EXPR ',' DECLLIST  */
-#line 3320 "parser.y"
+#line 3320 "parser_unoptimized.y"
                                            {
                 if (get(top->table,(yyvsp[-5].str))==NULL){
                     Symbol* s = createSymbol((yyvsp[-5].str));
@@ -5292,7 +5292,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 64: /* INDEX: '[' NUM ']'  */
-#line 3338 "parser.y"
+#line 3338 "parser_unoptimized.y"
                    {(yyval.type) = createType();
                     int arr_size = atoi((yyvsp[-1].str));
                     /* positive size check*/
@@ -5309,7 +5309,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 65: /* INDEX: '[' NUM ']' INDEX  */
-#line 3350 "parser.y"
+#line 3350 "parser_unoptimized.y"
                             {(yyval.type) = createType();
                              int arr_size = atoi((yyvsp[-2].str));
                              /* positive size check  */
@@ -5326,55 +5326,55 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 66: /* TYPE: INT  */
-#line 3363 "parser.y"
+#line 3363 "parser_unoptimized.y"
           {(yyval.type) = createType(); strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=4;}
 #line 5332 "y.tab.c"
     break;
 
   case 67: /* TYPE: FLOAT  */
-#line 3364 "parser.y"
+#line 3364 "parser_unoptimized.y"
                  {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=4;}
 #line 5338 "y.tab.c"
     break;
 
   case 68: /* TYPE: BOOL  */
-#line 3365 "parser.y"
+#line 3365 "parser_unoptimized.y"
            {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=1;}
 #line 5344 "y.tab.c"
     break;
 
   case 69: /* TYPE: CHAR  */
-#line 3366 "parser.y"
+#line 3366 "parser_unoptimized.y"
                {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=1;}
 #line 5350 "y.tab.c"
     break;
 
   case 70: /* TYPE: SHORT  */
-#line 3367 "parser.y"
+#line 3367 "parser_unoptimized.y"
             {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=2;}
 #line 5356 "y.tab.c"
     break;
 
   case 71: /* TYPE: LONG  */
-#line 3368 "parser.y"
+#line 3368 "parser_unoptimized.y"
            {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=8;}
 #line 5362 "y.tab.c"
     break;
 
   case 72: /* TYPE: DOUBLE  */
-#line 3369 "parser.y"
+#line 3369 "parser_unoptimized.y"
              {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=8;}
 #line 5368 "y.tab.c"
     break;
 
   case 73: /* TYPE: VOID  */
-#line 3370 "parser.y"
+#line 3370 "parser_unoptimized.y"
            {(yyval.type) = createType();strcpy((yyval.type)->str,(yyvsp[0].str));(yyval.type)->size=0;}
 #line 5374 "y.tab.c"
     break;
 
   case 74: /* TYPE: CONST TYPE  */
-#line 3371 "parser.y"
+#line 3371 "parser_unoptimized.y"
                  {
     (yyval.type) = (yyvsp[0].type);
     char base[100];
@@ -5386,7 +5386,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 75: /* STMNTS: STMNTS M A  */
-#line 3380 "parser.y"
+#line 3380 "parser_unoptimized.y"
                    {if (!e){backpatch((yyvsp[-2].b)->N,(yyvsp[-1].addr));
                                         (yyval.b) = createBoolNode();
                                         (yyval.b)->N = (yyvsp[0].b)->N;
@@ -5397,7 +5397,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 76: /* STMNTS: A M  */
-#line 3386 "parser.y"
+#line 3386 "parser_unoptimized.y"
              {if (!e){(yyval.b) = createBoolNode();
                 (yyval.b)->N = (yyvsp[-1].b)->N;
                 (yyval.b)->B = (yyvsp[-1].b)->B;
@@ -5407,67 +5407,67 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 77: /* ASSGN: '='  */
-#line 3393 "parser.y"
+#line 3393 "parser_unoptimized.y"
            {strcpy((yyval.str),"=");}
 #line 5413 "y.tab.c"
     break;
 
   case 78: /* ASSGN: PASN  */
-#line 3394 "parser.y"
+#line 3394 "parser_unoptimized.y"
                 {strcpy((yyval.str),(yyvsp[0].str));}
 #line 5419 "y.tab.c"
     break;
 
   case 79: /* ASSGN: MASN  */
-#line 3395 "parser.y"
+#line 3395 "parser_unoptimized.y"
                 {strcpy((yyval.str),(yyvsp[0].str));}
 #line 5425 "y.tab.c"
     break;
 
   case 80: /* ASSGN: DASN  */
-#line 3396 "parser.y"
+#line 3396 "parser_unoptimized.y"
             {strcpy((yyval.str),(yyvsp[0].str));}
 #line 5431 "y.tab.c"
     break;
 
   case 81: /* ASSGN: SASN  */
-#line 3397 "parser.y"
+#line 3397 "parser_unoptimized.y"
             {strcpy((yyval.str),(yyvsp[0].str));}
 #line 5437 "y.tab.c"
     break;
 
   case 82: /* ASSGN: BANDASN  */
-#line 3398 "parser.y"
+#line 3398 "parser_unoptimized.y"
                {strcpy((yyval.str),"&=");}
 #line 5443 "y.tab.c"
     break;
 
   case 83: /* ASSGN: BORASN  */
-#line 3399 "parser.y"
+#line 3399 "parser_unoptimized.y"
                {strcpy((yyval.str),"|=");}
 #line 5449 "y.tab.c"
     break;
 
   case 84: /* ASSGN: BXORASN  */
-#line 3400 "parser.y"
+#line 3400 "parser_unoptimized.y"
                {strcpy((yyval.str),"^=");}
 #line 5455 "y.tab.c"
     break;
 
   case 85: /* ASSGN: LSHIFTASN  */
-#line 3401 "parser.y"
+#line 3401 "parser_unoptimized.y"
                  {strcpy((yyval.str),"<<=");}
 #line 5461 "y.tab.c"
     break;
 
   case 86: /* ASSGN: RSHIFTASN  */
-#line 3402 "parser.y"
+#line 3402 "parser_unoptimized.y"
                  {strcpy((yyval.str),">>=");}
 #line 5467 "y.tab.c"
     break;
 
   case 87: /* BOOLEXPR: BOOLEXPR OR M BOOLEXPR  */
-#line 3405 "parser.y"
+#line 3405 "parser_unoptimized.y"
                                 {  if (!e){backpatch((yyvsp[-3].b)->F,(yyvsp[-1].addr));
                                                                 (yyval.b) = createBoolNode();
                                                                 (yyval.b)->T = merge((yyvsp[-3].b)->T,(yyvsp[0].b)->T);
@@ -5477,7 +5477,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 88: /* BOOLEXPR: BOOLEXPR AND M BOOLEXPR  */
-#line 3410 "parser.y"
+#line 3410 "parser_unoptimized.y"
                               { if (!e){backpatch((yyvsp[-3].b)->T,(yyvsp[-1].addr));
                                                                 (yyval.b) = createBoolNode();
                                                                 (yyval.b)->T = (yyvsp[0].b)->T;
@@ -5487,7 +5487,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 89: /* BOOLEXPR: '!' BOOLEXPR  */
-#line 3415 "parser.y"
+#line 3415 "parser_unoptimized.y"
                        {
                 if (!e){ (yyval.b) = createBoolNode(); (yyval.b)->T = (yyvsp[0].b)->F; (yyval.b)->F = (yyvsp[0].b)->T; }
         }
@@ -5495,7 +5495,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 90: /* BOOLEXPR: '(' BOOLEXPR ')'  */
-#line 3418 "parser.y"
+#line 3418 "parser_unoptimized.y"
                            {
                 if (!e){ (yyval.b) = createBoolNode(); (yyval.b)->T = (yyvsp[-1].b)->T; (yyval.b)->F = (yyvsp[-1].b)->F; }
         }
@@ -5503,7 +5503,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 91: /* BOOLEXPR: EXPR LT EXPR  */
-#line 3421 "parser.y"
+#line 3421 "parser_unoptimized.y"
                         {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
@@ -5513,7 +5513,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 92: /* BOOLEXPR: EXPR GT EXPR  */
-#line 3426 "parser.y"
+#line 3426 "parser_unoptimized.y"
                     {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
@@ -5523,7 +5523,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 93: /* BOOLEXPR: EXPR EQ EXPR  */
-#line 3431 "parser.y"
+#line 3431 "parser_unoptimized.y"
                         {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
@@ -5533,7 +5533,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 94: /* BOOLEXPR: EXPR NE EXPR  */
-#line 3436 "parser.y"
+#line 3436 "parser_unoptimized.y"
                     {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
@@ -5543,7 +5543,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 95: /* BOOLEXPR: EXPR LE EXPR  */
-#line 3441 "parser.y"
+#line 3441 "parser_unoptimized.y"
                         {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
@@ -5553,7 +5553,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 96: /* BOOLEXPR: EXPR GE EXPR  */
-#line 3446 "parser.y"
+#line 3446 "parser_unoptimized.y"
                     {if(!e) {sprintf(imcode[code],"%d if %s %s %s goto ",code,(yyvsp[-2].expr)->str,(yyvsp[-1].str),(yyvsp[0].expr)->str);
                                                         (yyval.b) = createBoolNode();
                                                         (yyval.b)->T = createNode(code); code++;
@@ -5563,7 +5563,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 97: /* BOOLEXPR: TR  */
-#line 3451 "parser.y"
+#line 3451 "parser_unoptimized.y"
              {if (!e){
                 (yyval.b) = createBoolNode();
                 (yyval.b)->T = createNode(code);
@@ -5574,7 +5574,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 98: /* BOOLEXPR: FL  */
-#line 3457 "parser.y"
+#line 3457 "parser_unoptimized.y"
              {if (!e){
                 (yyval.b) = createBoolNode();
                 (yyval.b)->F = createNode(code);
@@ -5585,13 +5585,13 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 99: /* M: %empty  */
-#line 3465 "parser.y"
+#line 3465 "parser_unoptimized.y"
    {(yyval.addr)=code;}
 #line 5591 "y.tab.c"
     break;
 
   case 100: /* NN: %empty  */
-#line 3466 "parser.y"
+#line 3466 "parser_unoptimized.y"
     {(yyval.b)=createBoolNode();
         (yyval.b)->N = createNode(code);
         sprintf(imcode[code],"%d goto ",code);
@@ -5601,37 +5601,37 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 101: /* ASNEXPR: BANDASN  */
-#line 3473 "parser.y"
+#line 3473 "parser_unoptimized.y"
                  {strcpy((yyval.b), "&=");}
 #line 5607 "y.tab.c"
     break;
 
   case 102: /* ASNEXPR: BORASN  */
-#line 3474 "parser.y"
+#line 3474 "parser_unoptimized.y"
               {strcpy((yyval.b), "|=");}
 #line 5613 "y.tab.c"
     break;
 
   case 103: /* ASNEXPR: BXORASN  */
-#line 3475 "parser.y"
+#line 3475 "parser_unoptimized.y"
                {strcpy((yyval.b), "^=");}
 #line 5619 "y.tab.c"
     break;
 
   case 104: /* ASNEXPR: LSHIFTASN  */
-#line 3476 "parser.y"
+#line 3476 "parser_unoptimized.y"
                  {strcpy((yyval.b), "<<=");}
 #line 5625 "y.tab.c"
     break;
 
   case 105: /* ASNEXPR: RSHIFTASN  */
-#line 3477 "parser.y"
+#line 3477 "parser_unoptimized.y"
                  {strcpy((yyval.b), ">>=");}
 #line 5631 "y.tab.c"
     break;
 
   case 106: /* ASNEXPR: EXPR ASSGN EXPR  */
-#line 3478 "parser.y"
+#line 3478 "parser_unoptimized.y"
                  {
     if (!e && (yyvsp[-2].expr)->lv){
          if(strcmp((yyvsp[0].expr)->type, "void")==0){
@@ -5747,7 +5747,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 107: /* EXPR: SIZEOF '(' IDEN ')'  */
-#line 3591 "parser.y"
+#line 3591 "parser_unoptimized.y"
                           {
     if(!e){
         (yyval.expr) = createExpr();
@@ -5780,7 +5780,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 108: /* EXPR: EXPR '+' EXPR  */
-#line 3619 "parser.y"
+#line 3619 "parser_unoptimized.y"
                 {
     if (!e){
         (yyval.expr) = createExpr();
@@ -5801,7 +5801,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 109: /* EXPR: EXPR '-' EXPR  */
-#line 3635 "parser.y"
+#line 3635 "parser_unoptimized.y"
                 {
     if (!e){
         (yyval.expr) = createExpr();
@@ -5822,7 +5822,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 110: /* EXPR: EXPR '*' EXPR  */
-#line 3651 "parser.y"
+#line 3651 "parser_unoptimized.y"
                 {
     if (!e){
         (yyval.expr) = createExpr();
@@ -5843,7 +5843,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 111: /* EXPR: EXPR '/' EXPR  */
-#line 3667 "parser.y"
+#line 3667 "parser_unoptimized.y"
                 {
     if (!e){
         /*  division by zero check */
@@ -5868,7 +5868,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 112: /* EXPR: EXPR '%' EXPR  */
-#line 3687 "parser.y"
+#line 3687 "parser_unoptimized.y"
                 {
     if (!e){
         /* modulo by zero check*/
@@ -5897,19 +5897,19 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 113: /* EXPR: '(' EXPR ')'  */
-#line 3711 "parser.y"
+#line 3711 "parser_unoptimized.y"
                {if (!e){(yyval.expr) = createExpr();strcpy((yyval.expr)->str,(yyvsp[-1].expr)->str); strcpy((yyval.expr)->type,(yyvsp[-1].expr)->type);(yyval.expr)->lv=(yyvsp[-1].expr)->lv;}}
 #line 5903 "y.tab.c"
     break;
 
   case 114: /* EXPR: EXPR OP '$'  */
-#line 3712 "parser.y"
+#line 3712 "parser_unoptimized.y"
                      {e=1;strcpy(err,"Missing operand");yyerrok;}
 #line 5909 "y.tab.c"
     break;
 
   case 115: /* EXPR: EXPR BAND EXPR  */
-#line 3713 "parser.y"
+#line 3713 "parser_unoptimized.y"
                      {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -5930,7 +5930,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 116: /* EXPR: EXPR BOR EXPR  */
-#line 3729 "parser.y"
+#line 3729 "parser_unoptimized.y"
                     {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -5951,7 +5951,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 117: /* EXPR: EXPR BXOR EXPR  */
-#line 3745 "parser.y"
+#line 3745 "parser_unoptimized.y"
                      {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -5972,7 +5972,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 118: /* EXPR: EXPR LSHIFT EXPR  */
-#line 3761 "parser.y"
+#line 3761 "parser_unoptimized.y"
                        {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -5989,7 +5989,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 119: /* EXPR: EXPR RSHIFT EXPR  */
-#line 3773 "parser.y"
+#line 3773 "parser_unoptimized.y"
                        {
         if (!e){ 
             (yyval.expr) = createExpr();
@@ -6006,7 +6006,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 120: /* EXPR: BNOT EXPR  */
-#line 3785 "parser.y"
+#line 3785 "parser_unoptimized.y"
                 {
     if (!e){
         if (isFloatingType((yyvsp[0].expr)->type)){ e=1; sprintf(err+strlen(err),"invalid operand to bitwise ~ (float/double)\n"); }
@@ -6027,19 +6027,19 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 121: /* EXPR: FUNCALL  */
-#line 3801 "parser.y"
+#line 3801 "parser_unoptimized.y"
               {(yyval.expr) = (yyvsp[0].expr);}
 #line 6033 "y.tab.c"
     break;
 
   case 122: /* EXPR: TERM  */
-#line 3802 "parser.y"
+#line 3802 "parser_unoptimized.y"
            {(yyval.expr) = (yyvsp[0].expr);}
 #line 6039 "y.tab.c"
     break;
 
   case 123: /* FUNCALL: CALL IDEN '(' ARGLIST ')'  */
-#line 3805 "parser.y"
+#line 3805 "parser_unoptimized.y"
                                    {
             if(!e){
                 Function* f = findFunction((yyvsp[-3].str));
@@ -6112,7 +6112,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 124: /* FUNCALL: CALL IDEN '(' ')'  */
-#line 3873 "parser.y"
+#line 3873 "parser_unoptimized.y"
                     {
             if(!e){
                 Function* f = findFunction((yyvsp[-2].str));
@@ -6150,7 +6150,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 125: /* ARGLIST: EXPR ',' ARGLIST  */
-#line 3907 "parser.y"
+#line 3907 "parser_unoptimized.y"
                           {
             if(!e){ (yyval.expr) = (yyvsp[-2].expr); (yyval.expr)->next = (yyvsp[0].expr); }
         }
@@ -6158,7 +6158,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 126: /* ARGLIST: EXPR  */
-#line 3910 "parser.y"
+#line 3910 "parser_unoptimized.y"
                {
             if(!e){ (yyval.expr) = (yyvsp[0].expr); (yyval.expr)->next = NULL; }
         }
@@ -6166,7 +6166,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 137: /* SUBSCRIPTS: '[' EXPR ']'  */
-#line 3916 "parser.y"
+#line 3916 "parser_unoptimized.y"
                          {
                 if (!e) {
                         (yyval.sub) = createSubscript();
@@ -6178,7 +6178,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 138: /* SUBSCRIPTS: SUBSCRIPTS '[' EXPR ']'  */
-#line 3923 "parser.y"
+#line 3923 "parser_unoptimized.y"
                                   {
                 if (!e) {
                         (yyval.sub) = createSubscript();
@@ -6190,7 +6190,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 139: /* TERM: STRING  */
-#line 3932 "parser.y"
+#line 3932 "parser_unoptimized.y"
              {
     (yyval.expr) = createExpr();
     strcpy((yyval.expr)->str, (yyvsp[0].str));
@@ -6202,7 +6202,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 140: /* TERM: '(' TYPE ')' EXPR  */
-#line 3939 "parser.y"
+#line 3939 "parser_unoptimized.y"
                     {
     if(!e){
         (yyval.expr) = createExpr();
@@ -6229,7 +6229,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 141: /* TERM: UN OPR IDEN B  */
-#line 3961 "parser.y"
+#line 3961 "parser_unoptimized.y"
                 {
     (yyval.expr) = createExpr();  
     if (strcmp((yyvsp[-3].str),"-")){
@@ -6278,7 +6278,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 142: /* TERM: UN IDEN OPR B  */
-#line 4005 "parser.y"
+#line 4005 "parser_unoptimized.y"
                 {
     (yyval.expr) = createExpr();  
     if (strcmp((yyvsp[-3].str),"-")){
@@ -6326,7 +6326,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 143: /* TERM: UN NUM C  */
-#line 4048 "parser.y"
+#line 4048 "parser_unoptimized.y"
            {
     (yyval.expr) = createExpr();  
     if (!strcmp((yyvsp[-2].str),"-")) {
@@ -6343,7 +6343,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 144: /* TERM: UN IDEN SUBSCRIPTS  */
-#line 4060 "parser.y"
+#line 4060 "parser_unoptimized.y"
                      {
     (yyval.expr) = createExpr();  
     Env* temp = top; int found=0; Symbol* sym_found = NULL;
@@ -6386,7 +6386,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 145: /* TERM: UN IDEN C  */
-#line 4098 "parser.y"
+#line 4098 "parser_unoptimized.y"
             {
     (yyval.expr) = createExpr();  
     if (!strcmp((yyvsp[-2].str),"-")) {
@@ -6413,7 +6413,7 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 146: /* TERM: UN CHARR C  */
-#line 4120 "parser.y"
+#line 4120 "parser_unoptimized.y"
              {
     (yyval.expr) = createExpr();
     if (!strcmp((yyvsp[-2].str),"-")) {
@@ -6430,85 +6430,85 @@ else if(strcmp(actual_type,"double")==0){
     break;
 
   case 147: /* TERM: UN INC NUM  */
-#line 4132 "parser.y"
+#line 4132 "parser_unoptimized.y"
              {e=1;strcpy(err,"cannot increment a constant value");}
 #line 6436 "y.tab.c"
     break;
 
   case 148: /* TERM: UN DEC NUM  */
-#line 4133 "parser.y"
+#line 4133 "parser_unoptimized.y"
              {e=1;strcpy(err,"cannot decrement a constant value");}
 #line 6442 "y.tab.c"
     break;
 
   case 149: /* TERM: UN NUM INC  */
-#line 4134 "parser.y"
+#line 4134 "parser_unoptimized.y"
              {e=1;strcpy(err,"cannot increment a constant value");}
 #line 6448 "y.tab.c"
     break;
 
   case 150: /* TERM: UN NUM DEC  */
-#line 4135 "parser.y"
+#line 4135 "parser_unoptimized.y"
              {e=1;strcpy(err,"cannot decrement a constant value");}
 #line 6454 "y.tab.c"
     break;
 
   case 151: /* OPR: INC  */
-#line 4138 "parser.y"
+#line 4138 "parser_unoptimized.y"
              {strcpy((yyval.str),(yyvsp[0].str));}
 #line 6460 "y.tab.c"
     break;
 
   case 152: /* OPR: DEC  */
-#line 4138 "parser.y"
+#line 4138 "parser_unoptimized.y"
                                    {strcpy((yyval.str),(yyvsp[0].str));}
 #line 6466 "y.tab.c"
     break;
 
   case 153: /* B: OPR  */
-#line 4140 "parser.y"
+#line 4140 "parser_unoptimized.y"
         {e=1;strcpy(err,"expression is not assignable");}
 #line 6472 "y.tab.c"
     break;
 
   case 154: /* B: IDEN  */
-#line 4141 "parser.y"
+#line 4141 "parser_unoptimized.y"
          {e=1;strcpy(err,"missing operator");}
 #line 6478 "y.tab.c"
     break;
 
   case 155: /* B: NUM  */
-#line 4142 "parser.y"
+#line 4142 "parser_unoptimized.y"
         {e=1;strcpy(err,"missing operator");}
 #line 6484 "y.tab.c"
     break;
 
   case 157: /* C: IDEN  */
-#line 4144 "parser.y"
+#line 4144 "parser_unoptimized.y"
          {e=1;strcpy(err,"missing operator");}
 #line 6490 "y.tab.c"
     break;
 
   case 158: /* C: NUM  */
-#line 4145 "parser.y"
+#line 4145 "parser_unoptimized.y"
         {e=1;strcpy(err,"missing operator");}
 #line 6496 "y.tab.c"
     break;
 
   case 160: /* UN: '-'  */
-#line 4147 "parser.y"
+#line 4147 "parser_unoptimized.y"
          {strcpy((yyval.str),"-");}
 #line 6502 "y.tab.c"
     break;
 
   case 161: /* UN: '+'  */
-#line 4147 "parser.y"
+#line 4147 "parser_unoptimized.y"
                                   {strcpy((yyval.str),"+");}
 #line 6508 "y.tab.c"
     break;
 
   case 162: /* UN: %empty  */
-#line 4147 "parser.y"
+#line 4147 "parser_unoptimized.y"
                                                       {strcpy((yyval.str),"");}
 #line 6514 "y.tab.c"
     break;
@@ -6707,7 +6707,7 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 4148 "parser.y"
+#line 4148 "parser_unoptimized.y"
 
 
 char* genvar(){
@@ -6720,13 +6720,14 @@ char* genvar(){
 int yyerror(char* msg){ return 0; }
 
 
+
 void generateSymbolTableDOT() {
     FILE* dot = fopen("symbol_table.dot", "w");
     fprintf(dot, "digraph SymbolTable {\n");
         fprintf(dot, "  node [shape=record, style=filled, fillcolor=lightblue];\n");
     for (int i = 0; i < env_count; i++) {
-        fprintf(dot, "  scope%d [label=\"{Scope %d|", i, i);
-        
+        fprintf(dot, "  scope%d [label=\"{Scope %d - %s|", i, i, (i == 0) ? "Global" : "Local");
+
         Table* table = envs[i]->table;
         int first = 1;
         for (int j = 0; j < table->size; j++) {
@@ -7597,8 +7598,8 @@ void generateCallGraphDOT() {
 void generateAllImages() {
     system("dot -Tpng tac_flow.dot -o tac_flow.png 2>/dev/null");
     system("dot -Tpng tac_flow_blocks.dot -o tac_flow_blocks.png 2>/dev/null");
-    //system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
-    //system("dot -Tpng symbol_table.dot -o symbol_table.png 2>/dev/null");
+    system("dot -Tpng call_graph.dot -o call_graph.png 2>/dev/null");
+    system("dot -Tpng symbol_table.dot -o symbol_table.png 2>/dev/null");
 }
 
 
@@ -7652,20 +7653,20 @@ int main(int argc, char* argv[]) {
         free(clean);
     }
 
-    remove("output.tac");
+    remove("unopt.tac");
     if (!e) {
-        /* Write TAC file */
-        FILE* tac_file = fopen("output.tac", "w");
+        FILE* tac_file = fopen("unopt.tac", "w");
         if (tac_file) {
             for (int i = 0; i < code; i++)
                 fprintf(tac_file, "%s", imcode[i]);
             fclose(tac_file);
         }
-       // generateSymbolTableDOT();
+       /* generateSymbolTableDOT();
         generateTACFlowDOT();
         generateTACFlowWithBlocks();
-       // generateCallGraphDOT();
+        generateCallGraphDOT();
         generateAllImages();
+        */
     }
     return 0;
 }

@@ -1,0 +1,6 @@
+@int n is 1 $
+loop(n <= 5)
+begin
+    n++ $
+end
+show(n)$

@@ -1,0 +1,7 @@
+@int i is 0 $
+@int sum is 0 $
+iterate(i is 0 $ i < 5 $ i=i+1)
+begin
+    sum += i $
+end
+show(sum)$

@@ -1,0 +1,16 @@
+@int num is 123321 $
+@int original is num $
+@int reversed is 0 $
+@int remainder $
+
+loop (num > 0) {
+    remainder = num % 10 $
+    reversed = reversed * 10 + remainder $
+    num = num / 10 $
+}
+
+if (original == reversed) {
+    show(1) $
+} else {
+    show(0) $
+}

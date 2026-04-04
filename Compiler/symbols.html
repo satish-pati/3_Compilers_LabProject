@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control Flow - Compiler Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+<div class="page-header">
+<div class="header2">
+<a href="index.html" class="back-btn">⬅ Back</a>
+<h1> Symbol Table and Scope Views </h1>
+</div>
+</div>
+<div class="toolbar">
+</div>
+<div class="image-container" style="margin-top: 30px;">
+<div class="zoom-controls">
+<button class="zoom-btn" onclick="zoomImage('symbols', -0.1)">−</button>
+<span class="zoom-level" id="symbolsZoomLevel">100%</span>
+<button class="zoom-btn" onclick="zoomImage('symbols', 0.1)">+</button>
+<button class="zoom-btn " onclick="resetZoom('symbols')">⟲</button>
+<button class="zoom-btn fullscreen-btn" onclick="openFullscreen('symbols')">⛶</button>
+</div>
+<div class="image-wrapper" id="symbolsWrapper" onmousedown="startPan(event, 'symbols')">
+<img id="symbolsImage" src="symbol_table.png" alt="Symbol Table Graph">
+</div>
+</div>
+<div class="scope-section">
+<h3>Scope 0</h3>
+<table>
+<tr><th>Variable</th><th>Type</th><th>Offset</th><th>Dimensions</th></tr>
+<tr><td>i</td><td>int</td><td>32</td><td>-</td></tr>
+<tr><td>n</td><td>int</td><td>24</td><td>-</td></tr>
+<tr><td>sum</td><td>int</td><td>28</td><td>-</td></tr>
+<tr><td>arr</td><td>int[6]</td><td>0</td><td>[6]</td></tr>
+</table>
+</div>
+<div class="scope-section">
+<h3>Scope 1</h3>
+<table>
+<tr><th>Variable</th><th>Type</th><th>Offset</th><th>Dimensions</th></tr>
+</table>
+</div>
+</div>
+</div>
+<div id="fullscreenModal" class="fullscreen-modal"></div>
+<script src="script.js"></script>
+</body>
+</html>

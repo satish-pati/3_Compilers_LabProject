@@ -3,3 +3,9 @@ make clean
 make
 ./parser "$1"
 ./parser2 "$1"
+python3 tac_to_risc.py opt.tac output.s --run
+
+python3 -m http.server 8080 >/tmp/tac_server.log 2>/tmp/tac_server.log &
+disown $!
+sleep 0.5
+echo "[INFO] Visualizations Page running at http://localhost:8080"

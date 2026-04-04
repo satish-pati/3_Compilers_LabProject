@@ -1,0 +1,15 @@
+@int x is 12 $
+x bitand= 10 $
+show(x)$
+@int y is 8 $
+y bitor= 3 $
+show(y)$
+@int z is 15 $
+z bitxor= 5 $
+show(z)$
+@int w is 4 $
+w lshift= 2 $
+show(w)$
+@int v is 16 $
+v rshift= 2 $
+show(v)$

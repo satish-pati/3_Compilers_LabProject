@@ -1,0 +1,20 @@
+@int arr[7] = {10, 23, 45, 12, 67, 34, 89} $
+@int n is 7 $
+@int target is 67 $
+@int i $
+@int found is 0 $
+@int position is -1 $
+
+iterate (i = 0 $ i < n $ i = i + 1) {
+    if (arr[i] == target) {
+        found = 1 $
+        position = i $
+    }
+}
+
+if (found == 1) {
+    show(1) $
+    show(position) $
+} else {
+    show(0) $
+}

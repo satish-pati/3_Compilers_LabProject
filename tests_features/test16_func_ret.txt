@@ -1,0 +1,11 @@
+func @int add(@int a , @int b)
+begin
+    @int s is a + b $
+    ret s $
+end
+
+func @int main(){
+@int res is call add(3 , 4) $
+show(res)$
+ret 0 $
+}

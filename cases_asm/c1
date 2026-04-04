@@ -1,0 +1,7 @@
+    @int x is 10 $
+    @int y is 20 $
+    show(x) $
+    @int z is x + y $
+    show(z) $
+    @int w is z * 2 $
+    show(w) $

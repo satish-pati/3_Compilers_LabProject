@@ -1,0 +1,9 @@
+@int n is 6 $
+@int result is 1 $
+@int i $
+
+iterate (i = 1 $ i <= n $ i = i + 1) {
+    result = result * i $
+}
+
+show(result) $
