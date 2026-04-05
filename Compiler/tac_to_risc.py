@@ -1,6 +1,7 @@
 import re
 import sys
 
+# global table tracking what type each variable is (int, float, char, etc.)
 _var_types = {}
 
 def set_type(var, typ):
@@ -9,6 +10,7 @@ def set_type(var, typ):
 def get_type(var):
     return _var_types.get(var, 'int')
 
+# helpers to check what kind of type a variable has
 def is_long_type(var):
     return get_type(var) == 'long'
 
@@ -24,6 +26,7 @@ def is_float_type(var):
 def is_double_type(var):
     return get_type(var) == 'double'
 
+# pick the right load instruction based on variable type
 def load_ins(var):
     t = get_type(var)
     if t == 'long':   return 'ld'
@@ -31,6 +34,7 @@ def load_ins(var):
     if t == 'char':   return 'lb'
     return 'lw'
 
+# pick the right store instruction based on variable type
 def store_ins(var):
     t = get_type(var)
     if t == 'long':   return 'sd'
@@ -38,6 +42,7 @@ def store_ins(var):
     if t == 'char':   return 'sb'
     return 'sw'
 
+# format string label to use when printing a variable
 def print_fmt(var):
     t = get_type(var)
     if t == 'long':            return '.fmt_long'
@@ -45,12 +50,14 @@ def print_fmt(var):
     if t == 'char':             return '.fmt_char'
     return '.fmt_int'
 
+# format string label to use when scanning input into a variable
 def scan_fmt(var):
     t = get_type(var)
     if t == 'long':             return '.fmt_scan_long'
     if t in ('float','double'): return '.fmt_scan_float'
     return '.fmt_scan_int'
 
+# returns True if v can be parsed as an integer
 def is_int_literal(v):
     try:
         int(v)
@@ -58,6 +65,7 @@ def is_int_literal(v):
     except (ValueError, TypeError):
         return False
 
+# returns True if v is any numeric literal (int or float)
 def is_num_literal(v):
     try:
         float(v)
@@ -68,11 +76,13 @@ def is_num_literal(v):
 def to_int(v):
     return int(float(v))
 
+# strips the line number prefix from a TAC line, returns (linenum, instruction)
 def parse_line(raw):
     raw = raw.strip()
-    m = re.match(r'^(\d+)\s+(.*)', raw)
+    m = re.match(r'^(\d+)\s+(.*)', raw)  # matches: '<linenum> <instruction>', captures line number and rest
     return (int(m.group(1)), m.group(2).strip()) if m else (None, raw)
 
+# figures out which variables a TAC instruction defines and which it uses
 def _extract_defs_uses(instr):
     KEYWORDS = {'BeginFunc','EndFunc','PopParam','PushParam','Return',
                 'Call','goto','if','int','float','char','string','double',
@@ -84,83 +94,83 @@ def _extract_defs_uses(instr):
     defs, uses = set(), set()
 
     def is_var(t):
-        return bool(re.match(r'^[A-Za-z_]\w*$', t)) and t not in KEYWORDS
+        return bool(re.match(r'^[A-Za-z_]\w*$', t)) and t not in KEYWORDS  # matches a valid plain variable name
 
-    if re.match(r'^(BeginFunc|EndFunc)\b', instr):
+    if re.match(r'^(BeginFunc|EndFunc)\b', instr):  # matches BeginFunc or EndFunc at start of line
         return defs, uses
 
-    m = re.match(r'^PopParam\s+(\w+)$', instr)
+    m = re.match(r'^PopParam\s+(\w+)$', instr)  # matches: 'PopParam <varname>'
     if m:
         defs.add(m.group(1)); return defs, uses
 
-    m = re.match(r'^Return\s+(\S+)$', instr)
+    m = re.match(r'^Return\s+(\S+)$', instr)  # matches: 'Return <value>'
     if m:
         tok = m.group(1)
         if is_var(tok): uses.add(tok)
         return defs, uses
 
-    m = re.match(r'^PushParam\s+(\S+)$', instr)
+    m = re.match(r'^PushParam\s+(\S+)$', instr)  # matches: 'PushParam <value>'
     if m:
         tok = m.group(1)
         if is_var(tok): uses.add(tok)
         return defs, uses
 
-    m = re.match(r'^(\w+)\s*=\s*Call\s+\w+$', instr)
+    m = re.match(r'^(\w+)\s*=\s*Call\s+\w+$', instr)  # matches: 'var = Call funcname'
     if m:
         defs.add(m.group(1)); return defs, uses
 
-    if re.match(r'^Call\s+\w+$', instr):
+    if re.match(r'^Call\s+\w+$', instr):  # matches: 'Call funcname' with no return value
         return defs, uses
 
-    m = re.match(r'^(?:print|input)\w+\s+(\S+)$', instr)
+    m = re.match(r'^(?:print|input)\w+\s+(\S+)$', instr)  # matches: 'printint x' or 'inputfloat y' style I/O instructions
     if m:
         tok = m.group(1)
         if is_var(tok): uses.add(tok)
         return defs, uses
 
-    m = re.match(r'^if\s+(\S+)\s+\S+\s+(\S+)\s+goto\s+\d+$', instr)
+    m = re.match(r'^if\s+(\S+)\s+\S+\s+(\S+)\s+goto\s+\d+$', instr)  # matches: 'if lhs op rhs goto <linenum>'
     if m:
         for tok in (m.group(1), m.group(2)):
             if is_var(tok):
                 uses.add(tok)
             else:
-                am = re.match(r'^(\w+)\[(\w+)\]$', tok)
+                am = re.match(r'^(\w+)\[(\w+)\]$', tok)  # matches array access: 'arr[index]'
                 if am:
                     if is_var(am.group(1)): uses.add(am.group(1))
                     if is_var(am.group(2)): uses.add(am.group(2))
         return defs, uses
 
-    if re.match(r'^goto\s+\d+$', instr):
+    if re.match(r'^goto\s+\d+$', instr):  # matches unconditional jump: 'goto <linenum>'
         return defs, uses
 
-    m = re.match(r'^(\w+)\s*=\s*(\S+)\s*(<=|>=|==|!=|<<|>>|[+\-*/%&|^<>])\s*(\S+)$', instr)
+    m = re.match(r'^(\w+)\s*=\s*(\S+)\s*(<=|>=|==|!=|<<|>>|[+\-*/%&|^<>])\s*(\S+)$', instr)  # matches: 'dst = op1 <operator> op2'
     if m:
         defs.add(m.group(1))
         for tok in (m.group(2), m.group(4)):
             if is_var(tok): uses.add(tok)
         return defs, uses
 
-    m = re.match(r'^(\w+)\s*=\s*(\w+)\[(\w+)\]$', instr)
+    m = re.match(r'^(\w+)\s*=\s*(\w+)\[(\w+)\]$', instr)  # matches array read: 'dst = arr[index]'
     if m:
         defs.add(m.group(1))
         for tok in (m.group(2), m.group(3)):
             if is_var(tok): uses.add(tok)
         return defs, uses
 
-    m = re.match(r'^(\w+)\[(\w+)\]\s*=\s*(\S+)$', instr)
+    m = re.match(r'^(\w+)\[(\w+)\]\s*=\s*(\S+)$', instr)  # matches array write: 'arr[index] = value'
     if m:
         for tok in (m.group(1), m.group(2), m.group(3)):
             if is_var(tok): uses.add(tok)
         return defs, uses
 
-    m = re.match(r'^(\w+)\s*=\s*\(\w+\)\s*(\S+)$', instr)
+    m = re.match(r'^(\w+)\s*=\s*\(\w+\)\s*(\S+)$', instr)  # matches type cast: 'dst = (type) src'
     if m:
         defs.add(m.group(1))
         tok = m.group(2)
         if is_var(tok): uses.add(tok)
         return defs, uses
 
-    m = re.match(r'^(\w+)\s*=\s*(\S+)$', instr)
+    m = re.match(r'^(\w+)\s*=\s*(\S+)$', instr)  # matches simple assignment: 'dst = value'
     if m:
         defs.add(m.group(1))
         tok = m.group(2)
@@ -169,6 +179,7 @@ def _extract_defs_uses(instr):
 
     return defs, uses
 
+# classic dataflow liveness analysis — computes live-in and live-out sets for each instruction
 def _liveness_analysis(instrs):
     n = len(instrs)
     if n == 0:
@@ -179,12 +190,12 @@ def _liveness_analysis(instrs):
     for i, (lnum, instr) in enumerate(instrs):
         if i + 1 < n:
             succ[i].append(i + 1)
-        for m in re.finditer(r'goto\s+(\d+)', instr):
+        for m in re.finditer(r'goto\s+(\d+)', instr):  # finds goto target line number anywhere in instruction
             tgt = int(m.group(1))
             if tgt in lnum_to_idx:
                 succ[i].append(lnum_to_idx[tgt])
-        if re.match(r'^goto\s+\d+$', instr.strip()):
-            tgt = int(re.search(r'\d+', instr).group())
+        if re.match(r'^goto\s+\d+$', instr.strip()):  # matches unconditional jump: 'goto <linenum>'
+            tgt = int(re.search(r'\d+', instr).group())  # extracts the numeric jump target from a goto instruction
             succ[i] = [lnum_to_idx[tgt]] if tgt in lnum_to_idx else []
 
     defs_list  = []
@@ -212,6 +223,7 @@ def _liveness_analysis(instrs):
 
     return live_in, live_out
 
+# finds all variables that are still alive after a function call site (can't use caller-saved regs for these)
 def _compute_live_across_calls(instrs):
     if not instrs:
         return set()
@@ -220,9 +232,9 @@ def _compute_live_across_calls(instrs):
 
     def _is_call_site(instr):
         s = instr.strip()
-        return (re.match(r'^(print|input)\w+', s) or
-                re.match(r'^\w+\s*=\s*Call\b', s) or
-                re.match(r'^Call\b', s))
+        return (re.match(r'^(print|input)\w+', s) or  # matches any print/input I/O call at start of line
+                re.match(r'^\w+\s*=\s*Call\b', s) or  # matches call with return value: 'var = Call ...'
+                re.match(r'^Call\b', s))  # matches call without return value
 
     live_across = set()
     for i, (_, instr) in enumerate(instrs):
@@ -230,6 +242,7 @@ def _compute_live_across_calls(instrs):
             live_across |= live_out[i]
     return live_across
 
+# handles register allocation for a single function using graph coloring
 class RegAlloc:
 
     SAVED_POOL  = ["s1","s2","s3","s4","s5",
@@ -267,6 +280,7 @@ class RegAlloc:
         self._spill_base  = 16 + 11 * 8
 
     def set_safe_scratch_temps(self, instrs):
+        # figures out which TAC temps (t0-t3) don't cross a call and can stay in scratch regs
         if instrs and isinstance(instrs[0], str):
             pairs = list(enumerate(instrs))
         else:
@@ -293,7 +307,7 @@ class RegAlloc:
 
         self._no_call_crossing = {
             v for v in safe_from_calls
-            if not re.match(r'^t\d+$', v)
+            if not re.match(r'^t\d+$', v)  # matches TAC temp vars: t0, t1, t2, ...
             and get_type(v) not in ('float','double')
             and v not in self._array_names
         }
@@ -306,6 +320,7 @@ class RegAlloc:
 
     @staticmethod
     def _compute_dead_after_def(instrs):
+        # finds variables that are defined but never used afterwards (safe to skip saving)
         if not instrs:
             return set()
 
@@ -330,6 +345,7 @@ class RegAlloc:
         return dead_after_def
 
     def run_graph_coloring(self, instrs):
+        # assigns hardware registers to variables using interference graph coloring; spills what doesn't fit
         if not instrs:
             return
 
@@ -344,7 +360,7 @@ class RegAlloc:
 
         forced_spill = set()
         for v in all_vars:
-            is_tac_temp  = bool(re.match(r'^t\d+$', v))
+            is_tac_temp  = bool(re.match(r'^t\d+$', v))  # matches TAC temp vars: t0, t1, t2, ...
             is_fp_var    = get_type(v) in ('float', 'double') and v not in self._array_names
             in_safe_scratch   = v in self._safe_scratch
             in_fp_no_crossing = v in self._fp_no_call_crossing
@@ -373,7 +389,7 @@ class RegAlloc:
             live_out_i = live_out[i] & colorable_set
             defs, _    = _extract_defs_uses(instr)
 
-            copy_m = re.match(r'\A(\w+)\s*=\s*([A-Za-z_]\w*)\s*\Z', instr)
+            copy_m = re.match(r'\A(\w+)\s*=\s*([A-Za-z_]\w*)\s*\Z', instr)  # matches copy: 'dst = src' (both plain variable names, no operators)
             copy_dst = copy_m.group(1) if copy_m else None
             copy_src = copy_m.group(2) if copy_m else None
 
@@ -520,16 +536,18 @@ class RegAlloc:
                 self._spill[v] = -(self._spill_base + self.spill_slots * 8)
 
     def _recompute_spill_base(self):
+        # recalculates where spill slots start on the stack after we know how many saved regs we used
         header = 16
         self._spill_base = header + len(self.used_sregs) * 8 + len(self.used_fp_sregs) * 8
 
     def _alloc(self, var):
+        # allocates a register or stack spill slot for a variable the first time we see it
         if var in self._safe_scratch and var in self.TEMP_SCRATCH_MAP:
             hw = self.TEMP_SCRATCH_MAP[var]
             self._map[var] = hw
             return hw
 
-        if re.match(r'^t\d+$', var) and var not in self._safe_scratch:
+        if re.match(r'^t\d+$', var) and var not in self._safe_scratch:  # matches TAC temp vars: t0, t1, t2, ...
             self.spill_slots += 1
             off = -(self._spill_base + self.spill_slots * 8)
             self._spill[var] = off
@@ -567,7 +585,7 @@ class RegAlloc:
         is_array_base = (var in self._array_names)
         crosses_call  = (var not in self._no_call_crossing)
 
-        if not re.match(r'^t\d+$', var) and not crosses_call and not is_array_base:
+        if not re.match(r'^t\d+$', var) and not crosses_call and not is_array_base:  # matches TAC temp vars: t0, t1, t2, ...
             for tac_tmp, hw in self.TEMP_SCRATCH_MAP.items():
                 if tac_tmp in self._safe_scratch:
                     used.add(hw)
@@ -596,11 +614,13 @@ class RegAlloc:
         self._spill[var] = off
         return None
 
+    # returns the hardware register assigned to var, allocating if needed
     def reg(self, var):
         if var not in self._map and var not in self._spill:
             self._alloc(var)
         return self._map.get(var)
 
+    # returns True if var ended up on the stack instead of in a register
     def is_spilled(self, var):
         if var not in self._map and var not in self._spill:
             self._alloc(var)
@@ -613,6 +633,7 @@ class RegAlloc:
         if var not in self._map and var not in self._spill:
             self._alloc(var)
 
+    # forcibly moves a variable to the stack (used for floats and call-crossing vars)
     def force_spill(self, var):
         if var in self._spill:
             return self._spill[var]
@@ -625,6 +646,7 @@ class RegAlloc:
         self._spill[var] = off
         return off
 
+# optimization pass: replaces uses of x when x = y with y directly, removes dead copies
 def _copy_propagate(tac):
     KEYWORDS = {'BeginFunc','EndFunc','PopParam','PushParam','Return',
                 'Call','goto','if','int','float','char','string','double',
@@ -634,7 +656,7 @@ def _copy_propagate(tac):
                 'rtz','main','eq','ne','lt','le','gt','ge','true','false'}
 
     def _is_plain_var(tok):
-        return bool(re.match(r'^[A-Za-z_]\w*$', tok)) and tok not in KEYWORDS
+        return bool(re.match(r'^[A-Za-z_]\w*$', tok)) and tok not in KEYWORDS  # matches a valid plain variable name
 
     changed = True
     while changed:
@@ -645,7 +667,7 @@ def _copy_propagate(tac):
 
         jump_targets = set()
         for instr in instrs:
-            for m in re.finditer(r'goto\s+(\d+)', instr):
+            for m in re.finditer(r'goto\s+(\d+)', instr):  # finds goto target line number anywhere in instruction
                 jump_targets.add(int(m.group(1)))
 
         remove      = set()
@@ -653,7 +675,7 @@ def _copy_propagate(tac):
 
         for i in reversed(range(n)):
             instr = new_instrs[i]
-            m = re.match(r'^(\w+)\s*=\s*([A-Za-z_]\w*)\s*$', instr)
+            m = re.match(r'^(\w+)\s*=\s*([A-Za-z_]\w*)\s*$', instr)  # matches copy assignment: 'dst = src'
             if not m:
                 continue
             dst, src = m.group(1), m.group(2)
@@ -687,7 +709,7 @@ def _copy_propagate(tac):
                 if dst in uses_j:
                     dst_uses.append(j)
 
-                for bm in re.finditer(r'goto\s+(\d+)', new_instrs[j]):
+                for bm in re.finditer(r'goto\s+(\d+)', new_instrs[j]):  # finds goto target line number anywhere in instruction
                     tgt = int(bm.group(1))
                     if tgt <= lnums[i]:
                         has_back_edge = True
@@ -700,7 +722,7 @@ def _copy_propagate(tac):
                 redef_lnum    = lnums[dst_redef_idx]
                 unsafe = False
                 for k in range(i, n):
-                    for bm in re.finditer(r'goto\s+(\d+)', new_instrs[k]):
+                    for bm in re.finditer(r'goto\s+(\d+)', new_instrs[k]):  # finds goto target line number anywhere in instruction
                         tgt_lnum = int(bm.group(1))
                         if lnums[i] < tgt_lnum <= last_use_lnum:
                             unsafe = True
@@ -724,13 +746,13 @@ def _copy_propagate(tac):
             if src_kill_idx is not None and src_kill_idx <= max(dst_uses):
                 continue
 
-            src_is_temp = bool(re.match(r'^t\d+$', src))
+            src_is_temp = bool(re.match(r'^t\d+$', src))  # matches TAC temp vars: t0, t1, t2, ...
             safe_uses = []
             unsafe_found = False
             for j in dst_uses:
                 instr_j = new_instrs[j]
                 if src_is_temp:
-                    arr_write_m = re.match(r'^(\w+)\[(\w+)\]\s*=\s*(.+)$', instr_j)
+                    arr_write_m = re.match(r'^(\w+)\[(\w+)\]\s*=\s*(.+)$', instr_j)  # matches array write with any RHS: 'arr[idx] = ...'
                     if arr_write_m and arr_write_m.group(2) == dst:
                         unsafe_found = True
                         break
@@ -741,7 +763,7 @@ def _copy_propagate(tac):
 
             for j in safe_uses:
                 old = new_instrs[j]
-                new_instrs[j] = re.sub(r'\b' + re.escape(dst) + r'\b', src, old)
+                new_instrs[j] = re.sub(r'\b' + re.escape(dst) + r'\b', src, old)  # replaces all whole-word occurrences of dst with src
                 if new_instrs[j] != old:
                     changed = True
 
@@ -756,6 +778,7 @@ def _copy_propagate(tac):
 
 FRAME = 512
 
+# calculates total stack frame size, aligned to 16 bytes as RISC-V ABI requires
 def _compute_frame(n_sregs, n_spill_slots, needs_ra, needs_fp):
     header = (8 if needs_ra else 0) + (8 if needs_fp else 0)
     actual_spill_base = header + n_sregs * 8
@@ -765,6 +788,7 @@ def _compute_frame(n_sregs, n_spill_slots, needs_ra, needs_fp):
         size += 16 - (size % 16)
     return max(size, 16)
 
+# main converter class — walks through TAC instructions and emits RISC-V assembly
 class TACtoRISCV:
 
     BRANCH_MAP = {
@@ -864,14 +888,15 @@ class TACtoRISCV:
 
     def _fn_has_calls(self, instrs):
         for s in instrs:
-            if re.search(r'\bCall\b', s):          return True
-            if re.match(r'^print', s.strip()):    return True
-            if re.match(r'^input', s.strip()):    return True
+            if re.search(r'\bCall\b', s):          return True  # checks if 'Call' keyword appears anywhere in the line
+            if re.match(r'^print', s.strip()):    return True  # checks if line starts with print
+            if re.match(r'^input', s.strip()):    return True  # checks if line starts with input
         return False
 
     def _fn_needs_fp(self, ra_alloc):
         return bool(ra_alloc.spill_slots)
 
+    # loads a value (literal or variable) into a destination register
     def load(self, val, dst):
         if is_int_literal(val):
             self.ins("li", dst, to_int(val))
@@ -888,6 +913,7 @@ class TACtoRISCV:
             if r and r != dst:
                 self.ins("mv", dst, r)
 
+    # writes a register value back to wherever the variable lives (reg or stack)
     def store_var(self, var, src):
         if self.ra_alloc.is_spilled(var):
             ins = store_ins(var)
@@ -897,6 +923,7 @@ class TACtoRISCV:
             if r and r != src:
                 self.ins("mv", r, src)
 
+    # returns the register holding var, or loads it into scratch if it's spilled
     def var_reg_or_load(self, var, scratch):
         if is_int_literal(var):
             self.ins("li", scratch, to_int(var))
@@ -908,6 +935,7 @@ class TACtoRISCV:
         r = self.ra_alloc.reg(var)
         return r if r else scratch
 
+    # returns where to write the result for a destination variable (reg or t4 as scratch)
     def dst_reg(self, var):
         if self.ra_alloc.is_spilled(var):
             return "t4"
@@ -915,10 +943,12 @@ class TACtoRISCV:
         return r if r else "t4"
 
     def flush_dst(self, var, reg):
+        # if we computed into a scratch reg, spill it back to the variable's stack slot
         if self.ra_alloc.is_spilled(var):
             ins = store_ins(var)
             self.ins(ins, reg, f"{self.ra_alloc.spill_offset(var)}(s0)")
 
+    # general operand loader — handles literals, spilled vars, and register vars
     def operand(self, val, scratch):
         if is_int_literal(val):
             self.ins("li", scratch, to_int(val))
@@ -933,6 +963,7 @@ class TACtoRISCV:
         return f".L{n}"
 
     def collect_targets(self):
+        # pre-pass to gather all jump targets and per-function line sets so we know where labels go
         in_fn = False
         fn_targets = set()
         fn_lines   = set()
@@ -940,35 +971,36 @@ class TACtoRISCV:
 
         for lnum, instr in self.tac:
             self.tac_line_set.add(lnum)
-            for m in re.finditer(r'goto\s+(\d+)', instr):
+            for m in re.finditer(r'goto\s+(\d+)', instr):  # finds goto target line number anywhere in instruction
                 self.jump_targets.add(int(m.group(1)))
 
-            if re.match(r'^BeginFunc', instr):
+            if re.match(r'^BeginFunc', instr):  # matches start of a function definition
                 in_fn      = True
                 fn_targets = set()
                 fn_lines   = set()
                 fn_lines.add(lnum)
-            elif re.match(r'^EndFunc', instr):
+            elif re.match(r'^EndFunc', instr):  # matches end of a function definition
                 fn_lines.add(lnum)
                 self._fn_scope_list.append((fn_targets, fn_lines))
                 in_fn = False
             else:
                 if in_fn:
                     fn_lines.add(lnum)
-                    for m in re.finditer(r'goto\s+(\d+)', instr):
+                    for m in re.finditer(r'goto\s+(\d+)', instr):  # finds goto target line number anywhere in instruction
                         fn_targets.add(int(m.group(1)))
                 else:
                     self._global_lines.add(lnum)
-                    for m in re.finditer(r'goto\s+(\d+)', instr):
+                    for m in re.finditer(r'goto\s+(\d+)', instr):  # finds goto target line number anywhere in instruction
                         self._global_targets.add(int(m.group(1)))
 
         self._fn_scope_iter = iter(self._fn_scope_list)
 
+        # scan all instructions to find array names and figure out their element size from access offsets
         self._array_stride = {}
         seen_order = []
         arr_offsets = {}
         for _, instr in self.tac:
-            for m in re.finditer(r'\b([A-Za-z_]\w*)\[(\d+)\]', instr):
+            for m in re.finditer(r'\b([A-Za-z_]\w*)\[(\d+)\]', instr):  # finds all array accesses with constant offset: 'name[number]'
                 aname, byte_off = m.group(1), int(m.group(2))
                 if aname not in self._arrays:
                     self._arrays[aname] = byte_off
@@ -992,7 +1024,7 @@ class TACtoRISCV:
                 set_type(aname, 'double')
 
         for _, instr in self.tac:
-            m = re.match(r'^(\w+)\[\d+\]\s*=\s*(\S+)$', instr)
+            m = re.match(r'^(\w+)\[\d+\]\s*=\s*(\S+)$', instr)  # matches array store with literal index: 'arr[N] = val'
             if m:
                 aname, val = m.group(1), m.group(2)
                 if aname in self._arrays and is_num_literal(val) and not is_int_literal(val):
@@ -1000,13 +1032,14 @@ class TACtoRISCV:
         self._array_order = seen_order
 
     def emit_missing_target_stubs(self):
+        # emits nop stubs for any jump targets that landed outside the current function's lines
         try:
             fn_targets, fn_lines = next(self._fn_scope_iter)
         except StopIteration:
             return
         beginfunc_map = {}
         for lnum, instr in self.tac:
-            m = re.match(r'^BeginFunc\s+(\w+)', instr)
+            m = re.match(r'^BeginFunc\s+(\w+)', instr)  # matches: 'BeginFunc funcname'
             if m:
                 beginfunc_map[lnum] = m.group(1)
         missing = fn_targets - fn_lines
@@ -1026,6 +1059,7 @@ class TACtoRISCV:
                 self.ins("nop")
 
     def _prescan_function(self, fn_tac_lines):
+        # walks all instructions in a function to make sure every variable is registered with the allocator
         KEYWORDS = {'BeginFunc','EndFunc','PopParam','PushParam','Return',
                     'Call','goto','if','int','float','char','string','double',
                     'bool','long','short','unsigned','uint','byte','word',
@@ -1034,53 +1068,54 @@ class TACtoRISCV:
                     'rtz','main'}
 
         for instr in fn_tac_lines:
-            instr = re.sub(r'^//.*', '', instr).strip()
+            instr = re.sub(r'^//.*', '', instr).strip()  # matches full-line TAC comment starting with //
             if not instr:
                 continue
-            if re.match(r'^(BeginFunc|EndFunc)\b', instr):
+            if re.match(r'^(BeginFunc|EndFunc)\b', instr):  # matches BeginFunc or EndFunc at start of line
                 continue
 
-            m = re.match(r'^(\w+)\s*=\s*Call\s+\w+$', instr)
+            m = re.match(r'^(\w+)\s*=\s*Call\s+\w+$', instr)  # matches: 'var = Call funcname'
             if m:
                 self.ra_alloc.ensure(m.group(1)); continue
 
-            if re.match(r'^Call\s+\w+$', instr):
+            if re.match(r'^Call\s+\w+$', instr):  # matches: 'Call funcname' with no return value
                 continue
 
-            m = re.match(r'^PushParam\s+(\S+)$', instr)
+            m = re.match(r'^PushParam\s+(\S+)$', instr)  # matches: 'PushParam <value>'
             if m:
                 tok = m.group(1)
-                if not is_num_literal(tok) and re.match(r'^[A-Za-z_]\w*$', tok) and tok not in KEYWORDS:
+                if not is_num_literal(tok) and re.match(r'^[A-Za-z_]\w*$', tok) and tok not in KEYWORDS:  # matches a valid plain variable name
                     self.ra_alloc.ensure(tok)
                 continue
 
-            m = re.match(r'^PopParam\s+(\w+)$', instr)
+            m = re.match(r'^PopParam\s+(\w+)$', instr)  # matches: 'PopParam <varname>'
             if m:
                 self.ra_alloc.ensure(m.group(1)); continue
 
-            m = re.match(r'^Return\s+(\S+)$', instr)
+            m = re.match(r'^Return\s+(\S+)$', instr)  # matches: 'Return <value>'
             if m:
                 tok = m.group(1)
-                if not is_num_literal(tok) and re.match(r'^[A-Za-z_]\w*$', tok) and tok not in KEYWORDS:
+                if not is_num_literal(tok) and re.match(r'^[A-Za-z_]\w*$', tok) and tok not in KEYWORDS:  # matches a valid plain variable name
                     self.ra_alloc.ensure(tok)
                 continue
 
-            m = re.match(r'^(\w+)\s*=\s*\(\w+\)\s*(\S+)$', instr)
+            m = re.match(r'^(\w+)\s*=\s*\(\w+\)\s*(\S+)$', instr)  # matches type cast: 'dst = (type) src'
             if m:
                 self.ra_alloc.ensure(m.group(1))
                 src = m.group(2)
                 if not is_num_literal(src) and not src.startswith('"') and \
-                        re.match(r'^[A-Za-z_]\w*$', src) and src not in KEYWORDS:
+                        re.match(r'^[A-Za-z_]\w*$', src) and src not in KEYWORDS:  # matches a valid plain variable name
                     self.ra_alloc.ensure(src)
                 continue
 
-            for tok in re.findall(r'\b([A-Za-z_]\w*)\b', instr):
-                if tok not in KEYWORDS and not re.match(r'^t\d+$', tok):
+            for tok in re.findall(r'\b([A-Za-z_]\w*)\b', instr):  # finds all identifiers (keywords + variable names) in the line
+                if tok not in KEYWORDS and not re.match(r'^t\d+$', tok):  # matches TAC temp vars: t0, t1, t2, ...
                     self.ra_alloc.ensure(tok)
-            for tok in re.findall(r'\bt\d+\b', instr):
+            for tok in re.findall(r'\bt\d+\b', instr):  # finds all TAC temp variable names (t0, t1, ...) in the line
                 self.ra_alloc.ensure(tok)
 
     def _preseed_float_types(self, tac_lines):
+        # propagates float type info before register allocation so we know which vars need fp regs
         FLOAT_OPS = {'+', '-', '*', '/'}
         changed = True
         while changed:
@@ -1088,20 +1123,20 @@ class TACtoRISCV:
             for instr in tac_lines:
                 instr = instr.strip()
 
-                m = re.match(r'^(\w+)\s*=\s*(\S+)$', instr)
+                m = re.match(r'^(\w+)\s*=\s*(\S+)$', instr)  # matches simple assignment: 'dst = value'
                 if m:
                     dst, val = m.group(1), m.group(2)
                     if is_num_literal(val) and not is_int_literal(val):
                         if get_type(dst) not in ('float', 'double'):
                             set_type(dst, 'float')
                             changed = True
-                    elif re.match(r'^[A-Za-z_]\w*$', val) and get_type(val) in ('float', 'double'):
+                    elif re.match(r'^[A-Za-z_]\w*$', val) and get_type(val) in ('float', 'double'):  # matches a valid plain variable name
                         if get_type(dst) not in ('float', 'double'):
                             set_type(dst, 'float')
                             changed = True
                     continue
 
-                m = re.match(r'^(\w+)\s*=\s*\((float|double)\)\s*(\S+)$', instr)
+                m = re.match(r'^(\w+)\s*=\s*\((float|double)\)\s*(\S+)$', instr)  # matches float/double cast: 'dst = (float) src'
                 if m:
                     dst, cast_type = m.group(1), m.group(2)
                     if get_type(dst) not in ('float', 'double'):
@@ -1109,6 +1144,7 @@ class TACtoRISCV:
                         changed = True
                     continue
 
+                # matches: 'dst = op1 <operator> op2' for float type propagation
                 m = re.match(
                     r'^(\w+)\s*=\s*(.+?)\s*(<=|>=|==|!=|<<|>>|[+\-*/%&|^<>])\s*(.+)$',
                     instr)
@@ -1120,23 +1156,24 @@ class TACtoRISCV:
                     if op in FLOAT_OPS:
                         op1_float = (
                             (is_num_literal(op1) and not is_int_literal(op1)) or
-                            (re.match(r'^[A-Za-z_]\w*$', op1) and get_type(op1) in ('float','double'))
+                            (re.match(r'^[A-Za-z_]\w*$', op1) and get_type(op1) in ('float','double'))  # matches a valid plain variable name
                         )
                         op2_float = (
                             (is_num_literal(op2) and not is_int_literal(op2)) or
-                            (re.match(r'^[A-Za-z_]\w*$', op2) and get_type(op2) in ('float','double'))
+                            (re.match(r'^[A-Za-z_]\w*$', op2) and get_type(op2) in ('float','double'))  # matches a valid plain variable name
                         )
                         if (op1_float or op2_float) and get_type(dst) not in ('float','double'):
                             set_type(dst, 'float')
                             changed = True
                     continue
 
-                m = re.match(r'^print(float|double)\s+(\w+)$', instr)
+                m = re.match(r'^print(float|double)\s+(\w+)$', instr)  # matches: 'printfloat var' or 'printdouble var'
                 if m and get_type(m.group(2)) not in ('float', 'double'):
                     set_type(m.group(2), m.group(1))
                     changed = True
 
     def prologue(self, fname, nparams, fn_tac_lines=None):
+        # emits the function entry: sets up stack frame, saves registers, runs reg alloc for this function
         self.fname        = fname
         self.in_main      = (fname == "main")
         self._in_function = True
@@ -1167,7 +1204,7 @@ class TACtoRISCV:
 
         if not needs_fp and fn_tac_lines:
             for var in self.ra_alloc._spill:
-                if re.match(r'^t\d+$', var) and get_type(var) not in ('float', 'double'):
+                if re.match(r'^t\d+$', var) and get_type(var) not in ('float', 'double'):  # matches TAC temp vars: t0, t1, t2, ...
                     needs_fp = True
                     break
 
@@ -1175,7 +1212,7 @@ class TACtoRISCV:
         if needs_fp and fn_tac_lines:
             fp_pool = set(RegAlloc.FP_CALLER_POOL) | set(RegAlloc.FP_SAVED_POOL)
             for line in fn_tac_lines:
-                for tok in re.findall(r'\b[A-Za-z_]\w*\b', line):
+                for tok in re.findall(r'\b[A-Za-z_]\w*\b', line):  # finds all identifier tokens in the line
                     if (get_type(tok) in ('float', 'double')
                             and tok not in self.ra_alloc._map
                             and tok not in self.ra_alloc._spill):
@@ -1219,6 +1256,7 @@ class TACtoRISCV:
             self.emit_array_la()
 
     def epilogue(self):
+        # emits the function exit: restores saved registers, tears down the stack frame, returns
         self.emit_missing_target_stubs()
 
         sregs    = self._prologue_sregs
@@ -1276,13 +1314,14 @@ class TACtoRISCV:
         self.ins("ret")
 
     def emit_branch(self, lhs, op, rhs, label):
-        if re.match(r'^(\w+)\[(\w+)\]$', lhs):
+        # emits a conditional branch instruction, loading operands into scratch regs if needed
+        if re.match(r'^(\w+)\[(\w+)\]$', lhs):  # matches array access: 'arr[index]'
             self._resolve_operand(lhs, "t4")
             lhs_reg = "t4"
         else:
             lhs_reg = self.var_reg_or_load(lhs, "t4")
 
-        if re.match(r'^(\w+)\[(\w+)\]$', rhs):
+        if re.match(r'^(\w+)\[(\w+)\]$', rhs):  # matches array access: 'arr[index]'
             self._resolve_operand(rhs, "t5")
             rhs_reg = "t5"
         else:
@@ -1298,13 +1337,14 @@ class TACtoRISCV:
             self.ins(br, f"{lhs_reg}, {rhs_reg}, {label}")
 
     def emit_binary(self, dst_var, op1, op, op2):
+        # emits a binary arithmetic or bitwise operation, using immediate form when the second operand is a literal
         rr, ri = self.BINOP_MAP.get(op, (None, None))
         if not rr:
             self.e(f"    # [UNSUPPORTED OP '{op}']")
             return
 
         d = self.dst_reg(dst_var)
-        if re.match(r'^(\w+)\[(\w+)\]$', op1):
+        if re.match(r'^(\w+)\[(\w+)\]$', op1):  # matches array access: 'arr[index]'
             self._resolve_operand(op1, "t4")
             op1_reg = "t4"
         else:
@@ -1318,7 +1358,7 @@ class TACtoRISCV:
             self.ins("li", "t5", to_int(op2))
             self.ins(rr, f"{d}, {op1_reg}", "t5")
         else:
-            if re.match(r'^(\w+)\[(\w+)\]$', op2):
+            if re.match(r'^(\w+)\[(\w+)\]$', op2):  # matches array access: 'arr[index]'
                 self._resolve_operand(op2, "t5")
                 op2_reg = "t5"
             else:
@@ -1331,6 +1371,7 @@ class TACtoRISCV:
         self.flush_dst(dst_var, d)
 
     def _resolve_char_literal(self, val):
+        # converts character literals like '\n' or 'A' to their integer ASCII values
         escape_map = {
             "'\\0'": "0",  r"'\0'": "0",
             "'\\n'": "10", r"'\n'": "10",
@@ -1340,16 +1381,17 @@ class TACtoRISCV:
         }
         if val in escape_map:
             return escape_map[val]
-        m = re.match(r"^'(.)'$", val)
+        m = re.match(r"^'(.)'$", val)  # matches a single-character literal like 'a' or 'Z'
         if m:
             return str(ord(m.group(1)))
-        m = re.match(r"^'(\d+)'$", val)
+        m = re.match(r"^'(\d+)'$", val)  # matches a digit stored as a char literal like '3'
         if m:
             return m.group(1)
         return val
 
     def _resolve_operand(self, raw, scratch):
-        m = re.match(r'^(\w+)\[(\w+)\]$', raw)
+        # if operand is an array access like arr[i], computes the address and loads the value
+        m = re.match(r'^(\w+)\[(\w+)\]$', raw)  # matches array access: 'arr[index]'
         if m:
             arr, off = m.group(1), m.group(2)
             self.arr_addr(arr, off, scratch)
@@ -1363,6 +1405,7 @@ class TACtoRISCV:
         return raw
 
     def emit_array_data(self):
+        # writes array declarations into the .data section with zero-initialized storage
         if not self._arrays:
             return
         self.e()
@@ -1374,6 +1417,7 @@ class TACtoRISCV:
             self.out.append(f"{aname}: .word {zeros}")
 
     def emit_array_la(self):
+        # loads the base address of each array into its assigned register at function entry
         for aname in self._array_order:
             reg = self.ra_alloc.reg(aname)
             if reg:
@@ -1383,6 +1427,7 @@ class TACtoRISCV:
                 self.ins("sd",  "t4", f"{self.ra_alloc.spill_offset(aname)}(s0)")
 
     def arr_addr(self, arr, off, addr_reg="t4"):
+        # computes the effective address for arr[off] and puts it in addr_reg
         if is_int_literal(off):
             v = to_int(off)
             if self.ra_alloc.is_spilled(arr):
@@ -1416,6 +1461,7 @@ class TACtoRISCV:
         return addr_reg
 
     def emit_call(self, fname):
+        # sets up arguments in the right registers (a0-a7 for ints, fa0-fa7 for floats) then calls the function
         param_types = getattr(self, '_fn_param_types', {}).get(fname, [])
         n = len(self.param_q)
         ordered = []
@@ -1428,7 +1474,7 @@ class TACtoRISCV:
             val_str = str(val)
             if is_num_literal(val_str) and not is_int_literal(val_str):
                 ptype = 'float'
-            elif re.match(r'^[A-Za-z_]\w*$', val_str) and get_type(val_str) in ('float','double'):
+            elif re.match(r'^[A-Za-z_]\w*$', val_str) and get_type(val_str) in ('float','double'):  # matches a valid plain variable name
                 ptype = get_type(val_str)
             ordered.append((val, ptype))
 
@@ -1493,8 +1539,9 @@ class TACtoRISCV:
         self.param_q.clear()
 
     def _global_type_prescan(self):
+        # scans all TAC before codegen to infer variable types from print/input/cast instructions
         for _, instr in self.tac:
-            m = re.match(r'^print(int|long|short|float|double|char)\s+(\w+)$', instr)
+            m = re.match(r'^print(int|long|short|float|double|char)\s+(\w+)$', instr)  # matches: 'print<type> <varname>'
             if m:
                 kind, var = m.group(1), m.group(2)
                 tmap = {'int':'int','long':'long','short':'short',
@@ -1502,7 +1549,7 @@ class TACtoRISCV:
                 set_type(var, tmap[kind])
                 continue
 
-            m = re.match(r'^input(int|long|short|float|double|char)\s+(\w+)$', instr)
+            m = re.match(r'^input(int|long|short|float|double|char)\s+(\w+)$', instr)  # matches: 'input<type> <varname>'
             if m:
                 kind, var = m.group(1), m.group(2)
                 tmap = {'int':'int','long':'long','short':'short',
@@ -1510,7 +1557,7 @@ class TACtoRISCV:
                 set_type(var, tmap[kind])
                 continue
 
-            m = re.match(r'^(\w+)\s*=\s*\((float|double|long|short|char|int)\)\s*\S+$', instr)
+            m = re.match(r'^(\w+)\s*=\s*\((float|double|long|short|char|int)\)\s*\S+$', instr)  # matches type cast assignment: 'dst = (type) ...'
             if m:
                 var, typ = m.group(1), m.group(2)
                 set_type(var, typ)
@@ -1522,9 +1569,9 @@ class TACtoRISCV:
         fn_param_types = {}
 
         for _, instr in self.tac:
-            m_bf = re.match(r'^BeginFunc\s+(\w+)', instr)
-            m_ef = re.match(r'^EndFunc\s+(\w+)', instr)
-            m_pp = re.match(r'^PopParam\s+(\w+)$', instr)
+            m_bf = re.match(r'^BeginFunc\s+(\w+)', instr)  # matches: 'BeginFunc funcname'
+            m_ef = re.match(r'^EndFunc\s+(\w+)', instr)  # matches: 'EndFunc funcname'
+            m_pp = re.match(r'^PopParam\s+(\w+)$', instr)  # matches: 'PopParam <varname>'
             if m_bf:
                 in_fn = True; cur_fn = m_bf.group(1); cur_fn_params = []
             elif m_pp and in_fn:
@@ -1536,8 +1583,8 @@ class TACtoRISCV:
         param_q_tmp = []
         calling_fn = None
         for _, instr in self.tac:
-            m_pp = re.match(r'^PushParam\s+(\S+)$', instr)
-            m_cx = re.match(r'^(?:\w+\s*=\s*)?Call\s+(\w+)$', instr)
+            m_pp = re.match(r'^PushParam\s+(\S+)$', instr)  # matches: 'PushParam <value>'
+            m_cx = re.match(r'^(?:\w+\s*=\s*)?Call\s+(\w+)$', instr)  # matches 'Call fname' or 'var = Call fname'
             if m_pp:
                 param_q_tmp.append(m_pp.group(1))
             elif m_cx:
@@ -1549,6 +1596,7 @@ class TACtoRISCV:
                     if pushed_val and get_type(pvar) == 'int':
                         if is_num_literal(pushed_val) and not is_int_literal(pushed_val):
                             set_type(pvar, 'float')
+                        # matches a valid identifier name
                         elif re.match(r'^[A-Za-z_]\w*$', pushed_val) and \
                                 get_type(pushed_val) in ('float','double'):
                             set_type(pvar, 'float')
@@ -1558,13 +1606,13 @@ class TACtoRISCV:
         while changed:
             changed = False
             for _, instr in self.tac:
-                m = re.match(r'^(\w+)\s*=\s*([A-Za-z_]\w*)$', instr)
+                m = re.match(r'^(\w+)\s*=\s*([A-Za-z_]\w*)$', instr)  # matches copy: 'dst = src' (plain var to plain var)
                 if m:
                     dst, src = m.group(1), m.group(2)
                     if get_type(src) in ('float','double') and get_type(dst) not in ('float','double'):
                         set_type(dst, get_type(src)); changed = True
                     continue
-                m = re.match(r'^(\w+)\s*=\s*(\S+)\s*[+\-*/]\s*(\S+)$', instr)
+                m = re.match(r'^(\w+)\s*=\s*(\S+)\s*[+\-*/]\s*(\S+)$', instr)  # matches arithmetic expression for float type inference
                 if m:
                     dst, op1, op2 = m.group(1), m.group(2), m.group(3)
                     op1_float = (is_num_literal(op1) and not is_int_literal(op1)) or \
@@ -1580,9 +1628,9 @@ class TACtoRISCV:
         fn_return_types = {}
         cur_fn = None
         for _, instr in self.tac:
-            m_bf = re.match(r'^BeginFunc\s+(\w+)', instr)
-            m_ef = re.match(r'^EndFunc\s+(\w+)', instr)
-            m_ret = re.match(r'^Return\s+(\S+)$', instr)
+            m_bf = re.match(r'^BeginFunc\s+(\w+)', instr)  # matches: 'BeginFunc funcname'
+            m_ef = re.match(r'^EndFunc\s+(\w+)', instr)  # matches: 'EndFunc funcname'
+            m_ret = re.match(r'^Return\s+(\S+)$', instr)  # matches: 'Return <value>'
             if m_bf:
                 cur_fn = m_bf.group(1)
             elif m_ef:
@@ -1599,6 +1647,7 @@ class TACtoRISCV:
         self._fn_return_types = fn_return_types
 
     def convert(self, tac_text):
+        # top-level entry point — parses TAC text, runs optimizations, and produces RISC-V assembly
         for raw in tac_text.splitlines():
             if not raw.strip():
                 continue
@@ -1610,18 +1659,20 @@ class TACtoRISCV:
         self.collect_targets()
         self._global_type_prescan()
 
+        #self.e("# RISC-V Assembly -- generated from TAC  (v6 Linux)")
+        #self.e("# Assemble: riscv64-linux-gnu-gcc -static -o prog output.s")
         self.e()
         self.e(".text")
 
         func_order = [instr.split()[1]
                       for _, instr in self.tac
-                      if re.match(r'^BeginFunc\s+', instr)]
+                      if re.match(r'^BeginFunc\s+', instr)]  # checks if line is a BeginFunc instruction
 
         fn_slices = {}
         cur_fn, cur_slice = None, []
         for _, instr in self.tac:
-            m_bf = re.match(r'^BeginFunc\s+(\w+)', instr)
-            is_ef = bool(re.match(r'^EndFunc\b', instr))
+            m_bf = re.match(r'^BeginFunc\s+(\w+)', instr)  # matches: 'BeginFunc funcname'
+            is_ef = bool(re.match(r'^EndFunc\b', instr))  # matches EndFunc keyword at start
             if m_bf:
                 cur_fn    = m_bf.group(1)
                 cur_slice = [instr]
@@ -1638,9 +1689,9 @@ class TACtoRISCV:
         global_tac = []
         _in_fn = False
         for lnum, instr in self.tac:
-            if re.match(r'^BeginFunc\b', instr):
+            if re.match(r'^BeginFunc\b', instr):  # matches BeginFunc at start of line
                 _in_fn = True
-            elif re.match(r'^EndFunc\b', instr):
+            elif re.match(r'^EndFunc\b', instr):  # matches EndFunc keyword at start
                 _in_fn = False
             elif not _in_fn:
                 global_tac.append((lnum, instr))
@@ -1665,7 +1716,7 @@ class TACtoRISCV:
             if not bare_needs_fp:
                 all_tac_temps_bare = set()
                 for line in all_instrs:
-                    for tok in re.findall(r'\bt\d+\b', line):
+                    for tok in re.findall(r'\bt\d+\b', line):  # finds all TAC temp variable names (t0, t1, ...) in the line
                         if get_type(tok) not in ('float', 'double'):
                             all_tac_temps_bare.add(tok)
                 if all_tac_temps_bare - self.ra_alloc._safe_scratch:
@@ -1675,7 +1726,7 @@ class TACtoRISCV:
             if bare_needs_fp:
                 fp_pool = set(RegAlloc.FP_CALLER_POOL) | set(RegAlloc.FP_SAVED_POOL)
                 for line in all_instrs:
-                    for tok in re.findall(r'\b[A-Za-z_]\w*\b', line):
+                    for tok in re.findall(r'\b[A-Za-z_]\w*\b', line):  # finds all identifier tokens in the line
                         if (get_type(tok) in ('float', 'double')
                                 and tok not in self.ra_alloc._map
                                 and tok not in self.ra_alloc._spill):
@@ -1695,7 +1746,7 @@ class TACtoRISCV:
             self.e()
             self.e("    .globl   main")
             self.lbl("main")
-            self.e("")
+            #self.e("    # -- bare TAC wrapped in main() for Linux linker --")
 
             if bare_frame > 0:
                 self.ins("addi", "sp, sp", f"-{bare_frame}")
@@ -1848,8 +1899,9 @@ class TACtoRISCV:
         return "\n".join(self.out) + "\n"
 
     def _dispatch(self, lnum, instr, fn_slices=None):
+        # routes a single TAC instruction to the appropriate emit handler
 
-        if lnum in self.jump_targets and not re.match(r'^BeginFunc\b', instr):
+        if lnum in self.jump_targets and not re.match(r'^BeginFunc\b', instr):  # skip label emit if this line IS a function entry
             self.e()
             self.lbl(self.tac_lbl(lnum))
 
@@ -1857,7 +1909,7 @@ class TACtoRISCV:
             #self.e(f"    # [ELIM] {instr}")
             return
 
-        m = re.match(r'^BeginFunc\s+(\w+)(?:\s+(\d+))?$', instr)
+        m = re.match(r'^BeginFunc\s+(\w+)(?:\s+(\d+))?$', instr)  # matches: 'BeginFunc funcname [paramcount]'
         if m:
             fname  = m.group(1)
             nparams = int(m.group(2) or 0)
@@ -1865,12 +1917,12 @@ class TACtoRISCV:
             self.prologue(fname, nparams, slice_)
             return
 
-        m = re.match(r'^EndFunc\b', instr)
+        m = re.match(r'^EndFunc\b', instr)  # matches EndFunc keyword at start
         if m:
             self.epilogue()
             return
 
-        m = re.match(r'^PopParam\s+(\w+)$', instr)
+        m = re.match(r'^PopParam\s+(\w+)$', instr)  # matches: 'PopParam <varname>'
         if m:
             var = m.group(1)
             vtype = get_type(var)
@@ -1910,12 +1962,12 @@ class TACtoRISCV:
                     self.store_var(var, "t4")
             return
 
-        m = re.match(r'^PushParam\s+(.+)$', instr)
+        m = re.match(r'^PushParam\s+(.+)$', instr)  # matches: 'PushParam <value>'
         if m:
             self.param_q.append(m.group(1).strip())
             return
 
-        m = re.match(r'^(\w+)\s*=\s*Call\s+(\w+)$', instr)
+        m = re.match(r'^(\w+)\s*=\s*Call\s+(\w+)$', instr)  # matches: 'var = Call funcname'
         if m:
             dst_var, fname = m.group(1), m.group(2)
             self.emit_call(fname)
@@ -1933,12 +1985,12 @@ class TACtoRISCV:
                 self.store_var(dst_var, "a0")
             return
 
-        m = re.match(r'^Call\s+(\w+)$', instr)
+        m = re.match(r'^Call\s+(\w+)$', instr)  # matches: 'Call funcname'
         if m:
             self.emit_call(m.group(1))
             return
 
-        m = re.match(r'^Return\s+(.+)$', instr)
+        m = re.match(r'^Return\s+(.+)$', instr)  # matches: 'Return <value>'
         if m:
             val = m.group(1).strip()
             val_is_float = (
@@ -1969,7 +2021,7 @@ class TACtoRISCV:
             self.ins("j", self.epilogue_lbl)
             return
 
-        m = re.match(r'^goto\s+(\d+)$', instr)
+        m = re.match(r'^goto\s+(\d+)$', instr)  # matches unconditional jump: 'goto <linenum>'
         if m:
             tgt = int(m.group(1))
             next_lnum = None
@@ -1981,6 +2033,7 @@ class TACtoRISCV:
                 self.ins("j", self.tac_lbl(tgt))
             return
 
+        # matches conditional branch: 'if lhs op rhs goto <linenum>'
         m = re.match(
             r'^if\s+(\S+)\s+(==|!=|<=|>=|<<|>>|<|>|lt|gt|le|ge|eq|ne)\s+(\S+)\s+goto\s+(\d+)$',
             instr)
@@ -1989,10 +2042,10 @@ class TACtoRISCV:
             self.emit_branch(lhs, op, rhs, self.tac_lbl(tgt))
             return
 
-        m = re.match(r'^print(int|long|short|float|double|char|string)\s+(.+)$', instr)
+        m = re.match(r'^print(int|long|short|float|double|char|string)\s+(.+)$', instr)  # matches any print instruction: 'print<type> <value>'
         if m:
             kind, val = m.group(1), m.group(2).strip()
-            if re.match(r'^[A-Za-z_]\w*$', val):
+            if re.match(r'^[A-Za-z_]\w*$', val):  # matches a valid plain variable name
                 if kind == 'long':   set_type(val, 'long')
                 elif kind == 'short': set_type(val, 'short')
                 elif kind == 'double': set_type(val, 'double')
@@ -2002,7 +2055,7 @@ class TACtoRISCV:
             if kind in ("int", "short"):
                 self.use_extern("printf"); self.use_fmt(".fmt_int")
                 self.ins("la", "a0", ".fmt_int")
-                arr_m = re.match(r'^(\w+)\[(\w+)\]$', val)
+                arr_m = re.match(r'^(\w+)\[(\w+)\]$', val)  # matches array access: 'arr[index]'
                 if arr_m:
                     self._resolve_operand(val, "t4")
                     self.ins("mv", "a1", "t4")
@@ -2014,7 +2067,7 @@ class TACtoRISCV:
             elif kind == "long":
                 self.use_extern("printf"); self.use_fmt(".fmt_long")
                 self.ins("la", "a0", ".fmt_long")
-                arr_m = re.match(r'^(\w+)\[(\w+)\]$', val)
+                arr_m = re.match(r'^(\w+)\[(\w+)\]$', val)  # matches array access: 'arr[index]'
                 if arr_m:
                     self._resolve_operand(val, "t4")
                     self.ins("mv", "a1", "t4")
@@ -2027,7 +2080,7 @@ class TACtoRISCV:
                 val = self._resolve_char_literal(val)
                 is_str_var = (hasattr(self.ra_alloc, '_string_vars') and
                               val in self.ra_alloc._string_vars)
-                arr_m = re.match(r'^(\w+)\[(\w+)\]$', val)
+                arr_m = re.match(r'^(\w+)\[(\w+)\]$', val)  # matches array access: 'arr[index]'
                 if is_str_var:
                     self.use_extern("printf"); self.use_fmt(".fmt_str")
                     self.ins("la", "a0", ".fmt_str")
@@ -2051,7 +2104,7 @@ class TACtoRISCV:
             elif kind in ("float", "double"):
                 self.use_extern("printf"); self.use_fmt(".fmt_float")
                 self.ins("la", "a0", ".fmt_float")
-                arr_m = re.match(r'^(\w+)\[(\w+)\]$', val)
+                arr_m = re.match(r'^(\w+)\[(\w+)\]$', val)  # matches array access: 'arr[index]'
                 if arr_m and get_type(arr_m.group(1)) in ('float', 'double'):
                     self._resolve_operand(val, "t4")
                 elif is_num_literal(val):
@@ -2077,7 +2130,7 @@ class TACtoRISCV:
                 self.ins("call", "printf")
             return
 
-        m = re.match(r'^input(int|long|short|float|double|char|string)\s+(\w+)$', instr)
+        m = re.match(r'^input(int|long|short|float|double|char|string)\s+(\w+)$', instr)  # matches any input instruction: 'input<type> <varname>'
         if m:
             kind, var = m.group(1), m.group(2)
             if kind == 'long':   set_type(var, 'long')
@@ -2130,13 +2183,13 @@ class TACtoRISCV:
                 self.ins("call", "fgets")
             return
 
-        m = re.match(r'^(\w+)\[(\d+)\]\s*=\s*(.+)$', instr)
+        m = re.match(r'^(\w+)\[(\d+)\]\s*=\s*(.+)$', instr)  # matches array write with literal index: 'arr[N] = ...'
         if m:
             arr, byte_off, val = m.group(1), int(m.group(2)), m.group(3).strip()
             val = self._resolve_char_literal(val)
             self.arr_addr(arr, str(byte_off), "t4")
             arr_is_float = get_type(arr) in ('float', 'double')
-            rhs_m = re.match(r'^(\w+)\[(\w+)\]$', val)
+            rhs_m = re.match(r'^(\w+)\[(\w+)\]$', val)  # matches array access: 'arr[index]'
             if arr_is_float:
                 if rhs_m:
                     self.arr_addr(rhs_m.group(1), rhs_m.group(2), "t5")
@@ -2169,12 +2222,12 @@ class TACtoRISCV:
                 self.ins(s_ins, "t3", "0(t4)")
             return
 
-        m = re.match(r'^(\w+)\[(\w+)\]\s*=\s*(.+)$', instr)
+        m = re.match(r'^(\w+)\[(\w+)\]\s*=\s*(.+)$', instr)  # matches array write with any RHS: 'arr[idx] = ...'
         if m:
             arr, off_var, val = m.group(1), m.group(2), m.group(3).strip()
             val = self._resolve_char_literal(val)
             arr_is_float = get_type(arr) in ('float', 'double')
-            rhs_m = re.match(r'^(\w+)\[(\w+)\]$', val)
+            rhs_m = re.match(r'^(\w+)\[(\w+)\]$', val)  # matches array access: 'arr[index]'
             if arr_is_float:
                 if rhs_m:
                     self.arr_addr(rhs_m.group(1), rhs_m.group(2), "t5")
@@ -2231,7 +2284,7 @@ class TACtoRISCV:
                     self.ins(s_ins, "t3", "0(t4)")
             return
 
-        m = re.match(r'^(\w+)\s*=\s*-\s+(\w+)\[(\w+)\]$', instr)
+        m = re.match(r'^(\w+)\s*=\s*-\s+(\w+)\[(\w+)\]$', instr)  # matches unary negation of array element: 'dst = - arr[idx]'
         if m:
             dst_var, arr, off = m.group(1), m.group(2), m.group(3)
             self.e(f"    # unary minus of array element {arr}[{off}]")
@@ -2242,11 +2295,11 @@ class TACtoRISCV:
             self.flush_dst(dst_var, d)
             return
 
-        m = re.match(r'^(\w+)\s*=\s*-\s*(\w+)(\[.+\])$', instr)
+        m = re.match(r'^(\w+)\s*=\s*-\s*(\w+)(\[.+\])$', instr)  # matches negated array access: 'dst = -arr[...]'
         if m:
             dst_var, arr, subscript = m.group(1), m.group(2), m.group(3)
             self.e(f"    # unary minus of {arr}{subscript}")
-            idx_m = re.match(r'\[(\w+)\]', subscript)
+            idx_m = re.match(r'\[(\w+)\]', subscript)  # extracts the index variable from '[idx]'
             if idx_m:
                 self.arr_addr(arr, idx_m.group(1), "t4")
                 self.ins("lw", "t4", "0(t4)")
@@ -2257,7 +2310,7 @@ class TACtoRISCV:
             self.flush_dst(dst_var, d)
             return
 
-        m = re.match(r'^(\w+)\s*=\s*(\w+)\[(\w+)\]$', instr)
+        m = re.match(r'^(\w+)\s*=\s*(\w+)\[(\w+)\]$', instr)  # matches array read: 'dst = arr[index]'
         if m:
             dst_var, arr, off = m.group(1), m.group(2), m.group(3)
             self.e(f"    # array read {dst_var} = {arr}[{off}]")
@@ -2296,7 +2349,7 @@ class TACtoRISCV:
                 self.flush_dst(dst_var, d)
             return
 
-        m = re.match(r'^(\w+)\s*=\s*\((\w+)\)\s*(".*?"|\S+)$', instr)
+        m = re.match(r'^(\w+)\s*=\s*\((\w+)\)\s*(".*?"|\S+)$', instr)  # matches: 'dst = (type) src' where src can be a quoted string or a token
         if m:
             dst_var, cast_type, src = m.group(1), m.group(2), m.group(3)
             self.e(f"    # cast ({cast_type})")
@@ -2416,7 +2469,7 @@ class TACtoRISCV:
                 self.flush_dst(dst_var, d)
             return
 
-        m = re.match(r'^(\w+)\s*=\s*-\s+(\S+)$', instr)
+        m = re.match(r'^(\w+)\s*=\s*-\s+(\S+)$', instr)  # matches unary minus with space: 'dst = - val'
         if m:
             dst_var, src = m.group(1), m.group(2)
             src = self._resolve_char_literal(src)
@@ -2429,7 +2482,7 @@ class TACtoRISCV:
             self.flush_dst(dst_var, d)
             return
 
-        m = re.match(r'^(\w+)\s*=\s*-(\w+)$', instr)
+        m = re.match(r'^(\w+)\s*=\s*-(\w+)$', instr)  # matches compact unary minus: 'dst = -var'
         if m:
             dst_var, src = m.group(1), m.group(2)
             src = self._resolve_char_literal(src)
@@ -2442,7 +2495,7 @@ class TACtoRISCV:
             self.flush_dst(dst_var, d)
             return
 
-        m = re.match(r'^(\w+)\s*=\s*~\s*(\w+)$', instr)
+        m = re.match(r'^(\w+)\s*=\s*~\s*(\w+)$', instr)  # matches bitwise NOT: 'dst = ~var'
         if m:
             dst_var, src = m.group(1), m.group(2)
             d = self.dst_reg(dst_var)
@@ -2451,6 +2504,7 @@ class TACtoRISCV:
             self.flush_dst(dst_var, d)
             return
 
+        # matches any binary expression: 'dst = op1 <operator> op2'
         m = re.match(
             r'^(\w+)\s*=\s*(.+?)\s*(<=|>=|==|!=|<<|>>|[+\-*/%&|^<>])\s*(.+)$',
             instr)
@@ -2463,7 +2517,7 @@ class TACtoRISCV:
             def _is_float_val(v):
                 if is_num_literal(v) and not is_int_literal(v):
                     return True
-                if re.match(r'^[A-Za-z_]\w*$', v) and get_type(v) in ('float', 'double'):
+                if re.match(r'^[A-Za-z_]\w*$', v) and get_type(v) in ('float', 'double'):  # matches a valid plain variable name
                     return True
                 if hasattr(self.ra_alloc, '_float_vars') and v in self.ra_alloc._float_vars:
                     return True
@@ -2513,8 +2567,8 @@ class TACtoRISCV:
 
             if (op1_is_float or op2_is_float) and op in FLOAT_OPS:
                 fop = FLOAT_OPS[op]
-                op1_fp = self._is_fp_reg(op1_raw) if re.match(r'^[A-Za-z_]\w*$', op1_raw) else None
-                op2_fp = self._is_fp_reg(op2_raw) if re.match(r'^[A-Za-z_]\w*$', op2_raw) else None
+                op1_fp = self._is_fp_reg(op1_raw) if re.match(r'^[A-Za-z_]\w*$', op1_raw) else None  # matches a valid plain variable name
+                op2_fp = self._is_fp_reg(op2_raw) if re.match(r'^[A-Za-z_]\w*$', op2_raw) else None  # matches a valid plain variable name
                 if not hasattr(self.ra_alloc, '_float_vars'):
                     self.ra_alloc._float_vars = set()
                 self.ra_alloc._float_vars.add(dst_var)
@@ -2536,12 +2590,12 @@ class TACtoRISCV:
                 return
             CMP_OPS = {'<', '>', '<=', '>=', '==', '!='}
             if op in CMP_OPS:
-                if re.match(r'^(\w+)\[(\w+)\]$', op1_raw):
+                if re.match(r'^(\w+)\[(\w+)\]$', op1_raw):  # matches array access: 'arr[index]'
                     self._resolve_operand(op1_raw, "t4")
                     op1_reg = "t4"
                 else:
                     op1_reg = self.var_reg_or_load(op1_raw, "t4")
-                if re.match(r'^(\w+)\[(\w+)\]$', op2_raw):
+                if re.match(r'^(\w+)\[(\w+)\]$', op2_raw):  # matches array access: 'arr[index]'
                     self._resolve_operand(op2_raw, "t5")
                     op2_reg = "t5"
                 elif is_num_literal(op2_raw):
@@ -2577,7 +2631,7 @@ class TACtoRISCV:
                 self.e(f"    # [UNSUPPORTED OP '{op}']")
                 return
 
-            if re.match(r'^(\w+)\[(\w+)\]$', op1_raw):
+            if re.match(r'^(\w+)\[(\w+)\]$', op1_raw):  # matches array access: 'arr[index]'
                 self._resolve_operand(op1_raw, "t4")
                 op1_reg = "t4"
             else:
@@ -2593,7 +2647,7 @@ class TACtoRISCV:
                 self.ins("li", "t5", to_int(op2_raw))
                 self.ins(rr, f"{d}, {op1_reg}", "t5")
             else:
-                if re.match(r'^(\w+)\[(\w+)\]$', op2_raw):
+                if re.match(r'^(\w+)\[(\w+)\]$', op2_raw):  # matches array access: 'arr[index]'
                     self._resolve_operand(op2_raw, "t5")
                     op2_reg = "t5"
                 else:
@@ -2605,14 +2659,14 @@ class TACtoRISCV:
             self.flush_dst(dst_var, d)
             return
 
-        m = re.match(r'^(\w+)\s*=\s*(\S+)$', instr)
+        m = re.match(r'^(\w+)\s*=\s*(\S+)$', instr)  # matches simple assignment: 'dst = value'
         if m:
             dst_var, val = m.group(1), m.group(2)
             val = self._resolve_char_literal(val)
 
             src_is_float = (
                 (is_num_literal(val) and not is_int_literal(val)) or
-                (re.match(r'^[A-Za-z_]\w*$', val) and get_type(val) in ('float', 'double')) or
+                (re.match(r'^[A-Za-z_]\w*$', val) and get_type(val) in ('float', 'double')) or  # matches a valid plain variable name
                 (hasattr(self.ra_alloc, '_float_vars') and val in self.ra_alloc._float_vars)
             )
             dst_is_float = (
@@ -2624,7 +2678,7 @@ class TACtoRISCV:
                 if not hasattr(self.ra_alloc, '_float_vars'):
                     self.ra_alloc._float_vars = set()
                 self.ra_alloc._float_vars.add(dst_var)
-                set_type(dst_var, get_type(val) if re.match(r'^[A-Za-z_]\w*$', val) else 'float')
+                set_type(dst_var, get_type(val) if re.match(r'^[A-Za-z_]\w*$', val) else 'float')  # matches a valid plain variable name
 
                 dst_fp = self._is_fp_reg(dst_var)
                 tgt = dst_fp if dst_fp else "fa0"
@@ -2679,6 +2733,7 @@ class TACtoRISCV:
         self.e(f"    # [UNHANDLED] {instr}")
 
 def main():
+    # CLI entry point — reads a .tac file and writes out the .s assembly, optionally compiles and runs it
     import argparse
     import subprocess
     import shutil
@@ -2708,8 +2763,8 @@ def main():
         f.write(asm)
 
     lines    = asm.splitlines()
-    funcs    = [l for l in lines if re.match(r'^\w.*:$', l)]
-    branches = [l for l in lines if re.search(r'\b(beq|bne|blt|bge|j )', l)]
+    funcs    = [l for l in lines if re.match(r'^\w.*:$', l)]  # matches an assembly label line like 'funcname:'
+    branches = [l for l in lines if re.search(r'\b(beq|bne|blt|bge|j )', l)]  # matches any RISC-V branch or jump instruction in the output
     print(f"[OK] {args.input}  ->  {args.output}")
     print(f"     Functions : {len(funcs)}")
     print(f"     Branches  : {len(branches)}")
