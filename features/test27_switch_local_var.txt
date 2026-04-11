@@ -1,0 +1,17 @@
+
+@int choice is 2 $
+@int result is 0 $
+choose(choice) begin
+    option 1:
+        @int x is 10 $
+        result is x $
+        exit $
+    option 2:
+        @int y is 20 $
+        result is y $
+        exit $
+    def:
+        @int z is 30 $
+        result is z $
+end
+show(result)$      # expect 20

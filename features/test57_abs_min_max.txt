@@ -1,0 +1,17 @@
+@int a is abs(-5)$         
+@float b is abs(-3.14)$    
+
+@int x = 8, y = 3, z = -1$
+
+@int m is min(3, 1, 4, 1, 5)$    
+@int f is min(x,y,z)$
+
+@int n is max(3, 1, 4, 1, 5)$    
+@float g is max(x, y, z)$
+
+show(a)$
+show(b)$
+show(m)$
+show(f)$
+show(n)$
+show(g)$

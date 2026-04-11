@@ -1,0 +1,9 @@
+# TEST 03: Range Overflow for int type
+    @int i1 is 1000000$           # OK
+    @int i2 is 2147483647$        # OK: max value
+    @int i3 is 3000000000$        # ERROR: overflow (should warn) exceed max so - 2^32 %
+    @int i4 is -2200000000$       # ERROR: underflow (should warn) below min add 2^32
+    show(i1)$
+    show(i2)$
+    show(i3)$
+    show(i4)$

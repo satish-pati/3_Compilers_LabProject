@@ -1,0 +1,7 @@
+# TEST 11: Const Type with Conversions
+    fixed @int ci is 100$
+    @float f is ci$             # OK: const int to float
+    fixed @float cf is 3.14$
+    @int i is cf$               # WARN: precision loss (const doesn't prevent conversion)
+    show(f)$
+    show(i)$

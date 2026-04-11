@@ -1,6 +1,0 @@
-@int i is 42$
-@float f is 3.14$
-@char c is 'A'$
-@float result1 is i + f$
-@int result2 is i + c$
-@double d is f * 2$

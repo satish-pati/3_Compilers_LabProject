@@ -4,7 +4,6 @@ LEX = flex
 YACC = yacc
 
 all: parser parser2
-
 lexer_test: lexer.l
 	$(LEX) lexer.l
 	$(CC) $(CFLAGS) lex.yy.c -lfl -o lexer_test

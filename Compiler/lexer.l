@@ -39,6 +39,7 @@ input {append(yytext);strcpy(yylval.str,yytext);return INPUT;}
 "-=" {append(yytext);strcpy(yylval.str,yytext);return MASN;}
 "*=" {append(yytext);strcpy(yylval.str,yytext);return SASN;}
 "/=" {append(yytext);strcpy(yylval.str,yytext);return DASN;}
+"%=" {append(yytext);strcpy(yylval.str,yytext);return MODASN;}
 "bitand=" {append(yytext);strcpy(yylval.str,yytext);return BANDASN;}
 "bitor=" {append(yytext);strcpy(yylval.str,yytext);return BORASN;}
 "bitxor=" {append(yytext);strcpy(yylval.str,yytext);return BXORASN;}
@@ -72,6 +73,9 @@ ret  {append(yytext);strcpy(yylval.str,yytext);return RETURN;}
 call     {append(yytext);strcpy(yylval.str,yytext);return CALL;}
 show {append(yytext);strcpy(yylval.str,yytext);return PRINT;}
 "getsizeof" {append(yytext);return SIZEOF;}
+"abs"   {append(yytext);strcpy(yylval.str,yytext);return ABS;}
+"min"   {append(yytext);strcpy(yylval.str,yytext);return MIN;}
+"max"   {append(yytext);strcpy(yylval.str,yytext);return MAX;}
 loop {append(yytext);strcpy(yylval.str,yytext);return WHILE;}
 repeat {append(yytext);strcpy(yylval.str,yytext);return DO;}
 is    {append(yytext);return '=';}

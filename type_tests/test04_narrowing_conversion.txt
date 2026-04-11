@@ -1,0 +1,17 @@
+# TEST 04: Narrowing Conversions
+    @long big is 9999999999$
+    @int i is big$                # WARN: narrowing long to int
+    @long l=big $
+    show(i)$
+    show(l) $
+    @int medium is 70000$
+    @float f=medium $
+    show(f) $
+    @double d=f $
+    show(d) $
+    @short s is medium$           # WARN: narrowing int to short
+    @short small is 300$
+    @char c is small$             # WARN: narrowing short to char
+    show(s)$
+    show(c)$
+    

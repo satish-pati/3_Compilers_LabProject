@@ -1,0 +1,10 @@
+
+@int counter is 0 $
+++counter $
+show(counter)$     # expect 1
+counter++ $
+show(counter)$     # expect 2
+--counter $
+show(counter)$     # expect 1
+counter-- $
+show(counter)$     # expect 0

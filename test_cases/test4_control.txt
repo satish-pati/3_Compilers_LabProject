@@ -1,7 +1,0 @@
-@int x is 10$
-when (x gt 5) begin
-    @int y is 20$
-end
-loop (x lt 100) begin
-    x is x + 1$
-end

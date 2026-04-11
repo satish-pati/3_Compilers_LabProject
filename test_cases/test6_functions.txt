@@ -1,8 +1,0 @@
-func @int add(@int a, @int b) begin
-    ret a + b$
-end
-
-func @void display() begin
-    @int x is 42$
-end
-

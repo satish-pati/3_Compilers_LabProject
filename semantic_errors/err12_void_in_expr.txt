@@ -1,0 +1,6 @@
+# Error: Void function return value used in expression
+
+func @void greet() begin
+    @int x is 1$
+end
+@int z = call greet()$

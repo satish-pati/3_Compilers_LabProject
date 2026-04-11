@@ -1,0 +1,9 @@
+func @int main() {
+    @int x, y $
+    x = -5 $  # Double negation
+    y = -0 $     # Negate zero
+    @int z= -1 - (-2) $
+    show(x) $
+    show(y) $
+    ret 0 $
+}

@@ -1,5 +1,0 @@
-@int counter is 0$
-++counter$
-counter++$
---counter$
-counter--$

@@ -1,0 +1,4 @@
+# Error: Initializer list has more elements than array size
+
+@int arr[3] is {1, 2, 3, 4, 5}$
+

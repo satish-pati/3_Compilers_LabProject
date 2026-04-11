@@ -1,0 +1,15 @@
+# TEST 07: Function Argument Type Compatibility
+func @void printFloat( @float x) begin
+    show(x)$
+end
+
+func @void printInt(@int x) begin
+    show(x)$
+end
+
+
+call printFloat(42)$            
+                                    
+call printInt(2.3) $
+@int i=2 $
+call printFloat(i)$            

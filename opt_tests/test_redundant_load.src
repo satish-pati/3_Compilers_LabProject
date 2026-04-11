@@ -1,8 +1,0 @@
-func @int main() {
-    @int arr[5] = {1, 2, 3, 4, 5} $
-    @int a, b $
-    a = arr[2] $
-    b = arr[2] $
-    show(a + b) $
-    ret 0 $
-}

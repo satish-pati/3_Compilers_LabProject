@@ -1,0 +1,96 @@
+@int a is 5 $
+@int b is 10 $
+
+@int r1 is 0 $
+@int r2 is 0 $
+@int r3 is 0 $
+@int r4 is 0 $
+@int r5 is 0 $
+@int r6 is 0 $
+@int r7 is 0 $
+@int r8 is 0 $
+@int r9 is 0 $
+@int r10 is 0 $
+@int r11 is 0 $
+@int r12 is 0 $
+
+#  SYMBOLIC -
+
+if(a < b)
+begin
+    r1 is 1 $
+end
+
+if(a > b)
+begin
+    r2 is 1 $
+end
+
+if(a <= b)
+begin
+    r3 is 1 $
+end
+
+if(b >= a)
+begin
+    r4 is 1 $
+end
+
+if(a == b)
+begin
+    r5 is 1 $
+end
+
+if(a != b)
+begin
+    r6 is 1 $
+end
+
+
+# KEYWORD
+
+if(a lt b)
+begin
+    r7 is 1 $
+end
+
+if(a gt b)
+begin
+    r8 is 1 $
+end
+
+if(a le b)
+begin
+    r9 is 1 $
+end
+
+if(b ge a)
+begin
+    r10 is 1 $
+end
+
+if(a eq b)
+begin
+    r11 is 1 $
+end
+
+if(a ne b)
+begin
+    r12 is 1 $
+end
+
+
+#  OUTPUT RESULTS 
+
+show(r1)$
+show(r2)$
+show(r3)$
+show(r4)$
+show(r5)$
+show(r6)$
+show(r7)$
+show(r8)$
+show(r9)$
+show(r10)$
+show(r11)$
+show(r12)$

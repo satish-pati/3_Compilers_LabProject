@@ -1,0 +1,9 @@
+@int x $
+@float pi $
+@char c $
+x is 42 $
+pi is 3.14 $
+c is 'Z' $
+show(x)$           #  42
+show(pi)$          #  3.14
+show(c)$           #  Z

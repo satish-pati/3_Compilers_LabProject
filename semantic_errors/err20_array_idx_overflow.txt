@@ -1,0 +1,4 @@
+# Error: Initializer overflow + out-of-bounds constant index
+
+@int arr[3]={1,2,3,4,5} $
+arr[4]=2 $

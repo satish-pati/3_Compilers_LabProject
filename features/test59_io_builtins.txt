@@ -1,0 +1,5 @@
+@int x $
+show (x)$
+input (x)$
+show (x)$
+

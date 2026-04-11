@@ -1,0 +1,6 @@
+# Error: Modulo with float operand; bitwise with float
+
+@int x is 10$
+@float y is 20.5$
+@int z is x % y$
+@int w is x bitand y$

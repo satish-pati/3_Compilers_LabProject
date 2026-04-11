@@ -1,0 +1,9 @@
+func @int main() {
+    @int x $
+    input(x) $
+    show(x * 3) $   # Stays as x * 3
+    show(x * 5) $   # Stays as x * 5
+    show(x / 7) $   # Stays as x / 7
+    ret 0 $
+}
+

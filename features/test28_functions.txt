@@ -1,0 +1,14 @@
+
+func @int add(@int a, @int b) begin
+    if(a > 0) ret a + b $
+    ret 0 $
+end
+
+func @void display(@int val) begin
+    show(val)$
+    ret $
+end
+
+@int res is call add(3, 4) $
+show(res)$         # expect 7
+call display(99) $ # expect 99

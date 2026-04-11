@@ -5,36 +5,28 @@ digraph TAC {
   subgraph cluster_global {
     label="Global Scope";
     style=rounded; color=gray40; bgcolor="#f5f5dc";
-    n0 [label="0 arr[0] = 10"];
+    n0 [label="0 x = 1e+40"];
     n0 -> n1 [style=dashed];
-    n1 [label="1 arr[4] = 20"];
+    n1 [label="1 x_to_char = (char)x"];
     n1 -> n2 [style=dashed];
-    n2 [label="2 arr[8] = 30"];
+    n2 [label="2 x_to_short = (short)x"];
     n2 -> n3 [style=dashed];
-    n3 [label="3 arr[12] = 40"];
+    n3 [label="3 x_to_int = (int)x"];
     n3 -> n4 [style=dashed];
-    n4 [label="4 arr[16] = 50"];
+    n4 [label="4 x_to_long = (long)x"];
     n4 -> n5 [style=dashed];
-    n5 [label="5 n = 5"];
+    n5 [label="5 x_to_float = (float)x"];
     n5 -> n6 [style=dashed];
-    n6 [label="6 sum = 0"];
+    n6 [label="6 printfloat x"];
     n6 -> n7 [style=dashed];
-    n7 [label="7 i = 0"];
+    n7 [label="7 printchar x_to_char"];
     n7 -> n8 [style=dashed];
-    n8 [label="8 if i >= n goto 15"];
+    n8 [label="8 printint x_to_short"];
     n8 -> n9 [style=dashed];
-    n9 [label="9 t1 = i * 4"];
+    n9 [label="9 printint x_to_int"];
     n9 -> n10 [style=dashed];
-    n10 [label="10 t2 = sum + arr[t1]"];
+    n10 [label="10 printint x_to_long"];
     n10 -> n11 [style=dashed];
-    n11 [label="11 sum = t2"];
-    n11 -> n12 [style=dashed];
-    n12 [label="12 t0 = i + 1"];
-    n12 -> n13 [style=dashed];
-    n13 [label="13 i = t0"];
-    n13 -> n14 [style=dashed];
-    n14 [label="14 goto 8"];
-    n14 -> n15 [style=dashed];
-    n15 [label="15 printint sum"];
+    n11 [label="11 printfloat x_to_float"];
   }
 }

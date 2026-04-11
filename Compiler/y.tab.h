@@ -55,64 +55,68 @@ extern int yydebug;
     YYerror = 256,                 /* error  */
     YYUNDEF = 257,                 /* "invalid token"  */
     UMINUS = 258,                  /* UMINUS  */
-    BREAK = 259,                   /* BREAK  */
-    CONTINUE = 260,                /* CONTINUE  */
-    FOR = 261,                     /* FOR  */
-    DO = 262,                      /* DO  */
-    IDEN = 263,                    /* IDEN  */
-    NUM = 264,                     /* NUM  */
-    PASN = 265,                    /* PASN  */
-    MASN = 266,                    /* MASN  */
-    DASN = 267,                    /* DASN  */
-    SASN = 268,                    /* SASN  */
-    INC = 269,                     /* INC  */
-    DEC = 270,                     /* DEC  */
-    LT = 271,                      /* LT  */
-    GT = 272,                      /* GT  */
-    LE = 273,                      /* LE  */
-    GE = 274,                      /* GE  */
-    NE = 275,                      /* NE  */
-    OR = 276,                      /* OR  */
-    AND = 277,                     /* AND  */
-    EQ = 278,                      /* EQ  */
-    IF = 279,                      /* IF  */
-    ELSE = 280,                    /* ELSE  */
-    TR = 281,                      /* TR  */
-    FL = 282,                      /* FL  */
-    WHILE = 283,                   /* WHILE  */
-    INT = 284,                     /* INT  */
-    FLOAT = 285,                   /* FLOAT  */
-    CHAR = 286,                    /* CHAR  */
-    CHARR = 287,                   /* CHARR  */
-    MEOF = 288,                    /* MEOF  */
-    CONST = 289,                   /* CONST  */
-    SWITCH = 290,                  /* SWITCH  */
-    CASE = 291,                    /* CASE  */
-    DEFAULT = 292,                 /* DEFAULT  */
-    GOTO = 293,                    /* GOTO  */
-    STRING = 294,                  /* STRING  */
-    BOOL = 295,                    /* BOOL  */
-    PRINT = 296,                   /* PRINT  */
-    INPUT = 297,                   /* INPUT  */
-    SIZEOF = 298,                  /* SIZEOF  */
-    BANDASN = 299,                 /* BANDASN  */
-    BORASN = 300,                  /* BORASN  */
-    BXORASN = 301,                 /* BXORASN  */
-    LSHIFTASN = 302,               /* LSHIFTASN  */
-    RSHIFTASN = 303,               /* RSHIFTASN  */
-    SHORT = 304,                   /* SHORT  */
-    LONG = 305,                    /* LONG  */
-    DOUBLE = 306,                  /* DOUBLE  */
-    VOID = 307,                    /* VOID  */
-    BAND = 308,                    /* BAND  */
-    BOR = 309,                     /* BOR  */
-    BXOR = 310,                    /* BXOR  */
-    BNOT = 311,                    /* BNOT  */
-    LSHIFT = 312,                  /* LSHIFT  */
-    RSHIFT = 313,                  /* RSHIFT  */
-    FUNCTION = 314,                /* FUNCTION  */
-    RETURN = 315,                  /* RETURN  */
-    CALL = 316                     /* CALL  */
+    ABS = 259,                     /* ABS  */
+    MIN = 260,                     /* MIN  */
+    MAX = 261,                     /* MAX  */
+    MODASN = 262,                  /* MODASN  */
+    BREAK = 263,                   /* BREAK  */
+    CONTINUE = 264,                /* CONTINUE  */
+    FOR = 265,                     /* FOR  */
+    DO = 266,                      /* DO  */
+    IDEN = 267,                    /* IDEN  */
+    NUM = 268,                     /* NUM  */
+    PASN = 269,                    /* PASN  */
+    MASN = 270,                    /* MASN  */
+    DASN = 271,                    /* DASN  */
+    SASN = 272,                    /* SASN  */
+    INC = 273,                     /* INC  */
+    DEC = 274,                     /* DEC  */
+    LT = 275,                      /* LT  */
+    GT = 276,                      /* GT  */
+    LE = 277,                      /* LE  */
+    GE = 278,                      /* GE  */
+    NE = 279,                      /* NE  */
+    OR = 280,                      /* OR  */
+    AND = 281,                     /* AND  */
+    EQ = 282,                      /* EQ  */
+    IF = 283,                      /* IF  */
+    ELSE = 284,                    /* ELSE  */
+    TR = 285,                      /* TR  */
+    FL = 286,                      /* FL  */
+    WHILE = 287,                   /* WHILE  */
+    INT = 288,                     /* INT  */
+    FLOAT = 289,                   /* FLOAT  */
+    CHAR = 290,                    /* CHAR  */
+    CHARR = 291,                   /* CHARR  */
+    MEOF = 292,                    /* MEOF  */
+    CONST = 293,                   /* CONST  */
+    SWITCH = 294,                  /* SWITCH  */
+    CASE = 295,                    /* CASE  */
+    DEFAULT = 296,                 /* DEFAULT  */
+    GOTO = 297,                    /* GOTO  */
+    STRING = 298,                  /* STRING  */
+    BOOL = 299,                    /* BOOL  */
+    PRINT = 300,                   /* PRINT  */
+    INPUT = 301,                   /* INPUT  */
+    SIZEOF = 302,                  /* SIZEOF  */
+    BANDASN = 303,                 /* BANDASN  */
+    BORASN = 304,                  /* BORASN  */
+    BXORASN = 305,                 /* BXORASN  */
+    LSHIFTASN = 306,               /* LSHIFTASN  */
+    RSHIFTASN = 307,               /* RSHIFTASN  */
+    SHORT = 308,                   /* SHORT  */
+    LONG = 309,                    /* LONG  */
+    DOUBLE = 310,                  /* DOUBLE  */
+    VOID = 311,                    /* VOID  */
+    BAND = 312,                    /* BAND  */
+    BOR = 313,                     /* BOR  */
+    BXOR = 314,                    /* BXOR  */
+    BNOT = 315,                    /* BNOT  */
+    LSHIFT = 316,                  /* LSHIFT  */
+    RSHIFT = 317,                  /* RSHIFT  */
+    FUNCTION = 318,                /* FUNCTION  */
+    RETURN = 319,                  /* RETURN  */
+    CALL = 320                     /* CALL  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -122,64 +126,68 @@ extern int yydebug;
 #define YYerror 256
 #define YYUNDEF 257
 #define UMINUS 258
-#define BREAK 259
-#define CONTINUE 260
-#define FOR 261
-#define DO 262
-#define IDEN 263
-#define NUM 264
-#define PASN 265
-#define MASN 266
-#define DASN 267
-#define SASN 268
-#define INC 269
-#define DEC 270
-#define LT 271
-#define GT 272
-#define LE 273
-#define GE 274
-#define NE 275
-#define OR 276
-#define AND 277
-#define EQ 278
-#define IF 279
-#define ELSE 280
-#define TR 281
-#define FL 282
-#define WHILE 283
-#define INT 284
-#define FLOAT 285
-#define CHAR 286
-#define CHARR 287
-#define MEOF 288
-#define CONST 289
-#define SWITCH 290
-#define CASE 291
-#define DEFAULT 292
-#define GOTO 293
-#define STRING 294
-#define BOOL 295
-#define PRINT 296
-#define INPUT 297
-#define SIZEOF 298
-#define BANDASN 299
-#define BORASN 300
-#define BXORASN 301
-#define LSHIFTASN 302
-#define RSHIFTASN 303
-#define SHORT 304
-#define LONG 305
-#define DOUBLE 306
-#define VOID 307
-#define BAND 308
-#define BOR 309
-#define BXOR 310
-#define BNOT 311
-#define LSHIFT 312
-#define RSHIFT 313
-#define FUNCTION 314
-#define RETURN 315
-#define CALL 316
+#define ABS 259
+#define MIN 260
+#define MAX 261
+#define MODASN 262
+#define BREAK 263
+#define CONTINUE 264
+#define FOR 265
+#define DO 266
+#define IDEN 267
+#define NUM 268
+#define PASN 269
+#define MASN 270
+#define DASN 271
+#define SASN 272
+#define INC 273
+#define DEC 274
+#define LT 275
+#define GT 276
+#define LE 277
+#define GE 278
+#define NE 279
+#define OR 280
+#define AND 281
+#define EQ 282
+#define IF 283
+#define ELSE 284
+#define TR 285
+#define FL 286
+#define WHILE 287
+#define INT 288
+#define FLOAT 289
+#define CHAR 290
+#define CHARR 291
+#define MEOF 292
+#define CONST 293
+#define SWITCH 294
+#define CASE 295
+#define DEFAULT 296
+#define GOTO 297
+#define STRING 298
+#define BOOL 299
+#define PRINT 300
+#define INPUT 301
+#define SIZEOF 302
+#define BANDASN 303
+#define BORASN 304
+#define BXORASN 305
+#define LSHIFTASN 306
+#define RSHIFTASN 307
+#define SHORT 308
+#define LONG 309
+#define DOUBLE 310
+#define VOID 311
+#define BAND 312
+#define BOR 313
+#define BXOR 314
+#define BNOT 315
+#define LSHIFT 316
+#define RSHIFT 317
+#define FUNCTION 318
+#define RETURN 319
+#define CALL 320
 
 /* Value type.  */
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
@@ -195,7 +203,7 @@ union YYSTYPE
         struct Decl* decl;
         struct Subscript* sub;
 
-#line 199 "y.tab.h"
+#line 207 "y.tab.h"
 
 };
 typedef union YYSTYPE YYSTYPE;

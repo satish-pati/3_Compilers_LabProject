@@ -1,3 +1,0 @@
-func @float foo() begin
-    ret 3.143777788829$
-end

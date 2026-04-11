@@ -1,4 +1,0 @@
-@int x=2$
-repeat begin
-    x -= 1$
-end loop (x gt 0) $

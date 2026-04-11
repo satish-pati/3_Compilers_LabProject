@@ -1,0 +1,12 @@
+# Feature: Nested scopes - inner scope sees outer variables
+@int global is 100 $
+begin
+    @int local1 is 10 $
+    begin
+        @int local2 is 20 $
+        @int sum is global + local1 + local2 $
+        show(sum)$     # expect 130
+    end
+    show(local1)$      # expect 10
+end
+show(global)$          # expect 100

@@ -1,4 +1,0 @@
-@int arr[5]$
-@int matrix[3][4]$
-@float nums[3] is {1.1, 2.2, 3.3}$
-@int grid[2][2] is {1, 2, 3, 4}$

@@ -1,8 +1,0 @@
-@int x is 150$
-@int y is 100$
-
-if (x < 100 or (x > 200 and x == y)) {
-    x = 0$
-}
-
-show(x)$

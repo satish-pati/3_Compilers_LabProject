@@ -1,16 +1,2 @@
-func @void hello(){
-    @char s[8]="hello" $
-    show(s) $
-}
-
-func @int main(){
-    call hello()$
-    call hello()$
-    call hello()$
-    call hello()$
-    call hello()$
-    call hello()$
-    ret 0 $
-}
-
-@int k=call main() $
+@int i $
+ input(i) $

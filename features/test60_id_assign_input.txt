@@ -1,0 +1,5 @@
+# Feature: Identity assignment (x = x) and input
+@int x $
+input(x) $
+x is x $          # identity assignment, no change
+show(x)$           # expect same value as input

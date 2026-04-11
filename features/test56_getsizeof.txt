@@ -1,0 +1,15 @@
+
+
+@int x$
+@int s1 is getsizeof(x)$      # 4
+@int arr[10]$
+@int s2 is getsizeof(arr)$    # 40
+@double mat[5][5]$
+@int s3 is getsizeof(mat)$    # 200
+@double darr[4]$
+@int s4 is getsizeof(darr)$
+
+show(s1)$
+show(s2)$
+show(s3)$
+show(s4)$

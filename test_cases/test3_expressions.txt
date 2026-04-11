@@ -1,5 +1,0 @@
-@int a is 10$
-@float b is 20.5$
-@int c is a + 5$
-@float d is b * 2.0$
-@int result is a + b$

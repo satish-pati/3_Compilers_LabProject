@@ -1,0 +1,8 @@
+# Error: Function called with wrong number of arguments
+
+func @int test(@int a) begin
+    ret a$
+end
+
+@int x is call test()$
+

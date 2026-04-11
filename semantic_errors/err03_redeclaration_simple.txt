@@ -1,0 +1,4 @@
+# Error: Simple redeclaration of variable in same scope
+# Expected: "Redeclaration of x"
+@int x $
+@int x=2 $

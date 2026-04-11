@@ -1,0 +1,20 @@
+@int a is 1 $
+@int b is 0 $
+@int r1 is 0 $
+@int r2 is 0 $
+@int r3 is 0 $
+if(a>0 and b>0)
+begin
+    r1 is 1 $
+end
+if(a>0 or b>0)
+begin
+    r2 is 1 $
+end
+if( not b<0)
+begin
+    r3 is 1 $
+end
+show(r1)$
+show(r2)$
+show(r3)$

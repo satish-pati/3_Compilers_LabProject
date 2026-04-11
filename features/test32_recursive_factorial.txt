@@ -1,0 +1,10 @@
+
+func @int factorial(@int n) begin
+    when(n le 1) begin
+        ret 1 $
+    end
+    ret n * call factorial(n - 1) $
+end
+
+@int result is call factorial(5) $
+show(result)$      # expect 120

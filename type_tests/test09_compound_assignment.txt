@@ -1,0 +1,9 @@
+# TEST 09: Compound Assignment Operators
+    @int x is 10$
+    @float y is 3.5$
+    
+    x += y$                   # WARN: float added to int, then truncated
+    y *= 2$                   # OK: int promoted to float
+
+    show(x)$
+    show(y)$

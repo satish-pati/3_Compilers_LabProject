@@ -1,0 +1,4 @@
+# Error: String literal longer than declared char array size
+
+@char s[2]="hello world" $
+show(s)$

@@ -1,0 +1,10 @@
+# Feature: Implicit type conversions (promotion) in expressions
+@int i is 42 $
+@float f is 3.14 $
+@char c is 'A' $
+@float result1 is i + f $   # int promoted to float
+@int result2 is i + c $     # char promoted to int (ASCII)
+@double d is f * 2 $        # float * int → double
+show(result1)$     # expect 45.14
+show(result2)$     # expect 107
+show(d)$           # expect 6.28

@@ -1,0 +1,17 @@
+@int y=2 $
+@int x=2 $
+@int a[2]={1,2} $
+show(y) $
+show(x) $
+show(a[0]) $
+show(a[1]) $
+func @int main() {
+    @int arr[5], i, x $
+    i = 2 $
+    arr[i] = 42 $
+    x = arr[i] $
+    show(x) $
+    @int y=1 $
+    show(y) $
+    ret 0 $
+}

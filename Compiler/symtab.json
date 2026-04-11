@@ -1,0 +1,82 @@
+{
+  "scopes": [
+    {
+      "scope_id": 0,
+      "label": "Global",
+      "prev_offset": 0,
+      "symbols": [
+        {
+          "name": "x",
+          "type": "double",
+          "base_type": "double",
+          "offset": 0,
+          "elem_size": 8,
+          "total_bytes": 8,
+          "dim_count": 0,
+          "dimensions": [],
+          "category": "scalar"
+        },
+        {
+          "name": "x_to_char",
+          "type": "char",
+          "base_type": "char",
+          "offset": 8,
+          "elem_size": 1,
+          "total_bytes": 1,
+          "dim_count": 0,
+          "dimensions": [],
+          "category": "scalar"
+        },
+        {
+          "name": "x_to_short",
+          "type": "short",
+          "base_type": "short",
+          "offset": 9,
+          "elem_size": 2,
+          "total_bytes": 2,
+          "dim_count": 0,
+          "dimensions": [],
+          "category": "scalar"
+        },
+        {
+          "name": "x_to_int",
+          "type": "int",
+          "base_type": "int",
+          "offset": 11,
+          "elem_size": 4,
+          "total_bytes": 4,
+          "dim_count": 0,
+          "dimensions": [],
+          "category": "scalar"
+        },
+        {
+          "name": "x_to_long",
+          "type": "long",
+          "base_type": "long",
+          "offset": 15,
+          "elem_size": 8,
+          "total_bytes": 8,
+          "dim_count": 0,
+          "dimensions": [],
+          "category": "scalar"
+        },
+        {
+          "name": "x_to_float",
+          "type": "float",
+          "base_type": "float",
+          "offset": 23,
+          "elem_size": 4,
+          "total_bytes": 4,
+          "dim_count": 0,
+          "dimensions": [],
+          "category": "scalar"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_scopes": 1,
+    "total_symbols": 6,
+    "total_storage_bytes": 27
+  }
+}

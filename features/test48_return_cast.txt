@@ -1,0 +1,7 @@
+# Feature: Implicit cast on return - float returned from @int function gets truncated
+func @int foo() begin
+    ret 3.143777788829 $
+end
+
+@int r is call foo() $
+show(r)$           # expect 3 (truncated via implicit cast)

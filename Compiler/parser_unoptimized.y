@@ -2322,7 +2322,7 @@ void commonSubexpressionElimination() {
 %nonassoc '(' ')'
 %nonassoc UMINUS ELSE IDEN
 %nonassoc '$'
-%token <str> BREAK CONTINUE FOR DO IDEN NUM PASN MASN DASN SASN INC DEC LT GT LE GE NE OR AND EQ IF ELSE TR FL WHILE INT FLOAT CHAR CHARR
+%token <str> ABS MIN MAX MODASN BREAK CONTINUE FOR DO IDEN NUM PASN MASN DASN SASN INC DEC LT GT LE GE NE OR AND EQ IF ELSE TR FL WHILE INT FLOAT CHAR CHARR
 %token MEOF
 %token <str> CONST
 %token SWITCH CASE DEFAULT
@@ -2354,7 +2354,7 @@ void commonSubexpressionElimination() {
 S:      {top = create_env(top,0);} PROGRAM M MEOF{
         if (e){
                         printf("%s\nRejected \n%s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
-                        e=0;err[0]="\0";buffer[0]='\0';}
+                        err[0]='\0';buffer[0]='\0';}
                 else {
                         backpatch($2->N,$3);
                         printf("%s\nAccepted -Unoptimized > Three Address :\n",buffer);
@@ -2399,19 +2399,26 @@ for (int dce_pass = 0; dce_pass < 10; dce_pass++) {
                 YYACCEPT;};
 
 
+
 PROGRAM: FUNDECL PROGRAM {
             if(!e){
                 $$ = createBoolNode();
                 $$->N = merge($1->N, $2->N);
             }
-        }        
-        | STMNTS {$$ = $1;}
+        }
+        | A PROGRAM {
+            if(!e){
+                $$ = createBoolNode();
+                $$->N = merge($1->N, $2->N);
+            }
+        }
         | FUNDECL {
             if(!e){
                 $$ = createBoolNode();
                 $$->N = $1->N;
             }
-        };
+        }
+        | A {$$ = $1;};
 
 
 /* 
@@ -2657,10 +2664,43 @@ if(strstr($3->type, "[") != NULL) {
                     $2, f->param_count, given);
             } else {
                 arg = $4;
-                while(arg){
-                    sprintf(imcode[code], "%d PushParam %s\n", code, arg->str);
+                Param* param = f->params;
+                int arg_idx = 1;
+                while(arg && param){
+                    char* arg_base   = getBaseType(arg->type);
+                    char* param_base = getBaseType(param->type);
+                    char push_str[200];
+                    strcpy(push_str, arg->str);
+                    /* If types differ, insert an implicit cast (same rules as assignment) */
+                    if(strcmp(arg_base, param_base) != 0 &&
+                       getTypeRank(arg_base) > 0 && getTypeRank(param_base) > 0){
+                        /* Warn on narrowing */
+                        if(getTypeRank(arg_base) > getTypeRank(param_base)){
+                            sprintf(err+strlen(err),
+                                "Warning: Narrowing conversion from %s to %s for argument %d in call to '%s'\n",
+                                arg_base, param_base, arg_idx, $2);
+                        }
+                        if(isFloatingType(arg_base) && isIntegerType(param_base)){
+                            sprintf(err+strlen(err),
+                                "Warning: Conversion from %s to %s for argument %d in call to '%s' will discard fractional part\n",
+                                arg_base, param_base, arg_idx, $2);
+                        }
+                        if(isLiteral(arg->str)){
+                            /* compile-time: inline the cast value */
+                            sprintf(push_str, "(%s)%s", param_base, arg->str);
+                        } else {
+                            /* runtime: emit a temp */
+                            char* tmp = genvar();
+                            sprintf(imcode[code], "%d %s = (%s) %s\n", code, tmp, param_base, arg->str);
+                            code++;
+                            strcpy(push_str, tmp);
+                        }
+                    }
+                    sprintf(imcode[code], "%d PushParam %s\n", code, push_str);
                     code++;
                     arg = arg->next;
+                    param = param->next;
+                    arg_idx++;
                 }
                 sprintf(imcode[code], "%d Call %s\n", code, $2);
                 code++;
@@ -3061,18 +3101,28 @@ DECLSTATEMENT: TYPE DECLLIST '$' {
             else if (strcmp(temp->lt,"char*")==0 && strcmp(clean_type,"char")==0 &&
                      strstr(get(top->table,temp->key)->type, "char[") != NULL){
                 Symbol* s = get(top->table,temp->key);
-                char str_copy[1000]; strcpy(str_copy, temp->op);
-                int len = strlen(str_copy);
-                if(str_copy[0]=='"' && str_copy[len-1]=='"'){
-                    str_copy[len-1]='\0';
-                    char* str_content = str_copy + 1;
-                    int idx = 0;
-                    while(*str_content != '\0'){
-                        sprintf(imcode[code], "%d %s[%d] = '%c'\n", code, temp->key, idx, *str_content);
-                        code++; str_content++; idx++;
+                
+                /* Check string length against array size */
+                int string_len = temp->str_len;
+                int array_size = temp->size;
+                if (string_len > array_size) {
+                    e = 1;
+                    sprintf(err+strlen(err), "Too many initializers: string literal requires %d bytes, but array '%s' has only %d bytes\n", 
+                            string_len, temp->key, array_size);
+                } else {
+                    char str_copy[1000]; strcpy(str_copy, temp->op);
+                    int len = strlen(str_copy);
+                    if(str_copy[0]=='"' && str_copy[len-1]=='"'){
+                        str_copy[len-1]='\0';
+                        char* str_content = str_copy + 1;
+                        int idx = 0;
+                        while(*str_content != '\0'){
+                            sprintf(imcode[code], "%d %s[%d] = '%c'\n", code, temp->key, idx, *str_content);
+                            code++; str_content++; idx++;
+                        }
+                        sprintf(imcode[code], "%d %s[%d] = '\\0'\n", code, temp->key, idx);
+                        code++;
                     }
-                    sprintf(imcode[code], "%d %s[%d] = '\\0'\n", code, temp->key, idx);
-                    code++;
                 }
             }
             else {
@@ -3399,7 +3449,7 @@ ASSGN: '=' {strcpy($$,"=");}
      | BORASN  {strcpy($$,"|=");}
      | BXORASN {strcpy($$,"^=");}
      | LSHIFTASN {strcpy($$,"<<=");}
-     | RSHIFTASN {strcpy($$,">>=");} ;
+     | RSHIFTASN {strcpy($$,">>=");}| MODASN {strcpy($$,"%=");} ;
 
 BOOLEXPR:
          BOOLEXPR OR M BOOLEXPR {  if (!e){backpatch($1->F,$3);
@@ -3616,6 +3666,144 @@ EXPR: SIZEOF '(' IDEN ')' {
         $$->lv = 0;
     }
 }
+
+
+| ABS '(' EXPR ')' {
+    if (!e) {
+        $$ = createExpr();
+        char arg[1000]; strcpy(arg, $3->str);
+        char* arg_type = getBaseType($3->type);
+        strcpy($$->type, arg_type);
+        $$->lv = 0;
+        if (isNumericConstant(arg)) {
+            double v = atof(arg);
+            if (v < 0) v = -v;
+            if (isFloatingType(arg_type))
+                sprintf($$->str, "%g", v);
+            else
+                sprintf($$->str, "%d", (int)v);
+        } else {
+            /* C0: res = arg  (assume positive)
+               C1: if arg >= 0 goto C4
+               C2: neg = 0 - arg
+               C3: res = neg
+               C4: done */
+            char* res = genvar();
+            char* neg = genvar();
+            strcpy($$->str, res);
+            sprintf(imcode[code], "%d %s = %s\n", code, res, arg); code++;
+            int C1 = code;
+            sprintf(imcode[code], "%d if %s >= 0 goto ", code, arg); code++;
+            sprintf(imcode[code], "%d %s = 0 - %s\n", code, neg, arg); code++;
+            sprintf(imcode[code], "%d %s = %s\n", code, res, neg); code++;
+            int C4 = code;
+            int len1 = strlen(imcode[C1]);
+            if (imcode[C1][len1-1] != '\n')
+                sprintf(imcode[C1] + len1, "%d\n", C4);
+        }
+    }
+}
+/* ── built-in min(x, y, z, ...) ─────────────────────────────────────────
+   min(arglist) → smallest value among all arguments.
+   Uses ARGLIST so it already handles 1..N args via the linked list.
+   TAC: linear scan — compare each subsequent arg against running minimum.
+   ─────────────────────────────────────────────────────────────────────── */
+| MIN '(' ARGLIST ')' {
+    if (!e) {
+        $$ = createExpr();
+        struct Expr* args = $3;
+        if (args == NULL) {
+            e = 1;
+            sprintf(err + strlen(err), "min() requires at least one argument\n");
+            strcpy($$->str, "0"); strcpy($$->type, "int"); $$->lv = 0;
+        } else {
+            char res_type[100];
+            strcpy(res_type, getBaseType(args->type));
+            struct Expr* scan = args->next;
+            while (scan) {
+                char* pt = promoteType(res_type, getBaseType(scan->type));
+                strcpy(res_type, pt);
+                scan = scan->next;
+            }
+            strcpy($$->type, res_type);
+            $$->lv = 0;
+            if (args->next == NULL) {
+                strcpy($$->str, args->str);
+            } else {
+                /* Running min in cur_min.
+                   For each next arg:
+                     C_cmp: if cur_min <= arg goto C_skip
+                     C_upd: cur_min = arg
+                     C_skip: (next iteration)                */
+                char* cur_min = genvar();
+                sprintf(imcode[code], "%d %s = %s\n", code, cur_min, args->str); code++;
+                scan = args->next;
+                while (scan) {
+                    char arg_copy[1000]; strcpy(arg_copy, scan->str);
+                    int C_cmp = code;
+                    sprintf(imcode[code], "%d if %s <= %s goto ", code, cur_min, arg_copy); code++;
+                    sprintf(imcode[code], "%d %s = %s\n", code, cur_min, arg_copy); code++;
+                    int C_skip = code;
+                    int len2 = strlen(imcode[C_cmp]);
+                    if (imcode[C_cmp][len2-1] != '\n')
+                        sprintf(imcode[C_cmp] + len2, "%d\n", C_skip);
+                    scan = scan->next;
+                }
+                strcpy($$->str, cur_min);
+            }
+        }
+    }
+}
+/* ── built-in max(x, y, z, ...) ─────────────────────────────────────────
+   max(arglist) → largest value among all arguments.
+   Mirror of min(), comparison direction flipped.
+   ─────────────────────────────────────────────────────────────────────── */
+| MAX '(' ARGLIST ')' {
+    if (!e) {
+        $$ = createExpr();
+        struct Expr* args = $3;
+        if (args == NULL) {
+            e = 1;
+            sprintf(err + strlen(err), "max() requires at least one argument\n");
+            strcpy($$->str, "0"); strcpy($$->type, "int"); $$->lv = 0;
+        } else {
+            char res_type[100];
+            strcpy(res_type, getBaseType(args->type));
+            struct Expr* scan = args->next;
+            while (scan) {
+                char* pt = promoteType(res_type, getBaseType(scan->type));
+                strcpy(res_type, pt);
+                scan = scan->next;
+            }
+            strcpy($$->type, res_type);
+            $$->lv = 0;
+            if (args->next == NULL) {
+                strcpy($$->str, args->str);
+            } else {
+                /* Running max in cur_max.
+                   For each next arg:
+                     C_cmp: if cur_max >= arg goto C_skip
+                     C_upd: cur_max = arg
+                     C_skip: (next iteration)                */
+                char* cur_max = genvar();
+                sprintf(imcode[code], "%d %s = %s\n", code, cur_max, args->str); code++;
+                scan = args->next;
+                while (scan) {
+                    char arg_copy[1000]; strcpy(arg_copy, scan->str);
+                    int C_cmp = code;
+                    sprintf(imcode[code], "%d if %s >= %s goto ", code, cur_max, arg_copy); code++;
+                    sprintf(imcode[code], "%d %s = %s\n", code, cur_max, arg_copy); code++;
+                    int C_skip = code;
+                    int len3 = strlen(imcode[C_cmp]);
+                    if (imcode[C_cmp][len3-1] != '\n')
+                        sprintf(imcode[C_cmp] + len3, "%d\n", C_skip);
+                    scan = scan->next;
+                }
+                strcpy($$->str, cur_max);
+            }
+        }
+    }
+}
 | EXPR '+' EXPR {
     if (!e){
         $$ = createExpr();
@@ -3798,17 +3986,86 @@ EXPR: SIZEOF '(' IDEN ')' {
         }
     }
 }
+| BOOLEXPR '?' EXPR ':' EXPR {
+   
+    if (!e) {
+        $$ = createExpr();
+
+        char* cond_var = genvar();
+        char* t        = genvar();
+        char* res_type = promoteType(getBaseType($3->type), getBaseType($5->type));
+        strcpy($$->type, res_type);
+        strcpy($$->str, t);
+        $$->lv = 0;
+
+        int C0 = code;
+        /* C0: true path — cond_var = 1 */
+        sprintf(imcode[code], "%d %s = 1\n", code, cond_var); code++;
+
+        /* C1: jump past the false-assign */
+        int C1 = code;
+        sprintf(imcode[code], "%d goto %d\n", code, code + 2); code++;
+
+        /* C2: false path — cond_var = 0 */
+        int C2 = code;
+        sprintf(imcode[code], "%d %s = 0\n", code, cond_var); code++;
+
+        /* Backpatch: T list → C0 (true fires → cond=1) */
+        backpatch($1->T, C0);
+        /* Backpatch: F list → C2 (false fires → cond=0) */
+        backpatch($1->F, C2);
+
+        /* C3: branch — if cond == 0 skip true branch */
+        int C3 = code;
+        int C6 = code + 3;   /* where false-value assignment will be */
+        sprintf(imcode[code], "%d if %s == 0 goto %d\n", code, cond_var, C6); code++;
+
+        /* C4: true-branch value */
+        sprintf(imcode[code], "%d %s = %s\n", code, t, $3->str); code++;
+
+        /* C5: skip over false branch */
+        int C5 = code;
+        int C7 = code + 2;   /* end label */
+        sprintf(imcode[code], "%d goto %d\n", code, C7); code++;
+
+        /* C6: false-branch value */
+        sprintf(imcode[code], "%d %s = %s\n", code, t, $5->str); code++;
+
+        /* C7: execution continues here (code == C7) */
+    }
+}
+ | EXPR '?' EXPR ':' EXPR {
+   
+    if (!e) {
+        $$ = createExpr();
+
+        char* t = genvar();
+        char* res_type = promoteType(getBaseType($3->type), getBaseType($5->type));
+        strcpy($$->type, res_type);
+        strcpy($$->str, t);
+        $$->lv = 0;
+
+        int C3 = code + 3;
+        int C4 = code + 4;
+
+        sprintf(imcode[code], "%d if %s == 0 goto %d\n", code, $1->str, C3); code++;
+        sprintf(imcode[code], "%d %s = %s\n", code, t, $3->str);             code++;
+        sprintf(imcode[code], "%d goto %d\n", code, C4);                     code++;
+        sprintf(imcode[code], "%d %s = %s\n", code, t, $5->str);             code++;
+        /* code == C4 now */
+    }
+}  
     | FUNCALL {$$ = $1;} 
     | TERM {$$ = $1;};
 
-
 FUNCALL: CALL IDEN '(' ARGLIST ')' {
+            /* Always initialise $$ to avoid UB when e is already set */
+            $$ = createExpr();
             if(!e){
                 Function* f = findFunction($2);
                 if(f == NULL){
                     e=1;
                     sprintf(err+strlen(err),"Function %s not declared\n",$2);
-                    $$ = createExpr();
                 } else {
                     int arg_count = 0;
                     struct Expr* arg = $4;
@@ -3824,17 +4081,66 @@ FUNCALL: CALL IDEN '(' ARGLIST ')' {
                         arg = arg->next;
                         param = param->next;
                     }
-                    /* count any extra args */
+                    /* count any extra args beyond what params expects */
                     while(arg){ arg_count++; arg = arg->next; }
 
                     if(arg_count != f->param_count){
                         e=1;
                         sprintf(err+strlen(err),"Function %s expects %d arguments, got %d\n",
                                 $2, f->param_count, arg_count);
+                        strcpy($$->type, f->return_type);
+                        /* Do NOT fall through into code-gen — bail out now */
+                        goto funcall_arglist_done;
                     }
 
+                    {
                     struct Expr* reversed = NULL;
                     arg = $4;
+                    Param* rparam = f->params;
+                    /* Build cast list in forward order */
+                    struct Expr* cast_args = NULL;
+                    struct Expr* cast_tail = NULL;
+                    int rarg_idx = 1;
+                    while(arg && rparam){
+                        char* arg_base   = getBaseType(arg->type);
+                        char* param_base = getBaseType(rparam->type);
+                        struct Expr* ca = createExpr();
+                        strcpy(ca->str, arg->str);
+                        strcpy(ca->type, arg->type);
+                        ca->lv = arg->lv;
+                        /* Insert implicit cast if types differ */
+                        if(strcmp(arg_base, param_base) != 0 &&
+                           getTypeRank(arg_base) > 0 && getTypeRank(param_base) > 0){
+                            if(getTypeRank(arg_base) > getTypeRank(param_base)){
+                                sprintf(err+strlen(err),
+                                    "Warning: Narrowing conversion from %s to %s for argument %d in call to '%s'\n",
+                                    arg_base, param_base, rarg_idx, $2);
+                            }
+                            if(isFloatingType(arg_base) && isIntegerType(param_base)){
+                                sprintf(err+strlen(err),
+                                    "Warning: Conversion from %s to %s for argument %d in call to '%s' will discard fractional part\n",
+                                    arg_base, param_base, rarg_idx, $2);
+                            }
+                            if(isLiteral(arg->str)){
+                                sprintf(ca->str, "(%s)%s", param_base, arg->str);
+                            } else {
+                                char* tmp = genvar();
+                                sprintf(imcode[code], "%d %s = (%s) %s\n", code, tmp, param_base, arg->str);
+                                code++;
+                                strcpy(ca->str, tmp);
+                            }
+                            strcpy(ca->type, rparam->type);
+                        }
+                        ca->next = NULL;
+                        if(!cast_args){ cast_args = ca; cast_tail = ca; }
+                        else { cast_tail->next = ca; cast_tail = ca; }
+                        arg = arg->next;
+                        rparam = rparam->next;
+                        rarg_idx++;
+                    }
+                    /* Reverse the cast list for PushParam order */
+                    reversed = NULL;
+                    arg = cast_args;
                     while(arg){
                         struct Expr* temp = createExpr();
                         strcpy(temp->str, arg->str);
@@ -3851,7 +4157,6 @@ FUNCALL: CALL IDEN '(' ARGLIST ')' {
                         arg = arg->next;
                     }
 
-                   $$ = createExpr();
                     strcpy($$->type, f->return_type);
                     $$->lv = 0;
                     if(strcmp(f->return_type, "void") == 0) {
@@ -3866,17 +4171,19 @@ FUNCALL: CALL IDEN '(' ARGLIST ')' {
                         code++;
                         strcpy($$->str, ret_var);
                     }
-
+                    } /* end inner block */
+                    funcall_arglist_done:;
                 }
             }
         }
 | CALL IDEN '(' ')' {
+                $$ = createExpr();
+
             if(!e){
                 Function* f = findFunction($2);
                 if(f == NULL){
                     e=1;
                     sprintf(err+strlen(err),"Function %s not declared\n",$2);
-                    $$ = createExpr();
                 } else {
                     if(f->param_count != 0){
                         e=1;
@@ -3884,7 +4191,6 @@ FUNCALL: CALL IDEN '(' ARGLIST ')' {
                                 $2, f->param_count);
                     }
 
-                  $$ = createExpr();
                     strcpy($$->type, f->return_type);
                     $$->lv = 0;
                     if(strcmp(f->return_type, "void") == 0) {
@@ -3903,6 +4209,7 @@ FUNCALL: CALL IDEN '(' ARGLIST ')' {
                 }
             }
         };
+
 
 ARGLIST: EXPR ',' ARGLIST {
             if(!e){ $$ = $1; $$->next = $3; }
@@ -3912,22 +4219,26 @@ ARGLIST: EXPR ',' ARGLIST {
         };
 
 OP: '+' | '-' | '*' | '/' | '%'| BAND | BOR | BXOR | LSHIFT | RSHIFT;
-
 SUBSCRIPTS: '[' EXPR ']' {
+                $$ = createSubscript();
                 if (!e) {
-                        $$ = createSubscript();
                         sprintf($$->indices, "[%s]", $2->str);
+                        $$->count = 1;
+                } else {
+                        strcpy($$->indices, "[0]");
                         $$->count = 1;
                 }
         }
         | SUBSCRIPTS '[' EXPR ']' {
-                if (!e) {
-                        $$ = createSubscript();
+                $$ = createSubscript();
+                if (!e && $1) {
                         sprintf($$->indices, "%s[%s]", $1->indices, $3->str);
                         $$->count = $1->count + 1;
+                } else {
+                        strcpy($$->indices, "[0]");
+                        $$->count = 1;
                 }
         };
-
 
 TERM: STRING {
     $$ = createExpr();
@@ -5091,19 +5402,24 @@ int main(int argc, char* argv[]) {
     }
 
     remove("unopt.tac");
-    if (!e) {
-        FILE* tac_file = fopen("unopt.tac", "w");
-        if (tac_file) {
-            for (int i = 0; i < code; i++)
-                fprintf(tac_file, "%s", imcode[i]);
-            fclose(tac_file);
-        }
-       /* generateSymbolTableDOT();
-        generateTACFlowDOT();
-        generateTACFlowWithBlocks();
-        generateCallGraphDOT();
-        generateAllImages();
-        */
+    
+if (!e) {
+    FILE* tac_file = fopen("unopt.tac", "w");
+    if (tac_file) {
+        for (int i = 0; i < code; i++)
+            fprintf(tac_file, "%s", imcode[i]);
+        fclose(tac_file);
     }
-    return 0;
+    //write_symtab_json(); 
+    //generateInteractiveDashboard();
+} else {
+    /* Semantic errors occurred — write a sentinel so the pipeline
+       knows to stop cleanly instead of assembling stale TAC.      */
+    FILE* tac_file = fopen("unopt.tac", "w");
+    if (tac_file) {
+        fprintf(tac_file, "# SEMANTIC_ERROR\n");
+        fclose(tac_file);
+    }
+}
+return e ? 1 : 0;   /* non-zero exit when errors exist */
 }

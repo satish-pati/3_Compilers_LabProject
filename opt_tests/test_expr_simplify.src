@@ -1,7 +1,0 @@
-func @int main() {
-    @int x, y $
-    x = 5 $
-    y = x / x $
-    show(y) $
-    ret 0 $
-}

@@ -1,0 +1,9 @@
+# TEST 01: Range Overflow for char type
+    @char c1 is 100$      # OK: within range [-128, 127]
+    @char c2 is 127$      # OK: max value
+    @char c3 is 300$      # ERROR: overflow (should warn)
+    @char c4 is -200$     # ERROR: underflow (should warn)
+    show(c1)$
+    show(c2)$
+    show(c3)$
+    show(c4)$

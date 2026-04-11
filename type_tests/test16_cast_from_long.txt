@@ -1,0 +1,14 @@
+@long x is 3000000000 $
+
+@char   x_to_char   is (@char)   x $
+@short  x_to_short  is (@short)  x $
+@int    x_to_int    is (@int)    x $
+@float  x_to_float  is (@float)  x $
+@double x_to_double is (@double) x $
+
+show(x)$
+show(x_to_char)$
+show(x_to_short)$
+show(x_to_int)$
+show(x_to_float)$
+show(x_to_double)$

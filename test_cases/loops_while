@@ -1,5 +1,0 @@
-@int x=0 $
-@double d=1.2 $
-loop (x lt 10) begin
- x += 1$
-end

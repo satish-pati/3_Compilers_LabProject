@@ -1,8 +1,0 @@
-@int global is 100$
-begin
-    @int local1 is 10$
-    begin
-        @int local2 is 20$
-        @int sum is global + local1 + local2$
-    end
-end

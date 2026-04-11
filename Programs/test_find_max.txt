@@ -1,12 +1,12 @@
 @int arr[7] = {23, 67, 12, 89, 45, 34, 56} $
 @int n is 7 $
-@int max is arr[0] $
+@int maxi is arr[0] $
 @int i $
 
 iterate (i = 1 $ i < n $ i = i + 1) {
-    if (arr[i] > max) {
-        max = arr[i] $
+    if (arr[i] > maxi) {
+        maxi = arr[i] $
     }
 }
 
-show(max) $
+show(maxi) $

@@ -1,0 +1,17 @@
+# TEST 08: Assignment with Type Mismatch
+    @float f is 3.14$
+    @int i is f$                # WARN: precision loss
+    
+    @double d is 2.71$
+    @float f2 is d$             # WARN: narrowing (but usually safe)
+    
+    @int big is 100000$
+    @short s is big$            # WARN: narrowing + possible overflow
+    
+    @long huge is 9999999999$
+    @int x is huge$             # WARN: narrowing + likely overflow
+    show(i)$
+    show(f2)$
+    show(s)$
+    show(x)$
+

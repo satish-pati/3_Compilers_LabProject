@@ -1,0 +1,11 @@
+# TEST 12: Nested Expressions with Multiple Conversions
+    @char c is 10$
+    @short s is 20$
+    @int i is 30$
+    @long l is 40$
+    @float f is 50.5$
+    
+    # Expression with multiple promotions
+    @float result is c + s * i - l / 2 + f$
+
+    show(result)$

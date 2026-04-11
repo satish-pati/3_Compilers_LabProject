@@ -1,8 +1,0 @@
-@int x is 5 $
-@int j=x++ $
-@int k=++x$
-show(j)$
-show(k) $
-show(x)$
-x-- $
-show(x)$

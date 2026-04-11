@@ -1,9 +1,0 @@
-@int x is 10 $
-x += 5 $
-show(x)$
-x -= 3 $
-show(x)$
-x *= 2 $
-show(x)$
-x /= 4 $
-show(x)$

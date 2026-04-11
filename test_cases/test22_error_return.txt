@@ -1,3 +1,0 @@
-func @int getValue() begin
-    ret 3.14$
-end

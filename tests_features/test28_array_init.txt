@@ -1,5 +1,0 @@
-@int nums[4] is {10, 20, 30, 40} $
-show(nums[0])$
-show(nums[1])$
-show(nums[2])$
-show(nums[3])$

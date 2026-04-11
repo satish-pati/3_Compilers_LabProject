@@ -1,0 +1,14 @@
+@int x is 2147483640 $
+
+@char  x_to_char   is (@char)  x $
+@short x_to_short  is (@short) x $
+@long  x_to_long   is (@long)  x $
+@float x_to_float  is (@float) x $
+@double x_to_double is (@double) x $
+
+show(x)$
+show(x_to_char)$
+show(x_to_short)$
+show(x_to_long)$
+show(x_to_float)$
+show(x_to_double)$

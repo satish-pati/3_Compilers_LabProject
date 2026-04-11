@@ -1,0 +1,14 @@
+@int mat[2][3] $
+@int cube[3][3][3]$ 
+@int fourd[3][3][3][3]$ 
+mat[0][0] is 1 $
+mat[0][1] is 2 $
+mat[1][0] is 3 $
+fourd[0][0][0][0]=4 $
+cube[0][0][0]=5 $
+
+show(mat[0][0])$
+show(mat[0][1])$
+show(mat[1][0])$
+show(fourd[0][0][0][0])$
+show(cube[0][0][0])$

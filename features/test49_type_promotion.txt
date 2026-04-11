@@ -1,0 +1,10 @@
+func @int main() {
+    @int a $
+    @float b, c $
+    a = 5 $
+    b = 2.5 $
+    c = a + b $  # Should promote a to float
+    @int d=(@int) c $
+    show(d) $
+    ret 0 $
+}

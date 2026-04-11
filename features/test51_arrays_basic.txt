@@ -1,0 +1,8 @@
+# Feature: Basic array declaration and element access
+@int arr[10] $
+@float matrix[5][5] $
+@int nums[5] is {1, 2, 3, 4, 5} $
+arr[0] is 99 $
+show(arr[0])$      # expect 99
+show(nums[0])$     # expect 1
+show(nums[4])$     # expect 5

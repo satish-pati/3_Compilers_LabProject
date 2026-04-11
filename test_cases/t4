@@ -1,9 +1,0 @@
-@int x$
-@int y is 10$
-@float z is 3.14$
-@int arr[5]$
-x = 100$
-y += 20$
-++x$
-@int sum = x + y$
-

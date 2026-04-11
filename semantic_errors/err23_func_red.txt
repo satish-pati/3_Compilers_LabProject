@@ -1,0 +1,2 @@
+func @int add(@int a) begin ret a$ end
+func @int add(@int a, @int b) begin ret a+b$ end  

@@ -1,0 +1,11 @@
+# Feature: Array declarations - various types, 1D and 2D, with/without init
+@int arr[5] $
+@int matrix[3][4] $
+@float nums[3] is {1.1, 2.2, 3.3} $
+@int grid[2][2] is {1, 2, 3, 4} $
+input(arr[1])$
+show(arr[1])$
+show(nums[0])$     
+show(nums[2])$     
+show(grid[0][0])$  
+show(grid[1][1])$  

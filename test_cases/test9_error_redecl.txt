@@ -1,3 +1,0 @@
-@int x is 10$
-@int x is 20$
-@float x is 3.14$

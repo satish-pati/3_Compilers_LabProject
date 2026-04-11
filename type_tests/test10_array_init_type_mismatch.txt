@@ -1,0 +1,9 @@
+# TEST 10: Array Initialization with Type Mismatch
+    @int arr1[5] is { 1, 2, 3, 4, 5 } $              # OK
+    @char arr2[5] is { 65, 66, 67, 300, 69 }$       # WARN: 300 out of range
+     @short arr3[3] is { 100, 40000, 300 }$          # WARN: 40000 out of range
+    @float arr4[3] is { 1.0, 2, 3.14 }$             # OK: int promoted to float
+     show(arr2[3])$
+    show(arr3[1])$
+    show(arr4[1])$
+    

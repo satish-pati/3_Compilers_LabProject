@@ -1,0 +1,7 @@
+func @int main() {
+    @int x, y $
+    x = 15 $
+    y = (x bitand 7) bitor (x rshift 2) $
+    show(y) $
+    ret 0 $
+}

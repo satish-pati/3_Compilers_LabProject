@@ -1,5 +1,0 @@
-@int x is 5 $
-@int neg is -x $
-@int pos is +x $
-show(neg)$
-show(pos)$

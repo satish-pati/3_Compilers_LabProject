@@ -1046,6 +1046,8 @@ void checkTypeAssign(struct Expr* op1, struct Expr* op2, char* opr){
 }
 
 
+
+
 void identityAssignmentElimination() {
     for (int i = 0; i < code; i++) {
         if (strstr(imcode[i], "// DEAD") != NULL) continue;
@@ -1353,45 +1355,6 @@ void algebraicSimplification() {
     }
 }
 
-/*
-void constantFoldConditionals() {
-    for (int i = 0; i < code; i++) {
-        if (strstr(imcode[i], "// DEAD") != NULL) continue;
-        
-        char line[10000];
-        strcpy(line, imcode[i]);
-        
-        int line_num;
-        char cond[1000];
-        if (sscanf(line, "%d if %[^\n]", &line_num, cond) == 2) {
-            char op1[100], op[10], op2[100], rest[100];
-            if (sscanf(cond, "%s %s %s %[^\n]", op1, op, op2, rest) == 4) {
-                if (isNumericConstant(op1) && isNumericConstant(op2)) {
-                    double v1 = atof(op1), v2 = atof(op2);
-                    int result = 0;
-                    if (strcmp(op, "<") == 0) result = (v1 < v2);
-                    else if (strcmp(op, ">") == 0) result = (v1 > v2);
-                    else if (strcmp(op, "<=") == 0) result = (v1 <= v2);
-                    else if (strcmp(op, ">=") == 0) result = (v1 >= v2);
-                    else if (strcmp(op, "==") == 0) result = (v1 == v2);
-                    else if (strcmp(op, "!=") == 0) result = (v1 != v2);
-                    
-                    if (result) {
-                        char* goto_ptr = strstr(rest, "goto");
-                        if (goto_ptr) {
-                            sprintf(imcode[i], "%d %s\n", line_num, goto_ptr);
-                        }
-                    } else {
-                        sprintf(imcode[i], "%d // DEAD BRANCH: if %s %s %s always false\n", 
-                                line_num, op1, op, op2);
-                    }
-                }
-            }
-        }
-    }
-}
-*/
-
 
 
 
@@ -1528,6 +1491,48 @@ void constantFoldConditionals() {
                     }
                 }
                 
+                /* ---- Safety: check for conditional-assignment pattern ----
+                   Pattern:  if X rel Y goto T
+                             X = Y          ← X is reassigned between branch and target T
+                   This is the idiom used for min/max:
+                     t2 = a
+                     if t2 <= b goto L   ← we're here
+                     t2 = b              ← t2 gets b when condition is false
+                   L: ...
+                   We must NOT fold this branch because the value of op1/op2
+                   AFTER the branch depends on which path was taken.
+                   Detect by scanning from (i+1) to the goto-target for any
+                   live assignment to op1 or op2. */
+                int cond_assign_pattern = 0;
+                if (op1_is_truly_constant || op2_is_truly_constant) {
+                    /* find the goto target line number */
+                    char* goto_scan = strstr(rest, "goto");
+                    int goto_tgt = -1;
+                    if (goto_scan) {
+                        char* tp2 = goto_scan + 4;
+                        while (*tp2 == ' ' || *tp2 == '\t') tp2++;
+                        if (isdigit(*tp2)) goto_tgt = atoi(tp2);
+                    }
+                    if (goto_tgt > i) {
+                        /* scan lines i+1 .. goto_tgt-1 for assignment to op1 or op2 */
+                        for (int j = i + 1; j < code && j < goto_tgt + 1; j++) {
+                            if (strstr(imcode[j], "// DEAD") != NULL) continue;
+                            char check_lhs2[100];
+                            int jlnum = -1;
+                            sscanf(imcode[j], "%d", &jlnum);
+                            if (jlnum >= goto_tgt) break; /* past target */
+                            if (sscanf(imcode[j], "%*d %s =", check_lhs2) == 1) {
+                                if ((!isNumericConstant(op1) && strcmp(check_lhs2, op1) == 0) ||
+                                    (!isNumericConstant(op2) && strcmp(check_lhs2, op2) == 0)) {
+                                    cond_assign_pattern = 1;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (cond_assign_pattern) continue; /* don't fold min/max idiom */
+
                 // Only fold if both are truly constant (assigned only once with constant values)
                 if (op1_is_truly_constant && op2_is_truly_constant &&
                     isNumericConstant(resolved_op1) && isNumericConstant(resolved_op2)) {
@@ -1555,6 +1560,9 @@ void constantFoldConditionals() {
         }
     }
 }
+
+
+
 
 
 
@@ -2130,15 +2138,20 @@ void redundantJumpElimination() {
         }
         if (!all_dead_between) continue;
 
-        /* Case A – conditional: always safe to remove (branch taken or not,
-           execution reaches target since all intermediate slots are dead). */
+        /* Case A – conditional: both branches reach the same target, so the
+           branch is redundant.  We must NOT mark it "// DEAD CODE:" because
+           that would remove it from the has_live_pred fall-through chain and
+           cut off all successors.  Mark it "// DEAD BRANCH:" instead so that
+           eliminateDeadCode()'s has_live_pred pass still treats it as a
+           fall-through instruction (non-DEAD-CODE), preserving liveness for
+           the lines that follow. */
         if (is_conditional) {
             int lnum; sscanf(imcode[i], "%d", &lnum);
             char original[10000]; strcpy(original, imcode[i]);
             char* space_ptr = strchr(original, ' ');
             if (space_ptr) {
                 space_ptr++;
-                sprintf(imcode[i], "%d // DEAD CODE: %s", lnum, space_ptr);
+                sprintf(imcode[i], "%d // DEAD BRANCH: %s", lnum, space_ptr);
             }
             continue;
         }
@@ -2155,6 +2168,125 @@ void redundantJumpElimination() {
         }
         /* B2 (sole predecessor, all dead between) handled in finalRedundantGotoElimination() */
     }
+}
+
+
+
+
+void write_symtab_json(void) {
+    FILE* fp = fopen("symtab.json", "w");
+    if (!fp) return;
+
+    /* totals (mirrors grand-total block in print_all_envs) */
+    int grand_vars  = 0;
+    int grand_bytes = 0;
+
+    fprintf(fp, "{\n  \"scopes\": [\n");
+
+    for (int i = 0; i < env_count; i++) {
+        /* ---------- collect & sort symbols for this scope ---------- */
+        Symbol* syms[MAX_SYMS];
+        int n = collect_symbols(envs[i]->table, syms);
+
+        /* ---------- scope label (mirrors print_all_envs) ----------- */
+        char scope_label[50];
+        if (i == 0) strcpy(scope_label, "Global");
+        else        sprintf(scope_label, "Local (scope %d)", i);
+
+        fprintf(fp, "    {\n");
+        fprintf(fp, "      \"scope_id\": %d,\n", i);
+        fprintf(fp, "      \"label\": \"%s\",\n", scope_label);
+        fprintf(fp, "      \"prev_offset\": %d,\n", envs[i]->prev_offset);
+        fprintf(fp, "      \"symbols\": [\n");
+
+        for (int s = 0; s < n; s++) {
+            Symbol* sym = syms[s];
+
+            /* ---- recompute derived fields (same as print_table) ---- */
+            char base[100];
+            extract_base(sym->type, base);
+            int elem_size   = type_byte_size(base);
+            int total_elems = 1;
+            for (int d = 0; d < sym->dim_count; d++)
+                total_elems *= sym->dimensions[d];
+            int total_bytes = elem_size * (total_elems > 0 ? total_elems : 1);
+
+            /* dimension string e.g. "[3][4]" */
+            char dim_str[100] = "";
+            if (sym->dim_count > 0) {
+                for (int d = 0; d < sym->dim_count; d++) {
+                    char part[20];
+                    sprintf(part, "[%d]", sym->dimensions[d]);
+                    strcat(dim_str, part);
+                }
+            } else if (strchr(sym->type, '[') != NULL) {
+                char* p = strchr(sym->type, '[');
+                strcpy(dim_str, p ? p : "");
+            }
+
+            /* category */
+            char category[20];
+            if      (sym->dim_count > 1)           strcpy(category, "multi-dim array");
+            else if (sym->dim_count == 1)           strcpy(category, "array");
+            else if (strchr(sym->type,'[') != NULL) strcpy(category, "array");
+            else                                    strcpy(category, "scalar");
+
+            /* full type string e.g. "int[3][4]" */
+            char full_type[100];
+            snprintf(full_type, sizeof(full_type), "%s%s", base, dim_str);
+
+            /* dimensions array for JSON */
+            char dims_json[200] = "[";
+            if (sym->dim_count > 0) {
+                for (int d = 0; d < sym->dim_count; d++) {
+                    char tmp[20];
+                    sprintf(tmp, "%d", sym->dimensions[d]);
+                    strcat(dims_json, tmp);
+                    if (d < sym->dim_count - 1) strcat(dims_json, ", ");
+                }
+            }
+            strcat(dims_json, "]");
+
+            fprintf(fp,
+                "        {\n"
+                "          \"name\": \"%s\",\n"
+                "          \"type\": \"%s\",\n"
+                "          \"base_type\": \"%s\",\n"
+                "          \"offset\": %d,\n"
+                "          \"elem_size\": %d,\n"
+                "          \"total_bytes\": %d,\n"
+                "          \"dim_count\": %d,\n"
+                "          \"dimensions\": %s,\n"
+                "          \"category\": \"%s\"\n"
+                "        }%s\n",
+                sym->name,
+                full_type,
+                base,
+                sym->offset,
+                elem_size,
+                total_bytes,
+                sym->dim_count,
+                dims_json,
+                category,
+                (s < n - 1) ? "," : ""
+            );
+
+            grand_vars  += 1;
+            grand_bytes += total_bytes;
+        }
+
+        fprintf(fp, "      ]\n");   /* end symbols array */
+        fprintf(fp, "    }%s\n", (i < env_count - 1) ? "," : "");
+    }
+
+    fprintf(fp, "  ],\n");   /* end scopes array */
+    fprintf(fp, "  \"summary\": {\n");
+    fprintf(fp, "    \"total_scopes\": %d,\n", env_count);
+    fprintf(fp, "    \"total_symbols\": %d,\n", grand_vars);
+    fprintf(fp, "    \"total_storage_bytes\": %d\n", grand_bytes);
+    fprintf(fp, "  }\n");
+    fprintf(fp, "}\n");
+    fclose(fp);
 }
 
 void finalRedundantGotoElimination() {
@@ -2492,8 +2624,30 @@ void eliminateDeadCode() {
     for (int i = 0; i < code; i++) { if (strstr(imcode[i],"BeginFunc")!=NULL && i+1<code) has_live_pred[i+1]=1; }
     has_live_pred[0] = 1;
     for (int i = 0; i < code; i++) {
+        /* // DEAD CODE: lines are truly unreachable — skip them entirely.
+           But // DEAD VAR / DEAD CONST / DEAD STORE / DEAD COPY / IDENTITY /
+           PEEPHOLE / DEAD BRANCH lines were originally normal instructions;
+           they still fall through to the next instruction and must propagate
+           has_live_pred.  DEAD BRANCH lines also still carry a goto target
+           that must be recorded in has_live_pred. */
         if (strstr(imcode[i],"// DEAD CODE:")!=NULL) continue;
         char line[10000]; strcpy(line, imcode[i]);
+        /* For non-DEAD-CODE annotated lines: always fall-through. */
+        if (strstr(imcode[i],"// DEAD")!=NULL) {
+            if (i+1<code) has_live_pred[i+1]=1;
+            /* Also honour any goto target embedded in the annotation
+               (e.g. "// DEAD BRANCH: if t1 <= 3 goto 18") so that the
+               goto destination keeps its live predecessor. */
+            char* gp = strstr(line,"goto");
+            if (gp) {
+                char* tp = gp+4; while (*tp==' '||*tp=='\t') tp++;
+                if (isdigit((unsigned char)*tp)) {
+                    int tgt = atoi(tp);
+                    if (tgt>=0 && tgt<code) has_live_pred[tgt]=1;
+                }
+            }
+            continue;
+        }
         if (strstr(line,"goto")!=NULL) {
             char* goto_ptr = strstr(line,"goto");
             char* ptr = goto_ptr+4;
@@ -2595,8 +2749,8 @@ void commonSubexpressionElimination() {
         }
     }
 }
-
 %}
+
 
 %union{
         char str[1000];
@@ -2625,7 +2779,7 @@ void commonSubexpressionElimination() {
 %nonassoc '(' ')'
 %nonassoc UMINUS ELSE IDEN
 %nonassoc '$'
-%token <str> BREAK CONTINUE FOR DO IDEN NUM PASN MASN DASN SASN INC DEC LT GT LE GE NE OR AND EQ IF ELSE TR FL WHILE INT FLOAT CHAR CHARR
+%token <str> ABS MIN MAX MODASN BREAK CONTINUE FOR DO IDEN NUM PASN MASN DASN SASN INC DEC LT GT LE GE NE OR AND EQ IF ELSE TR FL WHILE INT FLOAT CHAR CHARR
 %token MEOF
 %token <str> CONST
 %token SWITCH CASE DEFAULT
@@ -2652,12 +2806,10 @@ void commonSubexpressionElimination() {
 %type <expr> CASE_EXPR
 
 %%
-
-
 S:      {top = create_env(top,0);} PROGRAM M MEOF{
         if (e){
                         printf("%s\nRejected \n%s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
-                        e=0;err[0]="\0";buffer[0]='\0';}
+                        err[0]='\0';buffer[0]='\0';}
                 else {
                         backpatch($2->N,$3);
                         /*printf("%s\nAccepted -> Unoptmized Three Address :\n \n",buffer);
@@ -2691,7 +2843,7 @@ S:      {top = create_env(top,0);} PROGRAM M MEOF{
 deadVariableElimination();
 int prev_dead_count = -1;
 for (int dce_pass = 0; dce_pass < 15; dce_pass++) {
-   eliminateDeadCode();
+  eliminateDeadCode();
    redundantJumpElimination();
     int dead_count = 0;
     for (int i = 0; i < code; i++) {
@@ -2700,35 +2852,52 @@ for (int dce_pass = 0; dce_pass < 15; dce_pass++) {
     if (dead_count == prev_dead_count) break;
     prev_dead_count = dead_count;
 }
-finalRedundantGotoElimination();
-
-                        for (int i=0;i<code;i++){
-                                printf("%s",imcode[i]);
+finalRedundantGotoElimination();                   
+                                             if (e) {
+                            printf("\n=== Errors ===\n%s", err);
+                            printf("Rejected -> Bounds error detected after constant propagation. No output generated.\n");
+                        } else {
+                            for (int i=0;i<code;i++){
+                                    printf("%s",imcode[i]);
+                            }
+                            if (strlen(err) > 0) {
+                printf("\n=== Warnings ===\n%s", err);
+            }
+                            print_all_envs(top);
                         }
-                          if (strlen(err) > 0) {
-        printf("\n=== Warnings ===\n%s", err);
-    }
-                        print_all_envs(top);
                 }YYACCEPT;}
+
         | MEOF{YYACCEPT;}
         | error MEOF{e=1;strcpy(err,"Invalid Statements");
                 printf("%s \nRejected -> %s \nCould not generate Three Address Code / Storage Layout\n",buffer,err);
                 YYACCEPT;};
 
-
-PROGRAM: FUNDECL PROGRAM {
+PROGRAM: PROGRAM M FUNDECL {
             if(!e){
+                backpatch($1->N, $2);
                 $$ = createBoolNode();
-                $$->N = merge($1->N, $2->N);
+                $$->N = $3->N;
+                $$->B = $1->B;
+                $$->C = $1->C;
             }
-        }        
-        | STMNTS {$$ = $1;}
+        }
+        | PROGRAM M A {
+            if(!e){
+                backpatch($1->N, $2);
+                $$ = createBoolNode();
+                $$->N = $3->N;
+                $$->B = merge($1->B, $3->B);
+                $$->C = merge($1->C, $3->C);
+            }
+        }
         | FUNDECL {
             if(!e){
                 $$ = createBoolNode();
                 $$->N = $1->N;
             }
-        };
+        }
+        | A {$$ = $1;};
+
 
 
 /* 
@@ -2974,10 +3143,43 @@ if(strstr($3->type, "[") != NULL) {
                     $2, f->param_count, given);
             } else {
                 arg = $4;
-                while(arg){
-                    sprintf(imcode[code], "%d PushParam %s\n", code, arg->str);
+                Param* param = f->params;
+                int arg_idx = 1;
+                while(arg && param){
+                    char* arg_base   = getBaseType(arg->type);
+                    char* param_base = getBaseType(param->type);
+                    char push_str[200];
+                    strcpy(push_str, arg->str);
+                    /* If types differ, insert an implicit cast (same rules as assignment) */
+                    if(strcmp(arg_base, param_base) != 0 &&
+                       getTypeRank(arg_base) > 0 && getTypeRank(param_base) > 0){
+                        /* Warn on narrowing */
+                        if(getTypeRank(arg_base) > getTypeRank(param_base)){
+                            sprintf(err+strlen(err),
+                                "Warning: Narrowing conversion from %s to %s for argument %d in call to '%s'\n",
+                                arg_base, param_base, arg_idx, $2);
+                        }
+                        if(isFloatingType(arg_base) && isIntegerType(param_base)){
+                            sprintf(err+strlen(err),
+                                "Warning: Conversion from %s to %s for argument %d in call to '%s' will discard fractional part\n",
+                                arg_base, param_base, arg_idx, $2);
+                        }
+                        if(isLiteral(arg->str)){
+                            /* compile-time: inline the cast value */
+                            sprintf(push_str, "(%s)%s", param_base, arg->str);
+                        } else {
+                            /* runtime: emit a temp */
+                            char* tmp = genvar();
+                            sprintf(imcode[code], "%d %s = (%s) %s\n", code, tmp, param_base, arg->str);
+                            code++;
+                            strcpy(push_str, tmp);
+                        }
+                    }
+                    sprintf(imcode[code], "%d PushParam %s\n", code, push_str);
                     code++;
                     arg = arg->next;
+                    param = param->next;
+                    arg_idx++;
                 }
                 sprintf(imcode[code], "%d Call %s\n", code, $2);
                 code++;
@@ -3448,19 +3650,29 @@ DECLSTATEMENT: TYPE DECLLIST '$' {
 
             else if (strcmp(temp->lt,"char*")==0 && strcmp(clean_type,"char")==0 &&
                      strstr(get(top->table,temp->key)->type, "char[") != NULL){
-                Symbol* s = get(top->table,temp->key);
-                char str_copy[1000]; strcpy(str_copy, temp->op);
-                int len = strlen(str_copy);
-                if(str_copy[0]=='"' && str_copy[len-1]=='"'){
-                    str_copy[len-1]='\0';
-                    char* str_content = str_copy + 1;
-                    int idx = 0;
-                    while(*str_content != '\0'){
-                        sprintf(imcode[code], "%d %s[%d] = '%c'\n", code, temp->key, idx, *str_content);
-                        code++; str_content++; idx++;
+                 Symbol* s = get(top->table,temp->key);
+                
+                /* Check string length against array size */
+                int string_len = temp->str_len;
+                int array_size = temp->size;
+                if (string_len > array_size) {
+                    e = 1;
+                    sprintf(err+strlen(err), "Too many initializers: string literal requires %d bytes, but array '%s' has only %d bytes\n", 
+                            string_len, temp->key, array_size);
+                } else {
+                    char str_copy[1000]; strcpy(str_copy, temp->op);
+                    int len = strlen(str_copy);
+                    if(str_copy[0]=='"' && str_copy[len-1]=='"'){
+                        str_copy[len-1]='\0';
+                        char* str_content = str_copy + 1;
+                        int idx = 0;
+                        while(*str_content != '\0'){
+                            sprintf(imcode[code], "%d %s[%d] = '%c'\n", code, temp->key, idx, *str_content);
+                            code++; str_content++; idx++;
+                        }
+                        sprintf(imcode[code], "%d %s[%d] = '\\0'\n", code, temp->key, idx);
+                        code++;
                     }
-                    sprintf(imcode[code], "%d %s[%d] = '\\0'\n", code, temp->key, idx);
-                    code++;
                 }
             }
             else {
@@ -3787,7 +3999,7 @@ ASSGN: '=' {strcpy($$,"=");}
      | BORASN  {strcpy($$,"|=");}
      | BXORASN {strcpy($$,"^=");}
      | LSHIFTASN {strcpy($$,"<<=");}
-     | RSHIFTASN {strcpy($$,">>=");} ;
+     | RSHIFTASN {strcpy($$,">>=");}   | MODASN {strcpy($$,"%=");} ;
 
 BOOLEXPR:
          BOOLEXPR OR M BOOLEXPR {
@@ -3819,8 +4031,23 @@ BOOLEXPR:
                  $$->F = merge($1->F,$4->F);
              }}
         | '!' BOOLEXPR {
-                if (!e){ $$ = createBoolNode(); $$->T = $2->F; $$->F = $2->T; }
+    if (!e){ 
+        $$ = createBoolNode(); 
+        $$->T = $2->F; 
+        $$->F = $2->T;
+        
+        if ($$->F != NULL && $$->F->addr == FALL_THROUGH && 
+            $$->T != NULL && $$->T->addr != FALL_THROUGH) {
+            if (flipCondToTrue($$->T->addr)) {
+                /* After flipping, the instruction now jumps on TRUE.
+                   So swap T and F to restore correct semantics */
+                struct Node* temp = $$->T;
+                $$->T = $$->F;
+                $$->F = temp;
+            }
         }
+    }
+}
         | '(' BOOLEXPR ')' {
                 if (!e){ $$ = createBoolNode(); $$->T = $2->T; $$->F = $2->F; }
         }
@@ -4043,6 +4270,143 @@ EXPR: SIZEOF '(' IDEN ')' {
         $$->lv = 0;
     }
 }
+
+| ABS '(' EXPR ')' {
+    if (!e) {
+        $$ = createExpr();
+        char arg[1000]; strcpy(arg, $3->str);
+        char* arg_type = getBaseType($3->type);
+        strcpy($$->type, arg_type);
+        $$->lv = 0;
+        if (isNumericConstant(arg)) {
+            double v = atof(arg);
+            if (v < 0) v = -v;
+            if (isFloatingType(arg_type))
+                sprintf($$->str, "%g", v);
+            else
+                sprintf($$->str, "%d", (int)v);
+        } else {
+            /* C0: res = arg  (assume positive)
+               C1: if arg >= 0 goto C4
+               C2: neg = 0 - arg
+               C3: res = neg
+               C4: done */
+            char* res = genvar();
+            char* neg = genvar();
+            strcpy($$->str, res);
+            sprintf(imcode[code], "%d %s = %s\n", code, res, arg); code++;
+            int C1 = code;
+            sprintf(imcode[code], "%d if %s >= 0 goto ", code, arg); code++;
+            sprintf(imcode[code], "%d %s = 0 - %s\n", code, neg, arg); code++;
+            sprintf(imcode[code], "%d %s = %s\n", code, res, neg); code++;
+            int C4 = code;
+            int len1 = strlen(imcode[C1]);
+            if (imcode[C1][len1-1] != '\n')
+                sprintf(imcode[C1] + len1, "%d\n", C4);
+        }
+    }
+}
+/* ── built-in min(x, y, z, ...) ─────────────────────────────────────────
+   min(arglist) → smallest value among all arguments.
+   Uses ARGLIST so it already handles 1..N args via the linked list.
+   TAC: linear scan — compare each subsequent arg against running minimum.
+   ─────────────────────────────────────────────────────────────────────── */
+| MIN '(' ARGLIST ')' {
+    if (!e) {
+        $$ = createExpr();
+        struct Expr* args = $3;
+        if (args == NULL) {
+            e = 1;
+            sprintf(err + strlen(err), "min() requires at least one argument\n");
+            strcpy($$->str, "0"); strcpy($$->type, "int"); $$->lv = 0;
+        } else {
+            char res_type[100];
+            strcpy(res_type, getBaseType(args->type));
+            struct Expr* scan = args->next;
+            while (scan) {
+                char* pt = promoteType(res_type, getBaseType(scan->type));
+                strcpy(res_type, pt);
+                scan = scan->next;
+            }
+            strcpy($$->type, res_type);
+            $$->lv = 0;
+            if (args->next == NULL) {
+                strcpy($$->str, args->str);
+            } else {
+                /* Running min in cur_min.
+                   For each next arg:
+                     C_cmp: if cur_min <= arg goto C_skip
+                     C_upd: cur_min = arg
+                     C_skip: (next iteration)                */
+                char* cur_min = genvar();
+                sprintf(imcode[code], "%d %s = %s\n", code, cur_min, args->str); code++;
+                scan = args->next;
+                while (scan) {
+                    char arg_copy[1000]; strcpy(arg_copy, scan->str);
+                    int C_cmp = code;
+                    sprintf(imcode[code], "%d if %s <= %s goto ", code, cur_min, arg_copy); code++;
+                    sprintf(imcode[code], "%d %s = %s\n", code, cur_min, arg_copy); code++;
+                    int C_skip = code;
+                    int len2 = strlen(imcode[C_cmp]);
+                    if (imcode[C_cmp][len2-1] != '\n')
+                        sprintf(imcode[C_cmp] + len2, "%d\n", C_skip);
+                    scan = scan->next;
+                }
+                strcpy($$->str, cur_min);
+            }
+        }
+    }
+}
+/* ── built-in max(x, y, z, ...) ─────────────────────────────────────────
+   max(arglist) → largest value among all arguments.
+   Mirror of min(), comparison direction flipped.
+   ─────────────────────────────────────────────────────────────────────── */
+| MAX '(' ARGLIST ')' {
+    if (!e) {
+        $$ = createExpr();
+        struct Expr* args = $3;
+        if (args == NULL) {
+            e = 1;
+            sprintf(err + strlen(err), "max() requires at least one argument\n");
+            strcpy($$->str, "0"); strcpy($$->type, "int"); $$->lv = 0;
+        } else {
+            char res_type[100];
+            strcpy(res_type, getBaseType(args->type));
+            struct Expr* scan = args->next;
+            while (scan) {
+                char* pt = promoteType(res_type, getBaseType(scan->type));
+                strcpy(res_type, pt);
+                scan = scan->next;
+            }
+            strcpy($$->type, res_type);
+            $$->lv = 0;
+            if (args->next == NULL) {
+                strcpy($$->str, args->str);
+            } else {
+                /* Running max in cur_max.
+                   For each next arg:
+                     C_cmp: if cur_max >= arg goto C_skip
+                     C_upd: cur_max = arg
+                     C_skip: (next iteration)                */
+                char* cur_max = genvar();
+                sprintf(imcode[code], "%d %s = %s\n", code, cur_max, args->str); code++;
+                scan = args->next;
+                while (scan) {
+                    char arg_copy[1000]; strcpy(arg_copy, scan->str);
+                    int C_cmp = code;
+                    sprintf(imcode[code], "%d if %s >= %s goto ", code, cur_max, arg_copy); code++;
+                    sprintf(imcode[code], "%d %s = %s\n", code, cur_max, arg_copy); code++;
+                    int C_skip = code;
+                    int len3 = strlen(imcode[C_cmp]);
+                    if (imcode[C_cmp][len3-1] != '\n')
+                        sprintf(imcode[C_cmp] + len3, "%d\n", C_skip);
+                    scan = scan->next;
+                }
+                strcpy($$->str, cur_max);
+            }
+        }
+    }
+}
 | EXPR '+' EXPR {
     if (!e){
         $$ = createExpr();
@@ -4225,17 +4589,87 @@ EXPR: SIZEOF '(' IDEN ')' {
         }
     }
 }
-    | FUNCALL {$$ = $1;} 
+
+| BOOLEXPR '?' EXPR ':' EXPR {
+   
+    if (!e) {
+        $$ = createExpr();
+
+        char* cond_var = genvar();
+        char* t        = genvar();
+        char* res_type = promoteType(getBaseType($3->type), getBaseType($5->type));
+        strcpy($$->type, res_type);
+        strcpy($$->str, t);
+        $$->lv = 0;
+
+        int C0 = code;
+        /* C0: true path — cond_var = 1 */
+        sprintf(imcode[code], "%d %s = 1\n", code, cond_var); code++;
+
+        /* C1: jump past the false-assign */
+        int C1 = code;
+        sprintf(imcode[code], "%d goto %d\n", code, code + 2); code++;
+
+        /* C2: false path — cond_var = 0 */
+        int C2 = code;
+        sprintf(imcode[code], "%d %s = 0\n", code, cond_var); code++;
+
+        /* Backpatch: T list → C0 (true fires → cond=1) */
+        backpatch($1->T, C0);
+        /* Backpatch: F list → C2 (false fires → cond=0) */
+        backpatch($1->F, C2);
+
+        /* C3: branch — if cond == 0 skip true branch */
+        int C3 = code;
+        int C6 = code + 3;   /* where false-value assignment will be */
+        sprintf(imcode[code], "%d if %s == 0 goto %d\n", code, cond_var, C6); code++;
+
+        /* C4: true-branch value */
+        sprintf(imcode[code], "%d %s = %s\n", code, t, $3->str); code++;
+
+        /* C5: skip over false branch */
+        int C5 = code;
+        int C7 = code + 2;   /* end label */
+        sprintf(imcode[code], "%d goto %d\n", code, C7); code++;
+
+        /* C6: false-branch value */
+        sprintf(imcode[code], "%d %s = %s\n", code, t, $5->str); code++;
+
+        /* C7: execution continues here (code == C7) */
+    }
+}
+ | EXPR '?' EXPR ':' EXPR {
+   
+    if (!e) {
+        $$ = createExpr();
+
+        char* t = genvar();
+        char* res_type = promoteType(getBaseType($3->type), getBaseType($5->type));
+        strcpy($$->type, res_type);
+        strcpy($$->str, t);
+        $$->lv = 0;
+
+        int C3 = code + 3;
+        int C4 = code + 4;
+
+        sprintf(imcode[code], "%d if %s == 0 goto %d\n", code, $1->str, C3); code++;
+        sprintf(imcode[code], "%d %s = %s\n", code, t, $3->str);             code++;
+        sprintf(imcode[code], "%d goto %d\n", code, C4);                     code++;
+        sprintf(imcode[code], "%d %s = %s\n", code, t, $5->str);             code++;
+        /* code == C4 now */
+    }
+}  
+  | FUNCALL {$$ = $1;} 
     | TERM {$$ = $1;};
 
-
 FUNCALL: CALL IDEN '(' ARGLIST ')' {
+            /* Always initialise $$ to avoid UB when e is already set */
+            $$ = createExpr();
             if(!e){
                 Function* f = findFunction($2);
                 if(f == NULL){
                     e=1;
                     sprintf(err+strlen(err),"Function %s not declared\n",$2);
-                    $$ = createExpr();
                 } else {
                     int arg_count = 0;
                     struct Expr* arg = $4;
@@ -4251,17 +4685,66 @@ FUNCALL: CALL IDEN '(' ARGLIST ')' {
                         arg = arg->next;
                         param = param->next;
                     }
-                    /* count any extra args */
+                    /* count any extra args beyond what params expects */
                     while(arg){ arg_count++; arg = arg->next; }
 
                     if(arg_count != f->param_count){
                         e=1;
                         sprintf(err+strlen(err),"Function %s expects %d arguments, got %d\n",
                                 $2, f->param_count, arg_count);
+                        strcpy($$->type, f->return_type);
+                        /* Do NOT fall through into code-gen — bail out now */
+                        goto funcall_arglist_done;
                     }
 
+                    {
                     struct Expr* reversed = NULL;
                     arg = $4;
+                    Param* rparam = f->params;
+                    /* Build cast list in forward order */
+                    struct Expr* cast_args = NULL;
+                    struct Expr* cast_tail = NULL;
+                    int rarg_idx = 1;
+                    while(arg && rparam){
+                        char* arg_base   = getBaseType(arg->type);
+                        char* param_base = getBaseType(rparam->type);
+                        struct Expr* ca = createExpr();
+                        strcpy(ca->str, arg->str);
+                        strcpy(ca->type, arg->type);
+                        ca->lv = arg->lv;
+                        /* Insert implicit cast if types differ */
+                        if(strcmp(arg_base, param_base) != 0 &&
+                           getTypeRank(arg_base) > 0 && getTypeRank(param_base) > 0){
+                            if(getTypeRank(arg_base) > getTypeRank(param_base)){
+                                sprintf(err+strlen(err),
+                                    "Warning: Narrowing conversion from %s to %s for argument %d in call to '%s'\n",
+                                    arg_base, param_base, rarg_idx, $2);
+                            }
+                            if(isFloatingType(arg_base) && isIntegerType(param_base)){
+                                sprintf(err+strlen(err),
+                                    "Warning: Conversion from %s to %s for argument %d in call to '%s' will discard fractional part\n",
+                                    arg_base, param_base, rarg_idx, $2);
+                            }
+                            if(isLiteral(arg->str)){
+                                sprintf(ca->str, "(%s)%s", param_base, arg->str);
+                            } else {
+                                char* tmp = genvar();
+                                sprintf(imcode[code], "%d %s = (%s) %s\n", code, tmp, param_base, arg->str);
+                                code++;
+                                strcpy(ca->str, tmp);
+                            }
+                            strcpy(ca->type, rparam->type);
+                        }
+                        ca->next = NULL;
+                        if(!cast_args){ cast_args = ca; cast_tail = ca; }
+                        else { cast_tail->next = ca; cast_tail = ca; }
+                        arg = arg->next;
+                        rparam = rparam->next;
+                        rarg_idx++;
+                    }
+                    /* Reverse the cast list for PushParam order */
+                    reversed = NULL;
+                    arg = cast_args;
                     while(arg){
                         struct Expr* temp = createExpr();
                         strcpy(temp->str, arg->str);
@@ -4278,7 +4761,6 @@ FUNCALL: CALL IDEN '(' ARGLIST ')' {
                         arg = arg->next;
                     }
 
-                   $$ = createExpr();
                     strcpy($$->type, f->return_type);
                     $$->lv = 0;
                     if(strcmp(f->return_type, "void") == 0) {
@@ -4293,17 +4775,19 @@ FUNCALL: CALL IDEN '(' ARGLIST ')' {
                         code++;
                         strcpy($$->str, ret_var);
                     }
-
+                    } /* end inner block */
+                    funcall_arglist_done:;
                 }
             }
         }
 | CALL IDEN '(' ')' {
+                $$ = createExpr();
+
             if(!e){
                 Function* f = findFunction($2);
                 if(f == NULL){
                     e=1;
                     sprintf(err+strlen(err),"Function %s not declared\n",$2);
-                    $$ = createExpr();
                 } else {
                     if(f->param_count != 0){
                         e=1;
@@ -4311,7 +4795,6 @@ FUNCALL: CALL IDEN '(' ARGLIST ')' {
                                 $2, f->param_count);
                     }
 
-                  $$ = createExpr();
                     strcpy($$->type, f->return_type);
                     $$->lv = 0;
                     if(strcmp(f->return_type, "void") == 0) {
@@ -4341,20 +4824,25 @@ ARGLIST: EXPR ',' ARGLIST {
 OP: '+' | '-' | '*' | '/' | '%'| BAND | BOR | BXOR | LSHIFT | RSHIFT;
 
 SUBSCRIPTS: '[' EXPR ']' {
+                $$ = createSubscript();
                 if (!e) {
-                        $$ = createSubscript();
                         sprintf($$->indices, "[%s]", $2->str);
+                        $$->count = 1;
+                } else {
+                        strcpy($$->indices, "[0]");
                         $$->count = 1;
                 }
         }
         | SUBSCRIPTS '[' EXPR ']' {
-                if (!e) {
-                        $$ = createSubscript();
+                $$ = createSubscript();
+                if (!e && $1) {
                         sprintf($$->indices, "%s[%s]", $1->indices, $3->str);
                         $$->count = $1->count + 1;
+                } else {
+                        strcpy($$->indices, "[0]");
+                        $$->count = 1;
                 }
         };
-
 
 TERM: STRING {
     $$ = createExpr();
@@ -6359,17 +6847,24 @@ int main(int argc, char* argv[]) {
         yyparse();
         free(clean);
     }
-
-    remove("opt.tac");
-    if (!e) {
-        /* Write TAC file */
-        FILE* tac_file = fopen("opt.tac", "w");
-        if (tac_file) {
-            for (int i = 0; i < code; i++)
-                fprintf(tac_file, "%s", imcode[i]);
-            fclose(tac_file);
-        }
-        generateInteractiveDashboard();
+remove("opt.tac");
+if (!e) {
+    FILE* tac_file = fopen("opt.tac", "w");
+    if (tac_file) {
+        for (int i = 0; i < code; i++)
+            fprintf(tac_file, "%s", imcode[i]);
+        fclose(tac_file);
     }
-    return 0;
+    write_symtab_json(); 
+    generateInteractiveDashboard();
+} else {
+    /* Semantic errors occurred — write a sentinel so the pipeline
+       knows to stop cleanly instead of assembling stale TAC.      */
+    FILE* tac_file = fopen("opt.tac", "w");
+    if (tac_file) {
+        fprintf(tac_file, "# SEMANTIC_ERROR\n");
+        fclose(tac_file);
+    }
+}
+return e ? 1 : 0;   /* non-zero exit when errors exist */
 }

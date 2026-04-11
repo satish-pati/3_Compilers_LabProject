@@ -1,0 +1,12 @@
+@int arr[3] $
+@int i $
+
+iterate(i is 0 $ i < 3 $ i=i+1)
+begin
+    input(arr[i]) $
+end
+
+iterate(i is 0 $ i < 3 $ i=i+1)
+begin
+    show(arr[i]) $
+end

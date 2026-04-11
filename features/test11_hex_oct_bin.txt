@@ -1,0 +1,7 @@
+@int  a is hex1F$   # decimal 31 
+@int  b is oct17$   # decimal 15 
+@int  c is bin1010$ # decimal 10
+show(a) $
+
+show(b) $
+show(c) $

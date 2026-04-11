@@ -1,3 +1,0 @@
-@char c = 'A'$
-@char arr[2]={'a','b'}$
-@char a[4]="ab" $

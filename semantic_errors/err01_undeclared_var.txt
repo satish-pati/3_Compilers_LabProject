@@ -1,0 +1,3 @@
+# Error: Use of undeclared variable
+
+@int y is unknown_var + 5$

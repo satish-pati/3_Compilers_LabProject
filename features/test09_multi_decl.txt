@@ -1,0 +1,4 @@
+@int a is 1 , b is 2 , c is 3 $
+@float m is 4.8, n is 5.69, d is 456.66$ 
+show(a)$
+show(d)$

@@ -1,8 +1,0 @@
-@int a is 12$
-@int b is 5$
-@int and_result is a bitand b$
-@int or_result is a bitor b$
-@int xor_result is a bitxor b$
-@int not_result is bitnot a$
-@int left_shift is a lshift 2$
-@int right_shift is a rshift 1$

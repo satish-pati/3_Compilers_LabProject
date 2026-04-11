@@ -1,1 +1,0 @@
-@int arr[-5]$ # Error: array size must be positive

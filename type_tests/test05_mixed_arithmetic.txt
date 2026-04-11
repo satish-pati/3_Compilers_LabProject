@@ -1,0 +1,17 @@
+# TEST 05: Mixed Type Arithmetic
+    @int a is 10$
+    @float b is 3.5$
+    @float result1 is a + b$      # OK: a promoted to float
+    
+    @short s is 5$
+    @long l is 1000$
+    @long result2 is s * l$       # OK: s promoted to long
+    
+    @char c is 2$
+    @int i is 100$
+    @int result3 is c + i$        # OK: c promoted to int
+    show(result1)$
+    show(result2)$
+    show(result3)$
+    
+

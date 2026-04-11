@@ -2,14 +2,7 @@ digraph TAC_Blocks {
   node [shape=record, style=filled, fillcolor=lightblue];
   rankdir=TB;
 
-  bb3 [label="{<b>Global Scope|15 printint sum\l}"];
-  bb2 [label="{<b>Global Scope|9 t1 = i * 4\l10 t2 = sum + arr[t1]\l11 sum = t2\l12 t0 = i + 1\l13 i = t0\l14 goto 8\l}"];
-  bb1 [label="{<b>Global Scope|8 if i \>= n goto 15\l}"];
-  bb0 [label="{<b>Global Scope|0 arr[0] = 10\l1 arr[4] = 20\l2 arr[8] = 30\l3 arr[12] = 40\l4 arr[16] = 50\l5 n = 5\l6 sum = 0\l7 i = 0\l}"];
+  bb0 [label="{<b>Global Scope|0 x = 1e+40\l1 x_to_char = (char)x\l2 x_to_short = (short)x\l3 x_to_int = (int)x\l4 x_to_long = (long)x\l5 x_to_float = (float)x\l6 printfloat x\l7 printchar x_to_char\l8 printint x_to_short\l9 printint x_to_int\l10 printint x_to_long\l11 printfloat x_to_float\l}"];
 
   // Control flow edges
-  bb0 -> bb1 [style=dashed, color=black];
-  bb1 -> bb3 [label="T", color=green, penwidth=2];
-  bb1 -> bb2 [label="F", color=red, penwidth=2];
-  bb2 -> bb1 [label="goto", penwidth=2];
 }
